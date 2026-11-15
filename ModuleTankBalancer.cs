@@ -29,8 +29,7 @@ namespace RSSBalancer
                        scene = UI_Scene.Editor, affectSymCounterparts = UI_Scene.All)]
         public float fuelMultiplier = 1f;
 
-        // Mnożnik paliwa, który jest już „wpisany” w pojemność zbiorników, i pojemność po naszym przeskalowaniu –
-        // żeby wykryć, że inny mod (np. B9PartSwitch) przywrócił oryginalną pojemność.
+        // Ostatnio zastosowany mnożnik paliwa i pojemność (informacyjnie; pojemność zawsze liczona od oryginału części).
         [KSPField(isPersistant = true)] public float appliedFuelMultiplier = 1f;
         [KSPField(isPersistant = true)] public double scaledCapacity = -1.0;
 
@@ -69,16 +68,12 @@ namespace RSSBalancer
                 if (changed) ModuleEngineBalancer.NotifyEditor();
             }
 
-            // Co sekundę: czy ktoś nie przywrócił oryginalnej pojemności zbiornika (np. B9PartSwitch przy wczytaniu).
+            // Co sekundę: czy pojemność zgadza się z „oryginał × Paliwo ×”. Jeśli nie (inny mod ją przestawił
+            // przy wczytaniu), ustawiamy ją jeszcze raz – zawsze od oryginału, więc nic nie mnoży się podwójnie.
             if (Time.realtimeSinceStartup > nextResync)
             {
                 nextResync = Time.realtimeSinceStartup + 1f;
-                if (scaledCapacity > 0 && Mathf.Abs((float)(Capacity() - scaledCapacity)) > 0.01f)
-                {
-                    appliedFuelMultiplier = 1f; // obecna pojemność jest oryginalna
-                    if (!Mathf.Approximately(fuelMultiplier, 1f)) ApplyFuel();
-                    else scaledCapacity = Capacity();
-                }
+                if (!FuelMatches()) ApplyFuel();
             }
         }
 
@@ -90,15 +85,39 @@ namespace RSSBalancer
             return c;
         }
 
-        /// <summary>Przeskalowuje pojemność względem tego, co jest teraz wpisane (zachowuje stopień napełnienia).</summary>
-        public void ApplyFuel()
+        /// <summary>Oryginalna pojemność zasobu: z definicji części (prefab); gdy jej tam nie ma – z obecnej pojemności.</summary>
+        private double BaseMax(PartResource r)
         {
-            float ratio = fuelMultiplier / Mathf.Max(0.0001f, appliedFuelMultiplier);
+            Part prefab = part.partInfo != null ? part.partInfo.partPrefab : null;
+            if (prefab != null && prefab.Resources != null)
+                foreach (PartResource pr in prefab.Resources)
+                    if (pr != null && pr.resourceName == r.resourceName && pr.maxAmount > 0)
+                        return pr.maxAmount;
+
+            return r.maxAmount / Mathf.Max(0.0001f, appliedFuelMultiplier);
+        }
+
+        private bool FuelMatches()
+        {
             foreach (PartResource r in part.Resources)
             {
                 if (!Scaled(r)) continue;
-                r.maxAmount *= ratio;
-                r.amount *= ratio;
+                double want = BaseMax(r) * fuelMultiplier;
+                if (System.Math.Abs(r.maxAmount - want) > 0.01 * System.Math.Max(1.0, want) * 0.01) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Pojemność = oryginał × Paliwo × (zachowuje stopień napełnienia).</summary>
+        public void ApplyFuel()
+        {
+            foreach (PartResource r in part.Resources)
+            {
+                if (!Scaled(r)) continue;
+                double baseMax = BaseMax(r);
+                double fill = r.maxAmount > 0 ? System.Math.Min(1.0, r.amount / r.maxAmount) : 1.0;
+                r.maxAmount = baseMax * fuelMultiplier;
+                r.amount = r.maxAmount * fill;
             }
             appliedFuelMultiplier = fuelMultiplier;
             scaledCapacity = Capacity();
