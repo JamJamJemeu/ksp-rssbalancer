@@ -33,6 +33,12 @@ namespace RSSBalancer
         [KSPField(isPersistant = true)] public float appliedFuelMultiplier = 1f;
         [KSPField(isPersistant = true)] public double scaledCapacity = -1.0;
 
+        // Oryginalna pojemność każdego zasobu (taka, jaką ustawiła gra i inne mody, np. B9PartSwitch),
+        // zapisywana w pliku statku: "LiquidFuel=882;Oxidizer=1078".
+        [KSPField(isPersistant = true)] public string baseCapacities = "";
+
+        private Dictionary<string, double> bases;
+
         private float appliedDry = float.NaN;
         private float nextResync;
 
@@ -85,36 +91,80 @@ namespace RSSBalancer
             return c;
         }
 
-        /// <summary>Oryginalna pojemność zasobu: z definicji części (prefab); gdy jej tam nie ma – z obecnej pojemności.</summary>
-        private double BaseMax(PartResource r)
+        private void LoadBases()
         {
-            Part prefab = part.partInfo != null ? part.partInfo.partPrefab : null;
-            if (prefab != null && prefab.Resources != null)
-                foreach (PartResource pr in prefab.Resources)
-                    if (pr != null && pr.resourceName == r.resourceName && pr.maxAmount > 0)
-                        return pr.maxAmount;
+            if (bases != null) return;
+            bases = new Dictionary<string, double>();
+            if (string.IsNullOrEmpty(baseCapacities)) return;
+            foreach (string item in baseCapacities.Split(';'))
+            {
+                string[] kv = item.Split('=');
+                double v;
+                if (kv.Length == 2 && double.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v) && v > 0)
+                    bases[kv[0]] = v;
+            }
+        }
 
-            return r.maxAmount / Mathf.Max(0.0001f, appliedFuelMultiplier);
+        private void SaveBases()
+        {
+            List<string> items = new List<string>();
+            foreach (KeyValuePair<string, double> kv in bases)
+                items.Add(kv.Key + "=" + kv.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+            baseCapacities = string.Join(";", items.ToArray());
+        }
+
+        private static bool Same(double a, double b)
+        {
+            return System.Math.Abs(a - b) <= 0.0001 * System.Math.Max(1.0, System.Math.Abs(b));
+        }
+
+        /// <summary>
+        /// Ustala oryginalną pojemność zasobu i zwraca, czy obecna pojemność się zgadza z „oryginał × Paliwo ×”.
+        ///   • brak zapisanego oryginału → oryginał = obecna ÷ zastosowany mnożnik (pierwsze użycie),
+        ///   • obecna = oryginał × mnożnik → wszystko w porządku,
+        ///   • obecna = oryginał → inny mod przywrócił oryginał (np. przy wczytaniu) → trzeba przeskalować,
+        ///   • obecna jest jeszcze inna → zmieniono typ zbiornika → to nowy oryginał.
+        /// </summary>
+        private bool CheckBase(PartResource r)
+        {
+            double cur = r.maxAmount;
+            double b;
+            if (!bases.TryGetValue(r.resourceName, out b))
+            {
+                b = cur / Mathf.Max(0.0001f, appliedFuelMultiplier);
+                bases[r.resourceName] = b;
+                SaveBases();
+            }
+
+            if (Same(cur, b * fuelMultiplier)) return true;
+            if (Same(cur, b)) return false;
+
+            if (!Same(cur, b * appliedFuelMultiplier))
+            {
+                bases[r.resourceName] = cur;   // nowy typ zbiornika – jego pojemność jest nowym oryginałem
+                SaveBases();
+            }
+            return false;
         }
 
         private bool FuelMatches()
         {
+            LoadBases();
+            bool ok = true;
             foreach (PartResource r in part.Resources)
-            {
-                if (!Scaled(r)) continue;
-                double want = BaseMax(r) * fuelMultiplier;
-                if (System.Math.Abs(r.maxAmount - want) > 0.01 * System.Math.Max(1.0, want) * 0.01) return false;
-            }
-            return true;
+                if (Scaled(r) && !CheckBase(r)) ok = false;
+            return ok;
         }
 
-        /// <summary>Pojemność = oryginał × Paliwo × (zachowuje stopień napełnienia).</summary>
+        /// <summary>Pojemność = oryginał × Paliwo × (zachowuje stopień napełnienia). Nigdy nie mnoży podwójnie.</summary>
         public void ApplyFuel()
         {
+            LoadBases();
             foreach (PartResource r in part.Resources)
             {
                 if (!Scaled(r)) continue;
-                double baseMax = BaseMax(r);
+                CheckBase(r);
+                double baseMax = bases[r.resourceName];
                 double fill = r.maxAmount > 0 ? System.Math.Min(1.0, r.amount / r.maxAmount) : 1.0;
                 r.maxAmount = baseMax * fuelMultiplier;
                 r.amount = r.maxAmount * fill;
