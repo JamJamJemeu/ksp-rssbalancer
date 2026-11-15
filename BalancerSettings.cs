@@ -22,6 +22,10 @@ namespace RSSBalancer
         public static bool AutoCoreSeparation = false;
         public static bool Timeline = true;
 
+        // Misja (zapamiętane między uruchomieniami; NaN = domyślne)
+        public static double LaunchLatitude = 45.9;   // Bajkonur
+        public static double OrbitAltKm = double.NaN;
+
         private static bool loaded;
 
         private static string FilePath
@@ -67,6 +71,8 @@ namespace RSSBalancer
                 HotStagingLead = (float)D(n, "hotStagingLead", HotStagingLead);
                 AutoCoreSeparation = B(n, "autoCoreSeparation", AutoCoreSeparation);
                 Timeline = B(n, "timeline", Timeline);
+                LaunchLatitude = D(n, "launchLatitude", LaunchLatitude);
+                OrbitAltKm = D(n, "orbitAltKm", OrbitAltKm);
             }
             catch (Exception e)
             {
@@ -94,6 +100,8 @@ namespace RSSBalancer
                 n.AddValue("hotStagingLead", S(HotStagingLead));
                 n.AddValue("autoCoreSeparation", AutoCoreSeparation.ToString());
                 n.AddValue("timeline", Timeline.ToString());
+                n.AddValue("launchLatitude", S(LaunchLatitude));
+                if (!double.IsNaN(OrbitAltKm)) n.AddValue("orbitAltKm", S(OrbitAltKm));
 
                 root.Save(FilePath);
             }

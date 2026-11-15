@@ -476,7 +476,9 @@ namespace RSSBalancer
             {
                 lastLaunchBody = launch;
                 targetIdx = -1;
-                altKm = Math.Round(DeltaVPlanner.LowOrbitAlt(launch) / 1000.0).ToString(CultureInfo.InvariantCulture);
+                altKm = (double.IsNaN(BalancerSettings.OrbitAltKm)
+                            ? Math.Round(DeltaVPlanner.LowOrbitAlt(launch) / 1000.0)
+                            : BalancerSettings.OrbitAltKm).ToString(CultureInfo.InvariantCulture);
                 latDeg = DefaultLatitude().ToString("F1", CultureInfo.InvariantCulture);
             }
 
@@ -502,7 +504,17 @@ namespace RSSBalancer
 
             double alt, lat;
             if (!TryNum(altKm, out alt) || alt < 0) alt = DeltaVPlanner.LowOrbitAlt(launch) / 1000.0;
+            else if (HighLogic.LoadedSceneIsEditor && (double.IsNaN(BalancerSettings.OrbitAltKm) || Math.Abs(alt - BalancerSettings.OrbitAltKm) > 1e-6))
+            {
+                BalancerSettings.OrbitAltKm = alt;
+                BalancerSettings.Save();
+            }
             if (!TryNum(latDeg, out lat)) lat = 0.0;
+            else if (HighLogic.LoadedSceneIsEditor && Math.Abs(lat - BalancerSettings.LaunchLatitude) > 1e-6)
+            {
+                BalancerSettings.LaunchLatitude = lat;
+                BalancerSettings.Save();
+            }
 
             CelestialBody target = targetIdx < 0 ? null : targets[targetIdx];
             DvPlan p = DeltaVPlanner.Plan(launch, target, alt * 1000.0, lat);
@@ -728,7 +740,7 @@ namespace RSSBalancer
         {
             if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null)
                 return FlightGlobals.ActiveVessel.latitude;
-            return 28.5; // typowy kosmodrom (np. Przylądek Canaveral); Bajkonur ≈ 45.9
+            return BalancerSettings.LaunchLatitude; // zapamiętana (domyślnie Bajkonur 45.9°)
         }
 
         private static string CurrentShipName()
