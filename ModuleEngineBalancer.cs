@@ -35,6 +35,11 @@ namespace RSSBalancer
             public float minFuelFlow;
             public float maxThrust;     // oryginalny ciąg
             public float minThrust;
+
+            // Co ostatnio ustawiliśmy – żeby wykryć, że inny mod (np. B9PartSwitch, TweakScale)
+            // zmienił silnik po nas. Wtedy jego nowe wartości stają się bazą.
+            public FloatCurve setCurve;
+            public float setMaxFlow = float.NaN, setMinFlow = float.NaN, setMaxThrust = float.NaN, setMinThrust = float.NaN;
         }
 
         private readonly List<EngineBase> engines = new List<EngineBase>();
@@ -69,11 +74,18 @@ namespace RSSBalancer
         {
             if (engines.Count == 0) return;
 
-            // Wyłapuje zmianę suwaków w menu części (także na częściach w symetrii).
-            if (!Mathf.Approximately(ispMultiplier, appliedIsp) || !Mathf.Approximately(thrustMultiplier, appliedThrust))
+            // Wyłapuje zmianę suwaków w menu części (także na częściach w symetrii)
+            // albo zmianę silnika przez inny mod po naszym ustawieniu.
+            bool slidersMoved = !Mathf.Approximately(ispMultiplier, appliedIsp) || !Mathf.Approximately(thrustMultiplier, appliedThrust);
+            if (slidersMoved)
             {
                 ApplyMultipliers();
                 NotifyEditor();
+            }
+            else if (ChangedByOthers())
+            {
+                // Bez powiadamiania edytora – żeby nie wywołać przepychanki z modem, który zmienia silnik przy każdej modyfikacji statku.
+                ApplyMultipliers();
             }
         }
 
@@ -86,6 +98,8 @@ namespace RSSBalancer
 
             foreach (EngineBase b in engines)
             {
+                Resync(b);
+
                 FloatCurve fc = new FloatCurve();
                 foreach (Keyframe k in b.keys)
                     fc.Add(k.time, k.value * isp, k.inTangent * isp, k.outTangent * isp);
@@ -98,10 +112,45 @@ namespace RSSBalancer
                 b.engine.minFuelFlow = b.minFuelFlow * thr / isp;
                 b.engine.maxThrust = b.maxThrust * thr;
                 b.engine.minThrust = b.minThrust * thr;
+
+                b.setCurve = fc;
+                b.setMaxFlow = b.engine.maxFuelFlow;
+                b.setMinFlow = b.engine.minFuelFlow;
+                b.setMaxThrust = b.engine.maxThrust;
+                b.setMinThrust = b.engine.minThrust;
             }
 
             appliedIsp = ispMultiplier;
             appliedThrust = thrustMultiplier;
+        }
+
+        /// <summary>
+        /// Jeśli wartości silnika różnią się od tych, które ostatnio ustawiliśmy, zmienił je inny mod
+        /// (bez wiedzy o naszych mnożnikach) – bierzemy je jako nową bazę.
+        /// </summary>
+        private static void Resync(EngineBase b)
+        {
+            ModuleEngines e = b.engine;
+            if (e.atmosphereCurve != null && !ReferenceEquals(e.atmosphereCurve, b.setCurve) && b.setCurve != null)
+                b.keys = e.atmosphereCurve.Curve.keys;
+            if (!float.IsNaN(b.setMaxFlow) && !Mathf.Approximately(e.maxFuelFlow, b.setMaxFlow)) b.maxFuelFlow = e.maxFuelFlow;
+            if (!float.IsNaN(b.setMinFlow) && !Mathf.Approximately(e.minFuelFlow, b.setMinFlow)) b.minFuelFlow = e.minFuelFlow;
+            if (!float.IsNaN(b.setMaxThrust) && !Mathf.Approximately(e.maxThrust, b.setMaxThrust)) b.maxThrust = e.maxThrust;
+            if (!float.IsNaN(b.setMinThrust) && !Mathf.Approximately(e.minThrust, b.setMinThrust)) b.minThrust = e.minThrust;
+        }
+
+        private bool ChangedByOthers()
+        {
+            foreach (EngineBase b in engines)
+            {
+                if (b.setCurve == null) continue;
+                ModuleEngines e = b.engine;
+                if (!ReferenceEquals(e.atmosphereCurve, b.setCurve) ||
+                    !Mathf.Approximately(e.maxFuelFlow, b.setMaxFlow) ||
+                    !Mathf.Approximately(e.maxThrust, b.setMaxThrust))
+                    return true;
+            }
+            return false;
         }
 
         public static void NotifyEditor()
