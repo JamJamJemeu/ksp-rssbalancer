@@ -217,6 +217,14 @@ namespace RSSBalancer
                 GUILayout.Label("Ciąg ×: " + g.thrust.ToString("F2") + Was(g.thrust, g.appliedThrust));
                 g.thrust = Slider(g.thrust, ModuleEngineBalancer.MinThrustMult, ModuleEngineBalancer.MaxThrustMult);
 
+                if (g.tanks.Count > 0 && HighLogic.LoadedSceneIsEditor)
+                {
+                    GUILayout.Label("Masa pustych zbiorników ×: " + g.dry.ToString("F2") + Was(g.dry, g.appliedDry) + "   (zbiorniki: " + g.tanks.Count + ")");
+                    g.dry = Slider(g.dry, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry);
+                    GUILayout.Label("Paliwo ×: " + g.fuel.ToString("F2") + Was(g.fuel, g.appliedFuel));
+                    g.fuel = Slider(g.fuel, ModuleTankBalancer.MinFuel, ModuleTankBalancer.MaxFuel);
+                }
+
                 double tNow = g.BurnTimeNow;
                 if (tNow > 0)
                 {
@@ -262,7 +270,7 @@ namespace RSSBalancer
                 status = null;
             }
             GUILayout.EndHorizontal();
-            GUILayout.Label("Czas pracy rośnie z ISP i maleje z ciągiem (czas = paliwo × ISP × g ÷ ciąg).");
+            GUILayout.Label("Czas pracy rośnie z ISP i paliwem, maleje z ciągiem (czas = paliwo × ISP × g ÷ ciąg). Lżejsze zbiorniki dają więcej Δv bez zmiany czasów pracy.");
         }
 
         private string PreviewTwrSuffix()
@@ -331,29 +339,82 @@ namespace RSSBalancer
             }
             GUI.enabled = id.ok;
             if (GUILayout.Button("Oblicz i zastosuj"))
-            {
-                double tb, tc, twr, tu;
-                if (!TryNum(sBooster, out tb) || !TryNum(sCore, out tc) || !TryNum(sTwr, out twr) || tb <= 0 || tc <= 0 || twr <= 0)
-                    status = "Wpisz poprawne czasy pracy i TWR.";
-                else if (tc <= tb)
-                    status = "Rdzeń musi pracować dłużej niż boczne bloki.";
-                else
-                {
-                    if (!TryNum(sUpper, out tu) || tu <= 0) tu = SoyuzTemplate.UpperTime;
-                    BalancerSettings.BoosterTime = tb;
-                    BalancerSettings.CoreTime = tc;
-                    BalancerSettings.LiftoffTwr = twr;
-                    BalancerSettings.UpperTime = tu;
-                    BalancerSettings.Save();
-                    SoyuzTemplate.Result r = SoyuzTemplate.Solve(groups, CurrentTwr(), tb, tc, twr, BalancerSettings.DoUpper, tu);
-                    if (r.ok) ApplyGroups(false);
-                    status = r.message + (r.ok ? "\nZastosowano. Liczby w stockowym oknie Delta-V odświeżą się za chwilę." : "");
-                }
-            }
+                RunSoyuzSolve();
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
+            if (HighLogic.LoadedSceneIsEditor && id.ok) DrawSoyuzTanks(id);
             DrawFlightOptions();
+        }
+
+        private static float sDry = 1f, sUpperFuel = 1f;
+        private static bool sTanksInit;
+
+        private void DrawSoyuzTanks(SoyuzTemplate.Result id)
+        {
+            if (!sTanksInit)
+            {
+                sTanksInit = true;
+                if (id.core.tanks.Count > 0) sDry = id.core.appliedDry;
+                if (id.upper != null && id.upper.tanks.Count > 0) sUpperFuel = id.upper.appliedFuel;
+            }
+
+            GUILayout.Space(8f);
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("Zbiorniki – więcej Δv bez zmiany czasów pracy");
+
+            GUILayout.Label("Masa pustych zbiorników × (bloki, rdzeń, III stopień): " + sDry.ToString("F2"));
+            sDry = Slider(sDry, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry);
+
+            if (id.upper != null && id.upper.tanks.Count > 0)
+            {
+                GUILayout.Label("Paliwo III stopnia ×: " + sUpperFuel.ToString("F2") + "   (Blok I Sojuza-2 ma ok. 25 t paliwa; teraz " +
+                                (id.upper.propMass * sUpperFuel / Math.Max(0.01f, id.upper.appliedFuel)).ToString("F1") + " t)");
+                sUpperFuel = Slider(sUpperFuel, ModuleTankBalancer.MinFuel, ModuleTankBalancer.MaxFuel);
+            }
+
+            double vac;
+            GUILayout.Label("Δv statku (próżnia): " + (StockDeltaV.TotalVac(out vac) ? Ms(vac) : "–") + "  – porównaj z zakładką Misja.");
+
+            if (GUILayout.Button("Zastosuj zbiorniki i przelicz Sojuza"))
+            {
+                foreach (EngineGroup g in new[] { id.boosters, id.core, id.upper })
+                    if (g != null && g.tanks.Count > 0) g.dry = sDry;
+                if (id.upper != null && id.upper.tanks.Count > 0) id.upper.fuel = sUpperFuel;
+
+                ApplyGroups(false);
+                Refresh();
+                RunSoyuzSolve();
+            }
+            GUILayout.Label("Po zmianie zbiorników mod od razu przelicza ISP i ciąg, żeby czasy pracy i TWR zostały jak w Sojuzie.");
+            GUILayout.EndVertical();
+        }
+
+        private void RunSoyuzSolve()
+        {
+            double tb, tc, twr, tu;
+            if (!TryNum(sBooster, out tb) || !TryNum(sCore, out tc) || !TryNum(sTwr, out twr) || tb <= 0 || tc <= 0 || twr <= 0)
+            {
+                status = "Wpisz poprawne czasy pracy i TWR.";
+                return;
+            }
+            if (tc <= tb)
+            {
+                status = "Rdzeń musi pracować dłużej niż boczne bloki.";
+                return;
+            }
+            if (!TryNum(sUpper, out tu) || tu <= 0) tu = SoyuzTemplate.UpperTime;
+
+            BalancerSettings.BoosterTime = tb;
+            BalancerSettings.CoreTime = tc;
+            BalancerSettings.LiftoffTwr = twr;
+            BalancerSettings.UpperTime = tu;
+            BalancerSettings.Save();
+
+            Refresh();
+            SoyuzTemplate.Result r = SoyuzTemplate.Solve(groups, CurrentTwr(), tb, tc, twr, BalancerSettings.DoUpper, tu);
+            if (r.ok) ApplyGroups(false);
+            status = r.message + (r.ok ? "\nZastosowano. Liczby w stockowym oknie Delta-V odświeżą się za chwilę." : "");
         }
 
         private void DrawFlightOptions()

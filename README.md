@@ -7,8 +7,8 @@ Mod do **Kerbal Space Program 1.12** do dostrajania silników w grze. Dzięki ni
 Okno otwierane klawiszem **F8**, w VAB/SPH i w locie:
 
 - **Statek** – mnożniki **ISP ×** i **Ciąg ×** dla wszystkich silników naraz, dopasowanie całkowitej Δv do zadanej wartości.
-- **Grupy** – osobne mnożniki dla każdej grupy silników. Grupa to silniki odpalane i odrzucane w tych samych stage'ach, więc np. boczne bloki są osobno od rdzenia, nawet przy tych samych częściach. Pokazuje czas pracy przed i po zmianie oraz przycisk „Dopasuj czas pracy”.
-- **Sojuz** – automat dla układu R-7: wspólne ISP dla bocznych bloków i rdzenia, osobny ciąg dla każdego, dobrane tak, żeby czasy pracy (118 s / 286 s) i TWR na starcie (≈1,35) zgadzały się z oryginałem. Opcjonalnie też czas pracy III stopnia.
+- **Grupy** – osobne mnożniki dla każdej grupy silników oraz **masa pustych zbiorników ×** i **paliwo ×** dla zbiorników tej grupy. Grupa to silniki odpalane i odrzucane w tych samych stage'ach, więc np. boczne bloki są osobno od rdzenia, nawet przy tych samych częściach. Pokazuje czas pracy przed i po zmianie oraz przycisk „Dopasuj czas pracy”.
+- **Sojuz** – automat dla układu R-7: wspólne ISP dla bocznych bloków i rdzenia, osobny ciąg dla każdego, dobrane tak, żeby czasy pracy (118 s / 286 s) i TWR na starcie (≈1,35) zgadzały się z oryginałem. Opcjonalnie też czas pracy III stopnia. Sekcja „Zbiorniki” pozwala odchudzić puste zbiorniki i dolać paliwa III stopnia, a potem od razu przelicza ISP i ciąg.
 - **Misja** – kalkulator Δv potrzebnej na orbitę, do księżyca albo na planetę, liczony z parametrów planet w grze (Sol, RSS, stock). Porównanie z Δv rakiety.
 - **Presety** – zapis i wczytanie ustawień wszystkich grup pod nazwą rakiety.
 
@@ -39,6 +39,7 @@ Projekt `RSSBalancer.csproj` (.NET Framework 4.7.2) korzysta z bibliotek KSP z `
 | Plik | Co robi |
 |---|---|
 | `ModuleEngineBalancer.cs` | moduł silnika: mnożniki ISP i ciągu, zapis w save |
+| `ModuleTankBalancer.cs` | moduł zbiornika: masa pustego ×, paliwo × |
 | `EngineBalancer.cs` | okno F8 z zakładkami |
 | `EngineGroups.cs` | grupowanie silników po odpaleniu i odrzucie |
 | `SoyuzTemplate.cs` | automat R-7 / Sojuz |

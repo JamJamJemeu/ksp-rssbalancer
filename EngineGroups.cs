@@ -21,6 +21,11 @@ namespace RSSBalancer
 
         public float isp = 1f, thrust = 1f;               // suwaki
         public float appliedIsp = 1f, appliedThrust = 1f; // to, co jest teraz na silnikach
+
+        // Zbiorniki odrzucane razem z grupą (moduł ModuleTankBalancer)
+        public readonly List<ModuleTankBalancer> tanks = new List<ModuleTankBalancer>();
+        public float dry = 1f, fuel = 1f;                 // suwaki
+        public float appliedDry = 1f, appliedFuel = 1f;   // to, co jest teraz na zbiornikach
         public bool mixed;                                 // silniki w grupie mają różne wartości
         public string targetTime = "";
 
@@ -44,13 +49,20 @@ namespace RSSBalancer
         /// <summary>Czas pracy ∝ ISP / ciąg (przepływ paliwa = ciąg / ISP). Dokładne dla grupy z własnym paliwem.</summary>
         public double BurnTimeAfter(double now)
         {
-            return now * (isp / appliedIsp) * (appliedThrust / thrust);
+            return now * (fuel / appliedFuel) * (isp / appliedIsp) * (appliedThrust / thrust);
         }
 
-        public bool Changed
+        public bool EnginesChanged
         {
             get { return !Mathf.Approximately(isp, appliedIsp) || !Mathf.Approximately(thrust, appliedThrust); }
         }
+
+        public bool TanksChanged
+        {
+            get { return !Mathf.Approximately(dry, appliedDry) || !Mathf.Approximately(fuel, appliedFuel); }
+        }
+
+        public bool Changed { get { return EnginesChanged || TanksChanged; } }
     }
 
     public static class EngineGroups
@@ -255,6 +267,24 @@ namespace RSSBalancer
                     HashSet<Part> decs = new HashSet<Part>();
                     foreach (Part p in g.parts) decs.Add(JettisonDecoupler(p));
                     g.propMass = FuelMass(parts, decs, PropellantNames(g.parts));
+
+                    // Zbiorniki tej grupy i ich obecne mnożniki.
+                    foreach (Part p in parts)
+                    {
+                        if (p == null || !decs.Contains(JettisonDecoupler(p))) continue;
+                        ModuleTankBalancer t = p.FindModuleImplementing<ModuleTankBalancer>();
+                        if (t != null) g.tanks.Add(t);
+                    }
+                    if (g.tanks.Count > 0)
+                    {
+                        EngineGroup prev;
+                        old.TryGetValue(g.Key, out prev);
+                        g.appliedDry = g.tanks[0].dryMassMultiplier;
+                        g.appliedFuel = g.tanks[0].fuelMultiplier;
+                        bool keep = prev != null && prev.TanksChanged;
+                        g.dry = keep ? prev.dry : g.appliedDry;
+                        g.fuel = keep ? prev.fuel : g.appliedFuel;
+                    }
                 }
             }
 
@@ -270,6 +300,21 @@ namespace RSSBalancer
 
             Dictionary<string, EngineGroup> byKey = new Dictionary<string, EngineGroup>();
             foreach (EngineGroup g in groups) byKey[g.Key] = g;
+
+            // Zbiorniki – tylko w grupach, w których ruszono suwaki zbiorników
+            // (kilka grup może dzielić te same zbiorniki, np. boczne bloki i ich silniczki odrzutu).
+            foreach (EngineGroup g in groups)
+            {
+                if (!g.TanksChanged) continue;
+                foreach (ModuleTankBalancer t in g.tanks)
+                {
+                    if (t == null) continue;
+                    t.dryMassMultiplier = g.dry;
+                    t.fuelMultiplier = g.fuel;
+                    t.ApplyDry();
+                    t.ApplyFuel();
+                }
+            }
 
             foreach (Part p in parts)
             {
@@ -293,7 +338,11 @@ namespace RSSBalancer
                         e.thrustPercentage = 100f;
             }
 
-            foreach (EngineGroup g in groups) { g.appliedIsp = g.isp; g.appliedThrust = g.thrust; g.mixed = false; }
+            foreach (EngineGroup g in groups)
+            {
+                g.appliedIsp = g.isp; g.appliedThrust = g.thrust; g.mixed = false;
+                g.appliedDry = g.dry; g.appliedFuel = g.fuel;
+            }
             ModuleEngineBalancer.NotifyEditor();
         }
     }
