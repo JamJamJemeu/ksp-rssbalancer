@@ -10,7 +10,7 @@ Okno otwierane klawiszem **F8**, w VAB/SPH i w locie:
 - **Grupy** – osobne mnożniki dla każdej grupy silników oraz **masa pustych zbiorników ×** i **paliwo ×** dla zbiorników tej grupy. Grupa to silniki odpalane i odrzucane w tych samych stage'ach, więc np. boczne bloki są osobno od rdzenia, nawet przy tych samych częściach. Pokazuje czas pracy przed i po zmianie oraz przycisk „Dopasuj czas pracy”.
 - **Sojuz** – automat dla układu R-7: wspólne ISP dla bocznych bloków i rdzenia, osobny ciąg dla każdego, dobrane tak, żeby czasy pracy (118 s / 286 s) i TWR na starcie (≈1,35) zgadzały się z oryginałem. Opcjonalnie też czas pracy III stopnia. Sekcja „Zbiorniki” pozwala odchudzić puste zbiorniki i dolać paliwa III stopnia, a potem od razu przelicza ISP i ciąg.
 - **Misja** – kalkulator Δv potrzebnej na orbitę, do księżyca albo na planetę, liczony z parametrów planet w grze (Sol, RSS, stock). Porównanie z Δv rakiety.
-- **Presety** – zapis i wczytanie ustawień wszystkich grup pod nazwą rakiety.
+- **Presety** – zapis i wczytanie ustawień wszystkich grup pod nazwą rakiety (silniki i zbiorniki). Gotowe presety z plików w `PluginData/Presets/*.cfg` wczytuje przycisk „Wczytaj presety ponownie” – bez restartu gry.
 
 W locie, automatycznie dla rozpoznanego układu Sojuza:
 

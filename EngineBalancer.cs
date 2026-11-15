@@ -566,7 +566,15 @@ namespace RSSBalancer
 
         private void DrawPresetsTab()
         {
-            GUILayout.Label("Preset zapamiętuje ISP × i Ciąg × każdej grupy silników.");
+            GUILayout.Label("Preset zapamiętuje ISP × i Ciąg × każdej grupy silników oraz masę pustych × i paliwo × jej zbiorników.");
+            if (GUILayout.Button("Wczytaj presety ponownie (bez restartu gry)"))
+            {
+                int n = PresetStore.Reload();
+                pendingDelete = null;
+                status = string.IsNullOrEmpty(PresetStore.LastError)
+                    ? "Wczytano presety: " + n + " (presets.cfg + folder PluginData\\Presets)."
+                    : PresetStore.LastError;
+            }
 
             GUILayout.BeginHorizontal();
             presetName = GUILayout.TextField(presetName ?? "", 40, GUILayout.ExpandWidth(true));
@@ -584,7 +592,12 @@ namespace RSSBalancer
                     Refresh();
                     List<StagePreset> list = new List<StagePreset>();
                     foreach (EngineGroup g in groups)
-                        list.Add(new StagePreset { stage = g.ignition, jettison = g.jettison, isp = g.appliedIsp, thrust = g.appliedThrust });
+                        list.Add(new StagePreset
+                        {
+                            stage = g.ignition, jettison = g.jettison, isp = g.appliedIsp, thrust = g.appliedThrust,
+                            dry = g.tanks.Count > 0 ? g.appliedDry : float.NaN,
+                            fuel = g.tanks.Count > 0 ? g.appliedFuel : float.NaN
+                        });
 
                     bool existed = PresetStore.Find(name) != null;
                     status = PresetStore.SaveOrUpdate(name, list)
@@ -604,7 +617,8 @@ namespace RSSBalancer
             foreach (Preset p in new List<Preset>(PresetStore.Presets))
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(p.name + "  (" + p.Summary() + ")", GUILayout.ExpandWidth(true));
+                GUILayout.Label(p.name + "  (" + p.Summary() + ")" +
+                                (string.IsNullOrEmpty(p.description) ? "" : "\n" + p.description), GUILayout.ExpandWidth(true));
 
                 if (GUILayout.Button("Wczytaj", GUILayout.Width(65f)))
                 {
@@ -621,9 +635,12 @@ namespace RSSBalancer
                         pendingDelete = null;
                     }
                 }
-                else if (GUILayout.Button("Usuń", GUILayout.Width(75f)))
+                else
                 {
-                    pendingDelete = p;
+                    GUI.enabled = !p.ReadOnly;
+                    if (GUILayout.Button(p.ReadOnly ? "z pliku" : "Usuń", GUILayout.Width(75f)))
+                        pendingDelete = p;
+                    GUI.enabled = true;
                 }
                 GUILayout.EndHorizontal();
             }
@@ -657,6 +674,11 @@ namespace RSSBalancer
                     if (sp.jettison != StagePreset.AnyJettison && g.jettison != sp.jettison) continue;
                     g.isp = sp.isp;
                     g.thrust = sp.thrust;
+                    if (g.tanks.Count > 0 && HighLogic.LoadedSceneIsEditor)
+                    {
+                        if (!float.IsNaN(sp.dry)) g.dry = sp.dry;
+                        if (!float.IsNaN(sp.fuel)) g.fuel = sp.fuel;
+                    }
                     any = true;
                 }
                 if (any) matched++;
