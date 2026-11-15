@@ -142,10 +142,16 @@ namespace RSSBalancer
         /// </summary>
         public static double FuelMass(List<Part> allParts, Part decoupler, HashSet<string> names)
         {
+            return FuelMass(allParts, new HashSet<Part> { decoupler }, names);
+        }
+
+        /// <summary>Jak wyżej, ale dla kilku odłączaczy naraz – np. cztery boczne bloki, każdy z własnym odłączaczem.</summary>
+        public static double FuelMass(List<Part> allParts, HashSet<Part> decouplers, HashSet<string> names)
+        {
             double m = 0.0;
             foreach (Part p in allParts)
             {
-                if (p == null || JettisonDecoupler(p) != decoupler) continue;
+                if (p == null || !decouplers.Contains(JettisonDecoupler(p))) continue;
                 foreach (PartResource r in p.Resources)
                     if (r != null && r.info != null && names.Contains(r.resourceName))
                         m += r.amount * r.info.density;
@@ -244,7 +250,12 @@ namespace RSSBalancer
                 g.massFlow = 0.0;
                 foreach (Part p in g.parts) g.massFlow += MassFlow(p);
                 if (parts != null && g.parts.Count > 0)
-                    g.propMass = FuelMass(parts, JettisonDecoupler(g.parts[0]), PropellantNames(g.parts));
+                {
+                    // Każdy silnik grupy może mieć własny odłączacz (np. 4 boczne bloki) – liczymy paliwo ze wszystkich.
+                    HashSet<Part> decs = new HashSet<Part>();
+                    foreach (Part p in g.parts) decs.Add(JettisonDecoupler(p));
+                    g.propMass = FuelMass(parts, decs, PropellantNames(g.parts));
+                }
             }
 
             List<EngineGroup> list = new List<EngineGroup>(found.Values);
