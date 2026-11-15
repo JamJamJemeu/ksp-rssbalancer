@@ -177,7 +177,7 @@ namespace RSSBalancer
             bool hasVac = StockDeltaV.TotalVac(out vac);
             bool hasAsl = StockDeltaV.TotalAsl(out asl);
             GUILayout.Label("Δv statku: " + (hasVac ? Ms(vac) : "–") + " (próżnia), " + (hasAsl ? Ms(asl) : "–") + " (poziom morza)");
-            GUILayout.Label("TWR na starcie: " + Twr(StockDeltaV.LiftoffTwr()));
+            GUILayout.Label("TWR na starcie: " + Twr(CurrentTwr()));
 
             GUILayout.BeginHorizontal();
             GUILayout.Label("Dopasuj Δv (próżnia) do:", GUILayout.Width(170f));
@@ -204,7 +204,7 @@ namespace RSSBalancer
             }
 
             GUILayout.Label("Grupa = silniki odpalane i odrzucane w tych samych stage'ach (np. boczne bloki osobno od rdzenia).");
-            GUILayout.Label("TWR na starcie: " + Twr(StockDeltaV.LiftoffTwr()) + PreviewTwrSuffix());
+            GUILayout.Label("TWR na starcie: " + Twr(CurrentTwr()) + PreviewTwrSuffix());
 
             groupScroll = GUILayout.BeginScrollView(groupScroll, GUILayout.Height(Mathf.Min(430f, 190f * groups.Count)));
             foreach (EngineGroup g in groups)
@@ -244,7 +244,7 @@ namespace RSSBalancer
                 }
                 else
                 {
-                    GUILayout.Label("Czas pracy: brak danych (otwórz stockowe okno Delta-V).");
+                    GUILayout.Label("Czas pracy: brak danych (brak paliwa albo silnik wyłączony).");
                 }
                 GUILayout.EndVertical();
             }
@@ -267,7 +267,7 @@ namespace RSSBalancer
 
         private string PreviewTwrSuffix()
         {
-            double twr0 = StockDeltaV.LiftoffTwr();
+            double twr0 = CurrentTwr();
             if (twr0 <= 0 || groups.Count == 0) return "";
 
             int launch = int.MinValue;
@@ -300,7 +300,7 @@ namespace RSSBalancer
                 GUILayout.Label(id.upper != null
                     ? "III stopień:  " + id.upper.Label + "  ·  teraz " + Sec(id.upper.BurnTimeNow)
                     : "III stopień: nie znaleziono");
-                GUILayout.Label("TWR na starcie: teraz " + Twr(StockDeltaV.LiftoffTwr()));
+                GUILayout.Label("TWR na starcie: teraz " + Twr(CurrentTwr()));
             }
             else
             {
@@ -345,7 +345,7 @@ namespace RSSBalancer
                     BalancerSettings.LiftoffTwr = twr;
                     BalancerSettings.UpperTime = tu;
                     BalancerSettings.Save();
-                    SoyuzTemplate.Result r = SoyuzTemplate.Solve(groups, tb, tc, twr, BalancerSettings.DoUpper, tu);
+                    SoyuzTemplate.Result r = SoyuzTemplate.Solve(groups, CurrentTwr(), tb, tc, twr, BalancerSettings.DoUpper, tu);
                     if (r.ok) ApplyGroups(false);
                     status = r.message + (r.ok ? "\nZastosowano. Liczby w stockowym oknie Delta-V odświeżą się za chwilę." : "");
                 }
@@ -641,6 +641,20 @@ namespace RSSBalancer
         }
 
         // ================================================================== pomocnicze
+
+        private double CurrentTwr()
+        {
+            return EngineGroups.LiftoffTwr(GetParts(), TotalMass(), groups, LaunchBody());
+        }
+
+        private static double TotalMass()
+        {
+            if (HighLogic.LoadedSceneIsEditor && EditorLogic.fetch != null && EditorLogic.fetch.ship != null)
+                return EditorLogic.fetch.ship.GetTotalMass();
+            if (HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null)
+                return FlightGlobals.ActiveVessel.GetTotalMass();
+            return 0.0;
+        }
 
         private static CelestialBody LaunchBody()
         {

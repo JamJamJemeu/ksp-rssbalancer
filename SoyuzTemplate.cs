@@ -74,18 +74,18 @@ namespace RSSBalancer
         }
 
         /// <summary>Ustawia suwaki grup (bez stosowania). Zwraca opis wyniku.</summary>
-        public static Result Solve(List<EngineGroup> groups, double tBooster, double tCore, double twr, bool doUpper, double tUpper)
+        public static Result Solve(List<EngineGroup> groups, double twr0, double tBooster, double tCore, double twr, bool doUpper, double tUpper)
         {
             Result r = Identify(groups);
             if (!r.ok) return r;
 
             EngineGroup B = r.boosters, C = r.core;
-            double tb0 = B.BurnTimeNow, tc0 = C.BurnTimeNow, twr0 = StockDeltaV.LiftoffTwr();
+            double tb0 = B.BurnTimeNow, tc0 = C.BurnTimeNow;
 
             if (tb0 <= 0 || tc0 <= 0 || twr0 <= 0 || B.thrustAsl <= 0 || C.thrustAsl <= 0)
             {
                 r.ok = false;
-                r.message = "Brak danych o czasie pracy / TWR (otwórz stockowe okno Delta-V w VAB i poczekaj chwilę na przeliczenie).";
+                r.message = "Brak danych o czasie pracy / TWR – sprawdź, czy bloki i rdzeń mają paliwo.";
                 return r;
             }
 

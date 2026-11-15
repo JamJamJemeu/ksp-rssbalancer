@@ -225,11 +225,20 @@ namespace RSSBalancer
             return false;
         }
 
-        /// <summary>Pozostały czas pracy bieżącego stage'u (ze stockowych statystyk) – po odrzucie bloków to czas rdzenia.</summary>
-        private static double CoreRemaining(Vessel v)
+        /// <summary>Pozostały czas pracy rdzenia: paliwo w jego zbiornikach ÷ obecny przepływ (z przepustnicą).</summary>
+        private double CoreRemaining(Vessel v)
         {
-            DeltaVStageInfo s = StockDeltaV.Stage(v.currentStage);
-            return s != null ? s.stageBurnTime : -1.0;
+            if (coreDecoupler == null || coreDecoupler.vessel != v) return -1.0;
+            float throttle = v.ctrlState != null ? v.ctrlState.mainThrottle : 1f;
+            if (throttle <= 0.01f) return -1.0;
+
+            double flow = 0.0;
+            foreach (Part p in coreParts)
+                if (p != null && p.vessel == v) flow += EngineGroups.MassFlow(p);
+            flow *= throttle;
+            if (flow <= 0.0) return -1.0;
+
+            return EngineGroups.FuelMass(v.parts, coreDecoupler, EngineGroups.PropellantNames(coreParts)) / flow;
         }
 
         // ================================================================== oś czasu

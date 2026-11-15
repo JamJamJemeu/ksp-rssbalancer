@@ -15,6 +15,8 @@ namespace RSSBalancer
         public int engines;
         public string title = "";
         public double thrustAsl;       // aktualny ciąg grupy na poziomie morza [kN]
+        public double propMass;        // paliwo dostępne dla grupy [t] (zbiorniki odrzucane razem z nią)
+        public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
         public readonly List<Part> parts = new List<Part>(); // części z silnikami w tej grupie
 
         public float isp = 1f, thrust = 1f;               // suwaki
@@ -33,7 +35,11 @@ namespace RSSBalancer
             }
         }
 
-        public double BurnTimeNow { get { return StockDeltaV.GroupBurnTime(ignition, jettison); } }
+        /// <summary>
+        /// Czas pracy liczony przez mod: paliwo ÷ przepływ (bez stockowego kalkulatora Δv,
+        /// który myli się przy stagingu z osobnym stage'em klamer startowych).
+        /// </summary>
+        public double BurnTimeNow { get { return massFlow > 0 ? propMass / massFlow : 0.0; } }
 
         /// <summary>Czas pracy ∝ ISP / ciąg (przepływ paliwa = ciąg / ISP). Dokładne dla grupy z własnym paliwem.</summary>
         public double BurnTimeAfter(double now)
@@ -88,20 +94,97 @@ namespace RSSBalancer
                 if (!a.isDecoupled) a.Decouple();
         }
 
-        /// <summary>Ciąg części na poziomie morza (1 atm) [kN], z obecnymi mnożnikami i limiterem. Przy silnikach wielotrybowych – najmocniejszy tryb.</summary>
+        public const double G0 = 9.80665;
+
+        /// <summary>Przepływ paliwa części przy pełnym ciągu [t/s], z mnożnikami i limiterem. Przy silnikach wielotrybowych – najmocniejszy tryb.</summary>
+        public static double MassFlow(Part p)
+        {
+            double best = 0.0;
+            foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+            {
+                double f = e.maxFuelFlow * (e.thrustPercentage / 100.0);
+                if (f > best) best = f;
+            }
+            return best;
+        }
+
+        /// <summary>Ciąg części na poziomie morza (1 atm) [kN] = przepływ × ISP(1 atm) × g0.</summary>
         public static double ThrustAsl(Part p)
         {
             double best = 0.0;
             foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
             {
                 if (e.atmosphereCurve == null) continue;
-                float vac = e.atmosphereCurve.Evaluate(0f);
-                float asl = e.atmosphereCurve.Evaluate(1f);
-                if (vac <= 0f) continue;
-                double f = e.maxThrust * (asl / vac) * (e.thrustPercentage / 100.0);
+                double f = e.maxFuelFlow * (e.thrustPercentage / 100.0) * e.atmosphereCurve.Evaluate(1f) * G0;
                 if (f > best) best = f;
             }
             return best;
+        }
+
+        /// <summary>Nazwy paliw, których używają silniki z listy (bez prądu).</summary>
+        public static HashSet<string> PropellantNames(List<Part> engineParts)
+        {
+            HashSet<string> names = new HashSet<string>();
+            foreach (Part p in engineParts)
+            {
+                if (p == null) continue;
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                    if (e.propellants != null)
+                        foreach (Propellant pr in e.propellants)
+                            if (pr != null && pr.name != "ElectricCharge") names.Add(pr.name);
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// Masa paliwa [t] w częściach odrzucanych razem przez ten sam odłączacz
+        /// (np. zbiornik bocznego bloku; zbiornik rdzenia). Zakłada brak przelewu paliwa między blokami a rdzeniem – jak w R-7.
+        /// </summary>
+        public static double FuelMass(List<Part> allParts, Part decoupler, HashSet<string> names)
+        {
+            double m = 0.0;
+            foreach (Part p in allParts)
+            {
+                if (p == null || JettisonDecoupler(p) != decoupler) continue;
+                foreach (PartResource r in p.Resources)
+                    if (r != null && r.info != null && names.Contains(r.resourceName))
+                        m += r.amount * r.info.density;
+            }
+            return m;
+        }
+
+        private static bool IsClampRelated(Part p)
+        {
+            Part cur = p;
+            int guard = 0;
+            while (cur != null && guard++ < 500)
+            {
+                if (cur.FindModuleImplementing<LaunchClamp>() != null) return true;
+                cur = cur.parent;
+            }
+            return false;
+        }
+
+        /// <summary>TWR na starcie: ciąg grup odpalanych na starcie (1 atm) ÷ ciężar rakiety bez klamer startowych.</summary>
+        public static double LiftoffTwr(List<Part> parts, double totalMass, List<EngineGroup> groups, CelestialBody body)
+        {
+            if (parts == null || groups == null || groups.Count == 0 || body == null || totalMass <= 0) return 0.0;
+
+            double mass = totalMass;
+            foreach (Part p in parts)
+                if (p != null && IsClampRelated(p))
+                    mass -= p.mass + p.GetResourceMass();
+            if (mass <= 0) return 0.0;
+
+            int launch = int.MinValue;
+            foreach (EngineGroup g in groups) launch = System.Math.Max(launch, g.ignition);
+
+            double thrust = 0.0;
+            foreach (EngineGroup g in groups)
+                if (g.ignition == launch) thrust += g.thrustAsl;
+
+            double gSurf = body.gravParameter / (body.Radius * body.Radius);
+            return thrust / (mass * gSurf);
         }
 
         /// <summary>Buduje grupy z części statku. Niezatwierdzone zmiany suwaków z poprzedniej listy zostają.</summary>
@@ -153,6 +236,15 @@ namespace RSSBalancer
                     g.thrustAsl += ThrustAsl(p);
                     g.parts.Add(p);
                 }
+            }
+
+            // Paliwo i przepływ każdej grupy.
+            foreach (EngineGroup g in found.Values)
+            {
+                g.massFlow = 0.0;
+                foreach (Part p in g.parts) g.massFlow += MassFlow(p);
+                if (parts != null && g.parts.Count > 0)
+                    g.propMass = FuelMass(parts, JettisonDecoupler(g.parts[0]), PropellantNames(g.parts));
             }
 
             List<EngineGroup> list = new List<EngineGroup>(found.Values);
