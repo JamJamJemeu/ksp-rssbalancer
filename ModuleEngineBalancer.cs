@@ -15,7 +15,7 @@ namespace RSSBalancer
         public const float MinIspMult = 0.1f;
         public const float MaxIspMult = 5f;
         public const float MinThrustMult = 0.1f;
-        public const float MaxThrustMult = 3f;
+        public const float MaxThrustMult = 5f;
 
         [KSPField(isPersistant = true, guiActive = true, guiActiveEditor = true, guiName = "ISP ×", guiFormat = "F2")]
         [UI_FloatRange(minValue = MinIspMult, maxValue = MaxIspMult, stepIncrement = 0.05f,

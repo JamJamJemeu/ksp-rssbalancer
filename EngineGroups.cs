@@ -17,6 +17,7 @@ namespace RSSBalancer
         public double thrustAsl;       // aktualny ciąg grupy na poziomie morza [kN]
         public double propMass;        // paliwo dostępne dla grupy [t] (zbiorniki odrzucane razem z nią)
         public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
+        public double ispVac;          // ISP w próżni głównego silnika grupy [s] (z obecnymi mnożnikami)
         public readonly List<Part> parts = new List<Part>(); // części z silnikami w tej grupie
 
         public float isp = 1f, thrust = 1f;               // suwaki
@@ -260,7 +261,17 @@ namespace RSSBalancer
             foreach (EngineGroup g in found.Values)
             {
                 g.massFlow = 0.0;
-                foreach (Part p in g.parts) g.massFlow += MassFlow(p);
+                g.ispVac = 0.0;
+                double bestFlow = -1.0;
+                foreach (Part p in g.parts)
+                {
+                    double f = MassFlow(p);
+                    g.massFlow += f;
+                    // ISP z silnika o największym przepływie (główny silnik, nie vernier).
+                    if (f > bestFlow)
+                        foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                            if (e.atmosphereCurve != null) { bestFlow = f; g.ispVac = e.atmosphereCurve.Evaluate(0f); break; }
+                }
                 if (parts != null && g.parts.Count > 0)
                 {
                     // Każdy silnik grupy może mieć własny odłączacz (np. 4 boczne bloki) – liczymy paliwo ze wszystkich.

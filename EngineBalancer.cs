@@ -303,10 +303,10 @@ namespace RSSBalancer
             GUILayout.BeginVertical("box");
             if (id.ok)
             {
-                GUILayout.Label("Boczne bloki:  " + id.boosters.Label + "  ·  teraz " + Sec(id.boosters.BurnTimeNow));
-                GUILayout.Label("Rdzeń:  " + id.core.Label + "  ·  teraz " + Sec(id.core.BurnTimeNow));
+                GUILayout.Label("Boczne bloki:  " + id.boosters.Label + "  ·  teraz " + Sec(id.boosters.BurnTimeNow) + ", ISP " + Sec(id.boosters.ispVac) + " (oryg. ≈320 s)");
+                GUILayout.Label("Rdzeń:  " + id.core.Label + "  ·  teraz " + Sec(id.core.BurnTimeNow) + ", ISP " + Sec(id.core.ispVac) + " (oryg. ≈320 s)");
                 GUILayout.Label(id.upper != null
-                    ? "III stopień:  " + id.upper.Label + "  ·  teraz " + Sec(id.upper.BurnTimeNow)
+                    ? "III stopień:  " + id.upper.Label + "  ·  teraz " + Sec(id.upper.BurnTimeNow) + ", ISP " + Sec(id.upper.ispVac) + " (oryg. 326–359 s)"
                     : "III stopień: nie znaleziono");
                 GUILayout.Label("TWR na starcie: teraz " + Twr(CurrentTwr()));
             }
