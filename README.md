@@ -17,6 +17,7 @@ W locie, automatycznie dla rozpoznanego układu Sojuza:
 - **Krzyż Korolewa** – odrzucone boczne bloki odchylają się ogonem na zewnątrz i odpadają na boki.
 - **Gorące rozdzielenie** – III stopień odpala się chwilę przed wypaleniem rdzenia.
 - **Oś czasu lotu** – czasy odrzutu bloków, rdzenia i końca pracy III stopnia w porównaniu z oryginałem.
+- **Dziennik lotu (CSV)** – dla każdej rakiety zapisuje co sekundę wszystko, co da się odczytać: pozycję, prędkości, przeciążenie, orbitę, orientację, atmosferę, sterowanie, ciąg, masę, TWR, Δv, zasoby, najgorętsze części oraz osobno dla każdej grupy silników (ciąg, ISP, paliwo, pozostały czas). Zdarzenia: staging, zapłony i zgaśnięcia, odłączenia, zniszczenia, przegrzania, krzyż Korolewa, gorące rozdzielenie. Pliki w `PluginData/Logs/`.
 
 Mnożniki są zapisywane per silnik w save i w pliku statku. Prefab części nie jest zmieniany. Zmiana ISP nie zmienia ciągu: przepływ paliwa jest przeliczany. Zmiana ciągu nie zmienia ISP.
 
@@ -44,6 +45,7 @@ Projekt `RSSBalancer.csproj` (.NET Framework 4.7.2) korzysta z bibliotek KSP z `
 | `EngineGroups.cs` | grupowanie silników po odpaleniu i odrzucie |
 | `SoyuzTemplate.cs` | automat R-7 / Sojuz |
 | `FlightFeatures.cs` | krzyż Korolewa, gorące rozdzielenie, oś czasu lotu |
+| `FlightLogger.cs` | dziennik lotu (CSV) |
 | `DeltaVPlanner.cs` | kalkulator Δv misji |
 | `StockDeltaV.cs` | odczyt stockowych statystyk Δv / TWR / czasu pracy |
 | `PresetStore.cs`, `BalancerSettings.cs` | presety i ustawienia |

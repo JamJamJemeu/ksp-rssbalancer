@@ -107,7 +107,7 @@ namespace RSSBalancer
                 if (p == null) { boosterParts.RemoveAt(i); continue; }
                 if (p.vessel == null || p.vessel == v) continue;
 
-                if (tBoosterSep < 0) tBoosterSep = v.missionTime;
+                if (tBoosterSep < 0) { tBoosterSep = v.missionTime; FlightLogger.Event("Sojuz: odrzut bocznych bloków (cel " + BalancerSettings.BoosterTime.ToString("F0") + " s)"); }
                 if (BalancerSettings.KorolevCross && !kicked.Contains(p.vessel))
                 {
                     kicked.Add(p.vessel);
@@ -122,7 +122,10 @@ namespace RSSBalancer
 
             // --- odrzut rdzenia ---
             if (tCoreSep < 0 && coreParts.Count > 0 && !AnyAttached(coreParts, v))
+            {
                 tCoreSep = v.missionTime;
+                FlightLogger.Event("Sojuz: odrzut rdzenia (cel " + BalancerSettings.CoreTime.ToString("F0") + " s)");
+            }
 
             // --- gorące rozdzielenie: odpal III stopień tuż przed wypaleniem rdzenia ---
             if (BalancerSettings.HotStaging && !hotFired && boostersGone && tCoreSep < 0 &&
@@ -137,6 +140,7 @@ namespace RSSBalancer
                                 if (!e.EngineIgnited) e.Activate();
                     hotFired = true;
                     tHotStaging = v.missionTime;
+                    FlightLogger.Event("gorące rozdzielenie: zapłon III stopnia, rdzeniowi zostało " + rem.ToString("F1") + " s");
                 }
             }
 
@@ -146,6 +150,7 @@ namespace RSSBalancer
             if (BalancerSettings.AutoCoreSeparation && hotFired && !autoSepDone && tCoreSep < 0 && !Running(coreParts, v))
             {
                 autoSepDone = true;
+                FlightLogger.Event("mod: automatyczny odrzut rdzenia");
                 if (coreDecoupler != null && coreDecoupler.vessel == v) EngineGroups.Decouple(coreDecoupler);
                 else StageManager.ActivateNextStage();
             }
@@ -155,7 +160,7 @@ namespace RSSBalancer
             {
                 bool on = Running(upperParts, v);
                 if (on) upperWasOn = true;
-                else if (upperWasOn) tUpperOff = v.missionTime;
+                else if (upperWasOn) { tUpperOff = v.missionTime; FlightLogger.Event("Sojuz: koniec pracy III stopnia"); }
             }
         }
 
@@ -187,6 +192,7 @@ namespace RSSBalancer
             if (force <= 0f) return;
 
             kicks.Add(new Kick { top = top, bottom = bottom, dir = radial.normalized, force = force, start = Time.time });
+            FlightLogger.Event("krzyż Korolewa: " + booster.vesselName + ", " + mass.ToString("F1") + " t, siła " + force.ToString("F0") + " kN");
         }
 
         private void ApplyKicks()

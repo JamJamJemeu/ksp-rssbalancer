@@ -191,6 +191,14 @@ namespace RSSBalancer
             }
             GUILayout.EndHorizontal();
             GUILayout.Label("Mnoży ISP wszystkich grup o ten sam współczynnik – dokładne, bo Δv rośnie razem z ISP.");
+
+            GUILayout.Space(10f);
+            bool fl = GUILayout.Toggle(BalancerSettings.FlightLog, " Zapisuj dziennik lotu (CSV, co sekundę: wysokość, prędkości, apocentrum, pochylenie, ciśnienie dynamiczne, temperatury, zdarzenia)");
+            if (fl != BalancerSettings.FlightLog) { BalancerSettings.FlightLog = fl; BalancerSettings.Save(); }
+            if (BalancerSettings.FlightLog)
+                GUILayout.Label(string.IsNullOrEmpty(FlightLogger.CurrentFile)
+                    ? "Dziennik zacznie się przy starcie. Pliki: GameData\\RSSBalancer\\PluginData\\Logs\\"
+                    : "Ostatni dziennik: " + FlightLogger.CurrentFile);
         }
 
         // ================================================================== zakładka: Grupy

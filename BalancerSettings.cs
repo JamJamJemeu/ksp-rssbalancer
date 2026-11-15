@@ -21,6 +21,7 @@ namespace RSSBalancer
         public static float HotStagingLead = 1.5f;    // s przed wypaleniem rdzenia
         public static bool AutoCoreSeparation = false;
         public static bool Timeline = true;
+        public static bool FlightLog = true;
 
         // Misja (zapamiętane między uruchomieniami; NaN = domyślne)
         public static double LaunchLatitude = 45.9;   // Bajkonur
@@ -71,6 +72,7 @@ namespace RSSBalancer
                 HotStagingLead = (float)D(n, "hotStagingLead", HotStagingLead);
                 AutoCoreSeparation = B(n, "autoCoreSeparation", AutoCoreSeparation);
                 Timeline = B(n, "timeline", Timeline);
+                FlightLog = B(n, "flightLog", FlightLog);
                 LaunchLatitude = D(n, "launchLatitude", LaunchLatitude);
                 OrbitAltKm = D(n, "orbitAltKm", OrbitAltKm);
             }
@@ -100,6 +102,7 @@ namespace RSSBalancer
                 n.AddValue("hotStagingLead", S(HotStagingLead));
                 n.AddValue("autoCoreSeparation", AutoCoreSeparation.ToString());
                 n.AddValue("timeline", Timeline.ToString());
+                n.AddValue("flightLog", FlightLog.ToString());
                 n.AddValue("launchLatitude", S(LaunchLatitude));
                 if (!double.IsNaN(OrbitAltKm)) n.AddValue("orbitAltKm", S(OrbitAltKm));
 
