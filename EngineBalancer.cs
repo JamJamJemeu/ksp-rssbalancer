@@ -56,6 +56,7 @@ namespace RSSBalancer
 
         private void Start()
         {
+            Hud.Hook();
             PresetStore.EnsureLoaded();
             BalancerSettings.EnsureLoaded();
             LoadSoyuzFields();
@@ -100,7 +101,7 @@ namespace RSSBalancer
 
         private void OnGUI()
         {
-            if (!show) return;
+            if (!show || Hud.Hidden) return;
 
             window = GUILayout.Window(WindowId, window, DrawWindow, "Engine Balancer");
 
@@ -193,6 +194,18 @@ namespace RSSBalancer
             GUILayout.Label("Mnoży ISP wszystkich grup o ten sam współczynnik – dokładne, bo Δv rośnie razem z ISP.");
 
             GUILayout.Space(10f);
+            bool tm = GUILayout.Toggle(BalancerSettings.Telemetry, " Ekran telemetrii w locie (parametry, stopnie, wykres trajektorii, porównanie z poprzednim lotem)");
+            if (tm != BalancerSettings.Telemetry) { BalancerSettings.Telemetry = tm; BalancerSettings.Save(); }
+            if (BalancerSettings.Telemetry)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(20f);
+                bool ru = GUILayout.Toggle(BalancerSettings.TelemetryRussian, " opisy po rosyjsku (jak w ЦУП)");
+                if (ru != BalancerSettings.TelemetryRussian) { BalancerSettings.TelemetryRussian = ru; BalancerSettings.Save(); }
+                bool f2 = GUILayout.Toggle(BalancerSettings.TelemetryOnF2, " zostaje po F2 (ukryty interfejs)");
+                if (f2 != BalancerSettings.TelemetryOnF2) { BalancerSettings.TelemetryOnF2 = f2; BalancerSettings.Save(); }
+                GUILayout.EndHorizontal();
+            }
             bool fl = GUILayout.Toggle(BalancerSettings.FlightLog, " Zapisuj dziennik lotu (CSV, co sekundę: wysokość, prędkości, apocentrum, pochylenie, ciśnienie dynamiczne, temperatury, zdarzenia)");
             if (fl != BalancerSettings.FlightLog) { BalancerSettings.FlightLog = fl; BalancerSettings.Save(); }
             if (BalancerSettings.FlightLog)

@@ -42,7 +42,20 @@ namespace RSSBalancer
         private readonly List<string> resources = new List<string>();
         private readonly HashSet<Part> warnedHot = new HashSet<Part>();
 
-        /// <summary>Zdarzenie od innych części moda (np. krzyż Korolewa, gorące rozdzielenie).</summary>
+        /// <summary>Foldery dzienników: folder gry, a zapasowo folder danych gry (gdy do folderu gry nie wolno pisać).</summary>
+        public static string[] LogFolders
+        {
+            get
+            {
+                return new[]
+                {
+                    Path.Combine(KSPUtil.ApplicationRootPath, "GameData", "RSSBalancer", "PluginData", "Logs"),
+                    Path.Combine(Application.persistentDataPath, "RSSBalancerLogs")
+                };
+            }
+        }
+
+        /// <summary>Zdarzenie od innych części moda (np. krzyż Korolewa, gorące rozdzielenie) – do dziennika.</summary>
         public static void Event(string text)
         {
             if (instance != null) instance.AddEvent(text);
@@ -188,13 +201,7 @@ namespace RSSBalancer
         private void Open(Vessel v)
         {
             string name = Safe(v.vesselName) + "_" + DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss", Inv) + ".csv";
-            string[] folders =
-            {
-                Path.Combine(KSPUtil.ApplicationRootPath, "GameData", "RSSBalancer", "PluginData", "Logs"),
-                Path.Combine(Application.persistentDataPath, "RSSBalancerLogs")   // gdy do folderu gry nie wolno pisać
-            };
-
-            foreach (string dir in folders)
+            foreach (string dir in LogFolders)
             {
                 try
                 {

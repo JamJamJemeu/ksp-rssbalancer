@@ -52,6 +52,7 @@ namespace RSSBalancer
 
         private void Start()
         {
+            Hud.Hook();
             BalancerSettings.EnsureLoaded();
         }
 
@@ -107,7 +108,7 @@ namespace RSSBalancer
                 if (p == null) { boosterParts.RemoveAt(i); continue; }
                 if (p.vessel == null || p.vessel == v) continue;
 
-                if (tBoosterSep < 0) { tBoosterSep = v.missionTime; FlightLogger.Event("Sojuz: odrzut bocznych bloków (cel " + BalancerSettings.BoosterTime.ToString("F0") + " s)"); }
+                if (tBoosterSep < 0) { tBoosterSep = v.missionTime; FlightLogger.Event("Sojuz: odrzut bocznych bloków (cel " + BalancerSettings.BoosterTime.ToString("F0") + " s)"); TelemetryWindow.Lamp(TelemetryWindow.LampId.BoosterSep); }
                 if (BalancerSettings.KorolevCross && !kicked.Contains(p.vessel))
                 {
                     kicked.Add(p.vessel);
@@ -125,6 +126,7 @@ namespace RSSBalancer
             {
                 tCoreSep = v.missionTime;
                 FlightLogger.Event("Sojuz: odrzut rdzenia (cel " + BalancerSettings.CoreTime.ToString("F0") + " s)");
+                TelemetryWindow.Lamp(TelemetryWindow.LampId.CoreSep);
             }
 
             // --- gorące rozdzielenie: odpal III stopień tuż przed wypaleniem rdzenia ---
@@ -141,6 +143,7 @@ namespace RSSBalancer
                     hotFired = true;
                     tHotStaging = v.missionTime;
                     FlightLogger.Event("gorące rozdzielenie: zapłon III stopnia, rdzeniowi zostało " + rem.ToString("F1") + " s");
+                    TelemetryWindow.Lamp(TelemetryWindow.LampId.UpperIgnition);
                 }
             }
 
@@ -160,7 +163,7 @@ namespace RSSBalancer
             {
                 bool on = Running(upperParts, v);
                 if (on) upperWasOn = true;
-                else if (upperWasOn) { tUpperOff = v.missionTime; FlightLogger.Event("Sojuz: koniec pracy III stopnia"); }
+                else if (upperWasOn) { tUpperOff = v.missionTime; FlightLogger.Event("Sojuz: koniec pracy III stopnia"); TelemetryWindow.Lamp(TelemetryWindow.LampId.UpperCutoff); }
             }
         }
 
@@ -192,6 +195,7 @@ namespace RSSBalancer
             if (force <= 0f) return;
 
             kicks.Add(new Kick { top = top, bottom = bottom, dir = radial.normalized, force = force, start = Time.time });
+            TelemetryWindow.Lamp(TelemetryWindow.LampId.Korolev);
             FlightLogger.Event("krzyż Korolewa: " + booster.vesselName + ", " + mass.ToString("F1") + " t, siła " + force.ToString("F0") + " kN");
         }
 
@@ -251,7 +255,7 @@ namespace RSSBalancer
 
         private void OnGUI()
         {
-            if (!BalancerSettings.Timeline || !identified || tracked == null) return;
+            if (!BalancerSettings.Timeline || Hud.Hidden || !identified || tracked == null) return;
             timelineWindow = GUILayout.Window(TimelineWindowId, timelineWindow, DrawTimeline, "Oś czasu lotu – Sojuz");
         }
 

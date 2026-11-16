@@ -22,6 +22,9 @@ namespace RSSBalancer
         public static bool AutoCoreSeparation = false;
         public static bool Timeline = true;
         public static bool FlightLog = true;
+        public static bool Telemetry = true;
+        public static bool TelemetryRussian = true;
+        public static bool TelemetryOnF2 = true;
 
         // Misja (zapamiętane między uruchomieniami; NaN = domyślne)
         public static double LaunchLatitude = 45.9;   // Bajkonur
@@ -73,6 +76,9 @@ namespace RSSBalancer
                 AutoCoreSeparation = B(n, "autoCoreSeparation", AutoCoreSeparation);
                 Timeline = B(n, "timeline", Timeline);
                 FlightLog = B(n, "flightLog", FlightLog);
+                Telemetry = B(n, "telemetry", Telemetry);
+                TelemetryRussian = B(n, "telemetryRussian", TelemetryRussian);
+                TelemetryOnF2 = B(n, "telemetryOnF2", TelemetryOnF2);
                 LaunchLatitude = D(n, "launchLatitude", LaunchLatitude);
                 OrbitAltKm = D(n, "orbitAltKm", OrbitAltKm);
             }
@@ -103,6 +109,9 @@ namespace RSSBalancer
                 n.AddValue("autoCoreSeparation", AutoCoreSeparation.ToString());
                 n.AddValue("timeline", Timeline.ToString());
                 n.AddValue("flightLog", FlightLog.ToString());
+                n.AddValue("telemetry", Telemetry.ToString());
+                n.AddValue("telemetryRussian", TelemetryRussian.ToString());
+                n.AddValue("telemetryOnF2", TelemetryOnF2.ToString());
                 n.AddValue("launchLatitude", S(LaunchLatitude));
                 if (!double.IsNaN(OrbitAltKm)) n.AddValue("orbitAltKm", S(OrbitAltKm));
 

@@ -18,6 +18,7 @@ W locie, automatycznie dla rozpoznanego układu Sojuza:
 - **Gorące rozdzielenie** – III stopień odpala się chwilę przed wypaleniem rdzenia.
 - **Oś czasu lotu** – czasy odrzutu bloków, rdzenia i końca pracy III stopnia w porównaniu z oryginałem.
 - **Dziennik lotu (CSV)** – dla każdej rakiety zapisuje co sekundę wszystko, co da się odczytać: pozycję, prędkości, przeciążenie, orbitę, orientację, atmosferę, sterowanie, ciąg, masę, TWR, Δv, zasoby, najgorętsze części oraz osobno dla każdej grupy silników (ciąg, ISP, paliwo, pozostały czas). Zdarzenia: staging, zapłony i zgaśnięcia, odłączenia, zniszczenia, przegrzania, krzyż Korolewa, gorące rozdzielenie. Pliki w `PluginData/Logs/`.
+- **Ekran telemetrii w stylu ЦУП** – okno w locie wyglądające jak radziecki pulpit (turkusowa blacha z lakierem młotkowym, bębenkowe liczniki, zielony kineskop, lampki, bursztynowa taśma zdarzeń), opisy RU/PL. Parametry lotu, pozostały czas pracy stopni i wykres trajektorii na żywo (wysokość/zasięg, wysokość, prędkość, ciśnienie dynamiczne, przeciążenie) ze znacznikami stage'ów; porównanie z poprzednim lotem z dziennika. Po F2 okna moda chowają się razem z interfejsem KSP (telemetria może zostać).
 
 Mnożniki są zapisywane per silnik w save i w pliku statku. Prefab części nie jest zmieniany. Zmiana ISP nie zmienia ciągu: przepływ paliwa jest przeliczany. Zmiana ciągu nie zmienia ISP.
 
@@ -46,6 +47,9 @@ Projekt `RSSBalancer.csproj` (.NET Framework 4.7.2) korzysta z bibliotek KSP z `
 | `SoyuzTemplate.cs` | automat R-7 / Sojuz |
 | `FlightFeatures.cs` | krzyż Korolewa, gorące rozdzielenie, oś czasu lotu |
 | `FlightLogger.cs` | dziennik lotu (CSV) |
+| `TelemetryWindow.cs` | ekran telemetrii z wykresem trajektorii |
+| `SovietSkin.cs` | generowane tekstury i style w stylu AP-28 |
+| `Hud.cs` | ukrywanie okien po F2 |
 | `DeltaVPlanner.cs` | kalkulator Δv misji |
 | `StockDeltaV.cs` | odczyt stockowych statystyk Δv / TWR / czasu pracy |
 | `PresetStore.cs`, `BalancerSettings.cs` | presety i ustawienia |
