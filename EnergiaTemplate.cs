@@ -26,6 +26,11 @@ namespace RSSBalancer
         public const double CoreProp = 703.6;       // II stopień: 602,8 t tlenu + 100,9 t wodoru
         public const double LiftoffMass = 2375.0;   // t, z Buranem
         public const double LiftoffTwr = 1.48;      // ≈ (4 × 7,23 + 5,8) MN / (2375 t · g)
+        public const double BoosterDry = 262.0;     // I stopień: 1490,4 t − 1228 t paliwa (4 bloki razem)
+        public const double CoreDry = 72.6;         // II stopień: 776,2 t − 703,6 t paliwa
+        public const double OrbiterMass = 105.0;    // Buran z paliwem ОДУ (2375 − 2270 t)
+
+        public enum DryMode { Original, LiftoffMass, Slider }
 
         /// <summary>Energia ma rdzeń wodorowy – po tym odróżniamy ją od Sojuza (rdzeń na naftę, ≈320 s).</summary>
         public static bool Looks(SoyuzTemplate.Result id)
@@ -38,9 +43,10 @@ namespace RSSBalancer
             public double tB = BoosterTime, tC = CoreTime;
             public double ispB = BoosterIspVac, ispC = CoreIspVac;
             public double propB = BoosterProp, propC = CoreProp;
-            public bool fitMass = true;
-            public double mass = LiftoffMass;
-            public float dry = 1f;           // gdy fitMass = false
+            public DryMode mode = DryMode.Original;
+            public double dryB = BoosterDry, dryC = CoreDry;   // DryMode.Original
+            public double mass = LiftoffMass;                  // DryMode.LiftoffMass
+            public float dry = 1f;                             // DryMode.Slider
         }
 
         public class Result
@@ -48,7 +54,8 @@ namespace RSSBalancer
             public bool ok;
             public string message = "";
             public SoyuzTemplate.Result id;
-            public double massAfter, twrAfter;
+            public double massAfter, twrAfter, restMass, dryBAfter, dryCAfter;
+            public double dv1, dv2;          // Δv w próżni: bloki + rdzeń, potem sam rdzeń [m/s]
         }
 
         /// <summary>
@@ -75,20 +82,49 @@ namespace RSSBalancer
             double propB = Fit(B, t.propB, t.ispB, t.tB, ref clamped);
             double propC = Fit(C, t.propC, t.ispC, t.tC, ref clamped);
 
-            // Masa: wszystko poza paliwem i pustymi zbiornikami bloków i rdzenia zostaje bez zmian.
-            double dryNow = B.tankDryBase * B.appliedDry + C.tankDryBase * C.appliedDry;
-            double fixedMass = shipMass - B.propMass - C.propMass - dryNow;
-            double dryBase = B.tankDryBase + C.tankDryBase;
+            // Masa: wszystko poza paliwem i konstrukcją bloków i rdzenia (orbiter, adaptery…) zostaje bez zmian.
+            double fixedMass = shipMass - B.propMass - C.propMass - B.dryMass - C.dryMass;
+            r.restMass = fixedMass;
+            bool dryClamped = false;
 
-            float dry = t.dry;
-            if (t.fitMass && dryBase > 0)
-                dry = (float)((t.mass - fixedMass - propB - propC) / dryBase);
-            float dryC = Mathf.Clamp(dry, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry);
-            bool dryClamped = !Mathf.Approximately(dry, dryC);
-            dryC = Mathf.Round(dryC * 100f) / 100f;
-            B.dry = C.dry = dryC;
+            if (t.mode == DryMode.Original)
+            {
+                B.dry = DryFor(B, t.dryB, ref dryClamped);
+                C.dry = DryFor(C, t.dryC, ref dryClamped);
+            }
+            else
+            {
+                float dry = t.dry;
+                double dryBase = B.tankDryBase + C.tankDryBase;
+                if (t.mode == DryMode.LiftoffMass && dryBase > 0)
+                {
+                    // masa konstrukcji bez zbiorników zostaje; zbiorniki przy wspólnym mnożniku m
+                    double baseNow = B.tankDryBase * B.appliedDry + C.tankDryBase * C.appliedDry;
+                    double nonTank = B.dryMass + C.dryMass - baseNow;
+                    dry = (float)((t.mass - fixedMass - propB - propC - nonTank) / dryBase);
+                }
+                float d = Mathf.Clamp(dry, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry);
+                if (!Mathf.Approximately(d, dry)) dryClamped = true;
+                B.dry = C.dry = Mathf.Round(d * 100f) / 100f;
+            }
 
-            r.massAfter = fixedMass + propB + propC + dryBase * dryC;
+            r.dryBAfter = B.dryMass + B.tankDryBase * (B.dry - B.appliedDry);
+            r.dryCAfter = C.dryMass + C.tankDryBase * (C.dry - C.appliedDry);
+            r.massAfter = fixedMass + propB + propC + r.dryBAfter + r.dryCAfter;
+
+            // Δv w próżni (własny model, niezależny od stockowego kalkulatora):
+            //   etap 1: bloki i rdzeń razem do wypalenia bloków; etap 2: sam rdzeń.
+            double flowB = propB / t.tB, flowC = propC / t.tC;          // t/s
+            double ispEff = (flowB * t.ispB + flowC * t.ispC) / (flowB + flowC);
+            double m0 = r.massAfter;
+            double m1 = m0 - propB - flowC * t.tB;
+            double m2 = m1 - r.dryBAfter;
+            double m3 = m2 - flowC * (t.tC - t.tB);
+            if (m1 > 0 && m2 > 0 && m3 > 0)
+            {
+                r.dv1 = ispEff * G0 * Math.Log(m0 / m1);
+                r.dv2 = t.ispC * G0 * Math.Log(m2 / m3);
+            }
 
             // Ciąg na poziomie morza rośnie razem z Ciągiem × (ISP i przepływ zmieniają się wzajemnie znosząc).
             double thrust = 0;
@@ -103,15 +139,32 @@ namespace RSSBalancer
 
             r.message = "Bloki A: paliwo ×" + B.fuel.ToString("F2") + ", ISP ×" + B.isp.ToString("F2") + ", ciąg ×" + B.thrust.ToString("F2") +
                         "   Rdzeń: paliwo ×" + C.fuel.ToString("F2") + ", ISP ×" + C.isp.ToString("F2") + ", ciąg ×" + C.thrust.ToString("F2") +
-                        "\nMasa pustych zbiorników ×" + dryC.ToString("F2") + " · masa startowa " + r.massAfter.ToString("F0") + " t (oryg. " +
-                        LiftoffMass.ToString("F0") + " t) · TWR " + r.twrAfter.ToString("F2") + " (oryg. ≈" + LiftoffTwr.ToString("F2") + ")";
+                        "\nMasa pustych ×: bloki " + B.dry.ToString("F2") + ", rdzeń " + C.dry.ToString("F2") +
+                        " · konstrukcja: bloki " + r.dryBAfter.ToString("F0") + " t (oryg. " + BoosterDry.ToString("F0") + "), rdzeń " +
+                        r.dryCAfter.ToString("F0") + " t (oryg. " + CoreDry.ToString("F0") + "), orbiter i reszta " + r.restMass.ToString("F0") +
+                        " t (oryg. ≈" + OrbiterMass.ToString("F0") + ")" +
+                        "\nMasa startowa " + r.massAfter.ToString("F0") + " t (oryg. " + LiftoffMass.ToString("F0") + ") · TWR " + r.twrAfter.ToString("F2") +
+                        " (oryg. ≈" + LiftoffTwr.ToString("F2") + ") · Δv w próżni: " + r.dv1.ToString("F0") + " + " + r.dv2.ToString("F0") + " = " +
+                        (r.dv1 + r.dv2).ToString("F0") + " m/s (oryginał ≈ 8 800 m/s)";
             if (clamped)
                 r.message += "\nUWAGA: część mnożników doszła do limitu suwaków – nie wszystkie cele będą osiągnięte.";
             if (dryClamped)
-                r.message += "\nUWAGA: masy startowej nie da się osiągnąć samą masą pustych zbiorników (limit " +
-                             ModuleTankBalancer.MinDry.ToString("F1") + "–" + ModuleTankBalancer.MaxDry.ToString("F1") + "×) – sprawdź masę orbitera.";
+                r.message += "\nUWAGA: masy konstrukcji nie da się osiągnąć samymi zbiornikami (limit " +
+                             ModuleTankBalancer.MinDry.ToString("F1") + "–" + ModuleTankBalancer.MaxDry.ToString("F1") + "×) – silniki i odłączacze ważą swoje.";
+            if (r.restMass > OrbiterMass * 1.4)
+                r.message += "\nUWAGA: orbiter i reszta ważą " + r.restMass.ToString("F0") + " t – dużo więcej niż Buran (≈105 t); to zabiera Δv rdzeniowi.";
             r.ok = true;
             return r;
+        }
+
+        private const double G0 = 9.80665;
+
+        /// <summary>Mnożnik masy pustych zbiorników, przy którym konstrukcja grupy waży <paramref name="target"/> t.</summary>
+        private static float DryFor(EngineGroup g, double target, ref bool clamped)
+        {
+            if (g.tankDryBase <= 0) return g.appliedDry;
+            float m = (float)(g.appliedDry + (target - g.dryMass) / g.tankDryBase);
+            return Clamp(m, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry, ref clamped);
         }
 
         /// <summary>Ustawia paliwo, ISP i ciąg jednej grupy. Zwraca masę paliwa po zatankowaniu do pełna [t].</summary>

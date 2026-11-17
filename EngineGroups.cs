@@ -18,6 +18,7 @@ namespace RSSBalancer
         public double propMass;        // paliwo dostępne dla grupy [t] (zbiorniki odrzucane razem z nią)
         public double propCapacity;    // pojemność tych zbiorników [t] (gdy zatankowane do pełna)
         public double tankDryBase;     // masa pustych zbiorników grupy przy mnożniku 1 [t]
+        public double dryMass;         // obecna masa konstrukcji odrzucanej razem z grupą (bez paliwa i klamer) [t]
         public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
         public double ispVac;          // ISP w próżni głównego silnika grupy [s] (z obecnymi mnożnikami)
         public readonly List<Part> parts = new List<Part>(); // części z silnikami w tej grupie
@@ -314,6 +315,7 @@ namespace RSSBalancer
                     foreach (Part p in parts)
                     {
                         if (p == null || !decs.Contains(JettisonDecoupler(p))) continue;
+                        if (!IsClampRelated(p)) g.dryMass += p.mass;
                         ModuleTankBalancer t = p.FindModuleImplementing<ModuleTankBalancer>();
                         if (t != null) { g.tanks.Add(t); g.tankDryBase += p.prefabMass; }
                         HashSet<string> pn = PropellantNames(g.parts);

@@ -493,8 +493,9 @@ namespace RSSBalancer
 
         // ================================================================== zakładka: Energia
 
-        private static string eTB, eTC, eIspB, eIspC, ePropB, ePropC, eMass;
-        private static bool eFit = true;
+        private static string eTB, eTC, eIspB, eIspC, ePropB, ePropC, eMass, eDryB, eDryC;
+        private static int eMode = 0;
+        private static readonly string[] EModes = { "Konstrukcja jak w oryginale", "Masa startowa", "Suwak" };
         private static float eDry = 0.3f;
 
         private static void EnergiaDefaults()
@@ -507,6 +508,8 @@ namespace RSSBalancer
             ePropB = EnergiaTemplate.BoosterProp.ToString("F0", c);
             ePropC = EnergiaTemplate.CoreProp.ToString("F1", c);
             eMass = EnergiaTemplate.LiftoffMass.ToString("F0", c);
+            eDryB = EnergiaTemplate.BoosterDry.ToString("F0", c);
+            eDryC = EnergiaTemplate.CoreDry.ToString("F1", c);
         }
 
         private void DrawEnergiaTab()
@@ -539,17 +542,24 @@ namespace RSSBalancer
             Row3("Czas pracy od startu [s]:", ref eTB, ref eTC);
             Row3("ISP w próżni [s]:", ref eIspB, ref eIspC);
             Row3("Paliwo [t] (bloki razem):", ref ePropB, ref ePropC);
-            GUILayout.BeginHorizontal();
-            eFit = GUILayout.Toggle(eFit, " Masa pustych zbiorników tak, by masa startowa wynosiła", GUILayout.Width(380f));
-            eMass = GUILayout.TextField(eMass ?? "", 7, GUILayout.Width(70f));
-            GUILayout.Label("t");
-            GUILayout.EndHorizontal();
-            if (!eFit)
+            GUILayout.Label("Masa pustych bloków i rdzenia:");
+            eMode = GUILayout.Toolbar(eMode, EModes);
+            if (eMode == 0)
+                Row3("Konstrukcja bez paliwa [t]:", ref eDryB, ref eDryC);
+            else if (eMode == 1)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Masa startowa (wspólny mnożnik):", GUILayout.Width(250f));
+                eMass = GUILayout.TextField(eMass ?? "", 7, GUILayout.Width(80f));
+                GUILayout.Label("t");
+                GUILayout.EndHorizontal();
+            }
+            else
             {
                 GUILayout.Label("Masa pustych zbiorników × (bloki i rdzeń): " + eDry.ToString("F2"));
                 eDry = Slider(eDry, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry);
             }
-            GUILayout.Label("Energia-Buran 1K1: bloki 143 s, rdzeń 466 s, ISP 338 / 454 s, paliwo 1228 / 704 t, masa startowa 2375 t, TWR ≈ 1,48.");
+            GUILayout.Label("Energia-Buran 1K1: bloki 143 s, rdzeń 466 s, ISP 338 / 454 s, paliwo 1228 / 704 t, konstrukcja 262 / 73 t, Buran ≈105 t, masa startowa 2375 t, TWR ≈ 1,48.");
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Wartości Energii (1K1)")) EnergiaDefaults();
@@ -583,10 +593,11 @@ namespace RSSBalancer
 
         private void RunEnergiaSolve()
         {
-            EnergiaTemplate.Targets t = new EnergiaTemplate.Targets { fitMass = eFit, dry = eDry };
+            EnergiaTemplate.Targets t = new EnergiaTemplate.Targets { mode = (EnergiaTemplate.DryMode)eMode, dry = eDry };
             if (!TryNum(eTB, out t.tB) || !TryNum(eTC, out t.tC) || !TryNum(eIspB, out t.ispB) || !TryNum(eIspC, out t.ispC) ||
-                !TryNum(ePropB, out t.propB) || !TryNum(ePropC, out t.propC) || (eFit && !TryNum(eMass, out t.mass)) ||
-                t.tB <= 0 || t.tC <= t.tB || t.ispB <= 0 || t.ispC <= 0 || t.propB <= 0 || t.propC <= 0 || (eFit && t.mass <= 0))
+                !TryNum(ePropB, out t.propB) || !TryNum(ePropC, out t.propC) || (eMode == 1 && !TryNum(eMass, out t.mass)) ||
+                (eMode == 0 && (!TryNum(eDryB, out t.dryB) || !TryNum(eDryC, out t.dryC) || t.dryB <= 0 || t.dryC <= 0)) ||
+                t.tB <= 0 || t.tC <= t.tB || t.ispB <= 0 || t.ispC <= 0 || t.propB <= 0 || t.propC <= 0 || (eMode == 1 && t.mass <= 0))
             {
                 status = "Wpisz poprawne wartości (rdzeń musi pracować dłużej niż bloki).";
                 return;
