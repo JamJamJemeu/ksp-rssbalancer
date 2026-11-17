@@ -205,6 +205,14 @@ namespace RSSBalancer
                 bool f2 = GUILayout.Toggle(BalancerSettings.TelemetryOnF2, " zostaje po F2 (ukryty interfejs)");
                 if (f2 != BalancerSettings.TelemetryOnF2) { BalancerSettings.TelemetryOnF2 = f2; BalancerSettings.Save(); }
                 GUILayout.EndHorizontal();
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(20f);
+                GUILayout.Label("Skala ekranu telemetrii: ×" + BalancerSettings.TelemetryScale.ToString("F2"), GUILayout.Width(200f));
+                float ts = GUILayout.HorizontalSlider(BalancerSettings.TelemetryScale, 0.5f, 1.6f);
+                ts = Mathf.Round(ts * 20f) / 20f;
+                if (Math.Abs(ts - BalancerSettings.TelemetryScale) > 0.001f) { BalancerSettings.TelemetryScale = ts; BalancerSettings.Save(); }
+                if (GUILayout.Button("1:1", GUILayout.Width(40f))) { BalancerSettings.TelemetryScale = 1f; BalancerSettings.Save(); }
+                GUILayout.EndHorizontal();
             }
             bool fl = GUILayout.Toggle(BalancerSettings.FlightLog, " Zapisuj dziennik lotu (CSV, co sekundę: wysokość, prędkości, apocentrum, pochylenie, ciśnienie dynamiczne, temperatury, zdarzenia)");
             if (fl != BalancerSettings.FlightLog) { BalancerSettings.FlightLog = fl; BalancerSettings.Save(); }

@@ -11,7 +11,7 @@ namespace RSSBalancer
     public static class SovietSkin
     {
         public static Texture2D Metal, Crt, CrtOverlay, Amber, AmberOverlay, Plate;
-        public static Texture2D Drum, Slot, LampGreen, LampAmber, LampOff, Screw, Button, ButtonOn;
+        public static Texture2D Grip, Drum, Slot, LampGreen, LampAmber, LampOff, Screw, Button, ButtonOn;
         public static Font Mono;
 
         public static readonly Color Phosphor = new Color(0.49f, 1f, 0.60f);
@@ -41,6 +41,7 @@ namespace RSSBalancer
             if (Plate == null || pw != plateW || ph != plateH) { Free(Plate); Plate = MakePlate(plateW, plateH); pw = plateW; ph = plateH; }
 
             if (Drum == null) Drum = MakeDrum();
+            if (Grip == null) Grip = MakeGrip();
             if (Slot == null) Slot = MakeVertical(8, 16, new Color32(3, 3, 3, 255), new Color32(23, 24, 24, 255));
             if (Button == null) Button = MakeButton(false);
             if (ButtonOn == null) ButtonOn = MakeButton(true);
@@ -311,6 +312,30 @@ namespace RSSBalancer
         }
 
         // ================================================================== drobne elementy
+
+        /// <summary>Uchwyt skalowania: trzy ukośne rowki wytłoczone w blasze.</summary>
+        private static Texture2D MakeGrip()
+        {
+            int n = 22;
+            Texture2D t = New(n, n);
+            Color32[] px = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    int sy = n - 1 - y;
+                    int d = x + sy - (n - 1);          // >= 0 w prawym dolnym trójkącie
+                    Color c = Color.clear;
+                    if (d >= 0)
+                    {
+                        int k = d % 6;
+                        if (k == 0) c = new Color(0f, 0f, 0f, 0.55f);
+                        else if (k == 1) c = new Color(1f, 1f, 1f, 0.30f);
+                    }
+                    px[y * n + x] = c;
+                }
+            t.SetPixels32(px); t.Apply();
+            return t;
+        }
 
         private static Texture2D MakeDrum()
         {

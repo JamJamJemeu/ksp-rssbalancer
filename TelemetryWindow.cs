@@ -19,16 +19,17 @@ namespace RSSBalancer
         public enum LampId { Liftoff, BoosterSep, Korolev, Fairing, UpperIgnition, CoreSep, UpperCutoff, Orbit }
 
         private const int WindowId = 0x52535354;
-        private const float W = 820f, H = 486f;
+        private const float W = 520f, H = 892f;
         private const double SampleInterval = 0.5;
         private const double G0 = 9.80665;
         private const double FreshLamp = 10.0;   // s – tyle lampka świeci na bursztynowo, potem na zielono
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         // geometria (względem okna)
-        private static readonly Rect PlateRect = new Rect(16, 12, 690, 26);
-        private static readonly Rect CrtRect = new Rect(318, 48, 486, 384);
-        private static readonly Rect AmberRect = new Rect(16, 262, 290, 112);
+        private static readonly Rect PlateRect = new Rect(16, 12, 384, 26);
+        private static readonly Rect CrtRect = new Rect(16, 266, 488, 384);
+        private static readonly Rect AmberRect = new Rect(16, 702, 488, 112);
+        private const float MinScale = 0.5f, MaxScale = 1.6f;
         private const int GW = 456, GH = 214;            // obszar wykresu w kineskopie
         private const float GX = 15f, GY = 32f;          // położenie wykresu wewnątrz kineskopu
 
@@ -46,7 +47,8 @@ namespace RSSBalancer
 
         private static TelemetryWindow instance;
 
-        private Rect window = new Rect(60, 90, W, H);
+        private Rect window = new Rect(60, 60, W, H);   // współrzędne przed skalowaniem
+        private bool resizing;
         private int mode;
         private bool styled;
         private GUIStyle sWin, sPlate, sPlateR, sCap, sDrum, sUnit, sCrt, sCrtR, sCrtSmall, sAmber, sLamp, sBtn, sBtnOn, sNote;
@@ -220,7 +222,34 @@ namespace RSSBalancer
             if (!styled) MakeStyles();
             if (dirty && Event.current.type == EventType.Repaint) { Redraw(); dirty = false; }
 
+            float sc = Mathf.Clamp(BalancerSettings.TelemetryScale, MinScale, MaxScale);
+            // okno nie może uciec za ekran
+            window.x = Mathf.Clamp(window.x, -W + 80, Screen.width / sc - 80);
+            window.y = Mathf.Clamp(window.y, 0, Screen.height / sc - 40);
+
+            Matrix4x4 old = GUI.matrix;
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sc, sc, 1f));
             window = GUI.Window(WindowId, window, DrawWindow, "", sWin);
+            GUI.matrix = old;
+        }
+
+        /// <summary>Przeciąganie uchwytu w prawym dolnym rogu zmienia skalę okna (lewy górny róg zostaje w miejscu).</summary>
+        private void Update()
+        {
+            if (!resizing) return;
+            if (!Input.GetMouseButton(0))
+            {
+                resizing = false;
+                BalancerSettings.Save();
+                return;
+            }
+            float sc = BalancerSettings.TelemetryScale;
+            float left = window.x * sc, top = window.y * sc;
+            float mx = Input.mousePosition.x, my = Screen.height - Input.mousePosition.y;
+            float ns = Mathf.Clamp(Math.Max((mx - left) / W, (my - top) / H), MinScale, MaxScale);
+            BalancerSettings.TelemetryScale = ns;
+            window.x = left / ns;
+            window.y = top / ns;
         }
 
         private void MakeStyles()
@@ -262,13 +291,13 @@ namespace RSSBalancer
             GUI.Label(new Rect(PlateRect.x + 10, PlateRect.y, 300, PlateRect.height), L("ЦУП · ТЕЛЕМЕТРИЯ", "ЦУП · TELEMETRIA"), sPlate);
             GUI.Label(new Rect(PlateRect.x + 300, PlateRect.y, PlateRect.width - 310, PlateRect.height), "«" + v.vesselName + "»", sPlateR);
 
-            if (GUI.Button(new Rect(W - 104, 13, 40, 24), Ru ? "PL" : "RU", sBtn))
+            if (GUI.Button(new Rect(W - 112, 13, 44, 24), Ru ? "PL" : "RU", sBtn))
             {
                 BalancerSettings.TelemetryRussian = !BalancerSettings.TelemetryRussian;
                 BalancerSettings.Save();
                 dirty = true;
             }
-            if (GUI.Button(new Rect(W - 58, 13, 40, 24), "X", sBtn))
+            if (GUI.Button(new Rect(W - 62, 13, 44, 24), "X", sBtn))
             {
                 BalancerSettings.Telemetry = false;
                 BalancerSettings.Save();
@@ -280,6 +309,15 @@ namespace RSSBalancer
             DrawCompare();
             DrawCrt(v);
             DrawModes();
+
+            // uchwyt skalowania (prawy dolny róg)
+            Rect grip = new Rect(W - 34, H - 34, 22, 22);
+            GUI.DrawTexture(grip, SovietSkin.Grip);
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && grip.Contains(Event.current.mousePosition))
+            {
+                resizing = true;
+                Event.current.Use();
+            }
 
             GUI.DragWindow(new Rect(0, 0, W, 44));
         }
@@ -295,18 +333,19 @@ namespace RSSBalancer
         {
             double t = Math.Max(0, v.missionTime);
             Counter(16, 50, L("ВРЕМЯ ПОЛЁТА", "CZAS LOTU"), Pad(Math.Min(t, 99999).ToString("F0", Inv), 5), L("с", "s"));
-            Counter(164, 50, L("ВЫСОТА", "WYSOKOŚĆ"), Pad(Comma((v.altitude / 1000.0).ToString("F1", Inv)), 6), L("км", "km"));
+            Counter(262, 50, L("ВЫСОТА", "WYSOKOŚĆ"), Pad(Comma((v.altitude / 1000.0).ToString("F1", Inv)), 6), L("км", "km"));
             Counter(16, 104, L("СКОРОСТЬ", "PRĘDKOŚĆ"), Pad(Math.Min(v.obt_speed, 99999).ToString("F0", Inv), 5), L("м/с", "m/s"));
-            Counter(164, 104, L("ПЕРЕГРУЗКА", "PRZECIĄŻENIE"), Pad(Comma(v.geeForce.ToString("F2", Inv)), 5), "g");
+            Counter(262, 104, L("ПЕРЕГРУЗКА", "PRZECIĄŻENIE"), Pad(Comma(v.geeForce.ToString("F2", Inv)), 5), "g");
         }
 
         private void Counter(float x, float y, string caption, string digits, string unit)
         {
-            SovietSkin.Printed(new Rect(x, y, 142, 14), caption, sCap);
+            const float boxW = 242f;
+            SovietSkin.Printed(new Rect(x, y, boxW, 14), caption, sCap);
             const float cw = 16f, chh = 26f;
             float unitW = 30f;
             float total = digits.Length * cw + unitW + 6;
-            float x0 = x + (142 - total) / 2f;
+            float x0 = x + (boxW - total) / 2f;
             GUI.DrawTexture(new Rect(x0 - 3, y + 16, total, chh + 6), SovietSkin.Slot);
             for (int i = 0; i < digits.Length; i++)
             {
@@ -327,12 +366,12 @@ namespace RSSBalancer
             string[] names = Ru ? LampRu : LampPl;
             for (int i = 0; i < 8; i++)
             {
-                float x = 16 + (i % 2) * 146, y = 162 + (i / 2) * 24;
+                float x = 20 + (i % 2) * 246, y = 166 + (i / 2) * 24;
                 Texture2D tex = SovietSkin.LampOff;
                 if (!double.IsNaN(lampTime[i]))
                     tex = v.missionTime - lampTime[i] < FreshLamp ? SovietSkin.LampAmber : SovietSkin.LampGreen;
                 GUI.DrawTexture(new Rect(x - 4, y - 4, 26, 26), tex);
-                SovietSkin.Printed(new Rect(x + 22, y, 124, 18), names[i], sLamp);
+                SovietSkin.Printed(new Rect(x + 22, y, 220, 18), names[i], sLamp);
             }
         }
 
@@ -361,13 +400,13 @@ namespace RSSBalancer
         private void DrawCompare()
         {
             float y = AmberRect.yMax + 12;
-            if (GUI.Button(new Rect(16, y, 186, 26), L("СРАВНИТЬ С ПОЛЁТОМ", "PORÓWNAJ Z LOTEM"), sBtn)) NextReference();
-            if (GUI.Button(new Rect(208, y, 98, 26), L("СБРОС", "WYCZYŚĆ"), sBtn))
+            if (GUI.Button(new Rect(16, y, 330, 26), L("СРАВНИТЬ С ПОЛЁТОМ", "PORÓWNAJ Z LOTEM"), sBtn)) NextReference();
+            if (GUI.Button(new Rect(354, y, 150, 26), L("СБРОС", "WYCZYŚĆ"), sBtn))
             {
                 refIndex = -1; refName = ""; refSamples.Clear(); dirty = true;
             }
             string txt = refName.Length == 0 ? L("— БЕЗ СРАВНЕНИЯ", "— bez porównania") : "— — " + refName;
-            SovietSkin.Printed(new Rect(16, y + 30, 290, 16), txt, sNote);
+            SovietSkin.Printed(new Rect(16, y + 32, 440, 16), txt, sNote);
         }
 
         // ---------------------------------------------------------------- kineskop

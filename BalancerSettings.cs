@@ -25,6 +25,7 @@ namespace RSSBalancer
         public static bool Telemetry = true;
         public static bool TelemetryRussian = true;
         public static bool TelemetryOnF2 = true;
+        public static float TelemetryScale = 1f;
 
         // Misja (zapamiętane między uruchomieniami; NaN = domyślne)
         public static double LaunchLatitude = 45.9;   // Bajkonur
@@ -79,6 +80,11 @@ namespace RSSBalancer
                 Telemetry = B(n, "telemetry", Telemetry);
                 TelemetryRussian = B(n, "telemetryRussian", TelemetryRussian);
                 TelemetryOnF2 = B(n, "telemetryOnF2", TelemetryOnF2);
+                {
+                    float sc;
+                    if (float.TryParse(n.GetValue("telemetryScale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out sc) && sc >= 0.5f && sc <= 1.6f)
+                        TelemetryScale = sc;
+                }
                 LaunchLatitude = D(n, "launchLatitude", LaunchLatitude);
                 OrbitAltKm = D(n, "orbitAltKm", OrbitAltKm);
             }
@@ -112,6 +118,7 @@ namespace RSSBalancer
                 n.AddValue("telemetry", Telemetry.ToString());
                 n.AddValue("telemetryRussian", TelemetryRussian.ToString());
                 n.AddValue("telemetryOnF2", TelemetryOnF2.ToString());
+                n.AddValue("telemetryScale", TelemetryScale.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                 n.AddValue("launchLatitude", S(LaunchLatitude));
                 if (!double.IsNaN(OrbitAltKm)) n.AddValue("orbitAltKm", S(OrbitAltKm));
 
