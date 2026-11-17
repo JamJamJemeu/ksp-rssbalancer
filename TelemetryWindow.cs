@@ -16,7 +16,16 @@ namespace RSSBalancer
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class TelemetryWindow : MonoBehaviour
     {
-        public enum LampId { Liftoff, BoosterSep, Korolev, Fairing, UpperIgnition, CoreSep, UpperCutoff, Orbit }
+        public enum LampId { Liftoff, BoosterSep, Korolev, Fairing, UpperIgnition, CoreSep, UpperCutoff, Orbit, MaxQ, CoreCutoff, OrbiterSep, OmsIgnition }
+        public enum RocketKind { Other, Soyuz, Energia }
+
+        /// <summary>Rodzaj rakiety rozpoznany przez FlightFeatures – decyduje o zestawie lampek.</summary>
+        public static RocketKind Kind = RocketKind.Other;
+
+        private static readonly LampId[] LampsSoyuz =
+            { LampId.Liftoff, LampId.BoosterSep, LampId.Korolev, LampId.Fairing, LampId.UpperIgnition, LampId.CoreSep, LampId.UpperCutoff, LampId.Orbit };
+        private static readonly LampId[] LampsEnergia =
+            { LampId.Liftoff, LampId.MaxQ, LampId.BoosterSep, LampId.CoreCutoff, LampId.OrbiterSep, LampId.OmsIgnition, LampId.UpperCutoff, LampId.Orbit };
 
         private const int WindowId = 0x52535354;
         private const float W = 520f, H = 892f;
@@ -40,10 +49,15 @@ namespace RSSBalancer
         private static readonly string[] ModePl = { "WYS/ZASIĘG", "WYS/CZAS", "PRĘDK/CZAS", "CIŚN. DYN.", "PRZECIĄŻ." };
         private static readonly string[] TitleRu = { "ВЫСОТА / ДАЛЬНОСТЬ", "ВЫСОТА / ВРЕМЯ", "СКОРОСТЬ / ВРЕМЯ", "СКОРОСТНОЙ НАПОР / ВРЕМЯ", "ПЕРЕГРУЗКА / ВРЕМЯ" };
         private static readonly string[] TitlePl = { "WYSOKOŚĆ / ZASIĘG", "WYSOKOŚĆ / CZAS", "PRĘDKOŚĆ / CZAS", "CIŚNIENIE DYNAMICZNE / CZAS", "PRZECIĄŻENIE / CZAS" };
-        private static readonly string[] LampRu = { "КОНТАКТ ПОДЪЁМА", "ОТДЕЛ. БОКОВЫХ", "КРЕСТ КОРОЛЁВА", "СБРОС ОБТЕКАТЕЛЯ", "ЗАЖИГАНИЕ III СТ.", "ОТДЕЛ. БЛОКА А", "ВЫКЛ. III СТ.", "ОРБИТА" };
-        private static readonly string[] LampPl = { "ODERWANIE", "ODRZUT BOCZNYCH", "KRZYŻ KOROLEWA", "ZRZUT OWIEWKI", "ZAPŁON III ST.", "ODRZUT RDZENIA", "WYŁ. III ST.", "ORBITA" };
-        private static readonly string[] EventRu = { "КОНТАКТ ПОДЪЁМА", "ОТДЕЛЕНИЕ БОКОВЫХ БЛОКОВ", "КРЕСТ КОРОЛЁВА", "СБРОС ГОЛОВНОГО ОБТЕКАТЕЛЯ", "ЗАЖИГАНИЕ III СТУПЕНИ", "ОТДЕЛЕНИЕ ЦЕНТРАЛЬНОГО БЛОКА", "ВЫКЛЮЧЕНИЕ III СТУПЕНИ", "ВЫХОД НА ОРБИТУ" };
-        private static readonly string[] EventPl = { "ODERWANIE OD WYRZUTNI", "ODRZUT BOCZNYCH BLOKÓW", "KRZYŻ KOROLEWA", "ZRZUT OWIEWKI", "ZAPŁON III STOPNIA", "ODRZUT RDZENIA", "WYŁĄCZENIE III STOPNIA", "WEJŚCIE NA ORBITĘ" };
+        // indeksowane wartością LampId
+        private static readonly string[] LampRu = { "КОНТАКТ ПОДЪЁМА", "ОТДЕЛ. БОКОВЫХ", "КРЕСТ КОРОЛЁВА", "СБРОС ОБТЕКАТЕЛЯ", "ЗАЖИГАНИЕ III СТ.", "ОТДЕЛ. БЛОКА А", "ВЫКЛ. III СТ.", "ОРБИТА",
+                                                    "МАКС. НАПОР", "ВЫКЛ. БЛОКА Ц", "ОТДЕЛЕНИЕ ОК", "ВКЛЮЧ. ОДУ" };
+        private static readonly string[] LampPl = { "ODERWANIE", "ODRZUT BOCZNYCH", "KRZYŻ KOROLEWA", "ZRZUT OWIEWKI", "ZAPŁON III ST.", "ODRZUT RDZENIA", "WYŁ. III ST.", "ORBITA",
+                                                    "MAKS. CIŚN. DYN.", "WYŁ. RDZENIA", "ODŁĄCZ. ORBITERA", "ZAPŁON OMS" };
+        private static readonly string[] EventRu = { "КОНТАКТ ПОДЪЁМА", "ОТДЕЛЕНИЕ БОКОВЫХ БЛОКОВ", "КРЕСТ КОРОЛЁВА", "СБРОС ГОЛОВНОГО ОБТЕКАТЕЛЯ", "ЗАЖИГАНИЕ III СТУПЕНИ", "ОТДЕЛЕНИЕ ЦЕНТРАЛЬНОГО БЛОКА", "ВЫКЛЮЧЕНИЕ III СТУПЕНИ", "ВЫХОД НА ОРБИТУ",
+                                                     "МАКСИМАЛЬНЫЙ СКОРОСТНОЙ НАПОР", "ВЫКЛЮЧЕНИЕ БЛОКА Ц", "ОТДЕЛЕНИЕ ОРБИТАЛЬНОГО КОРАБЛЯ", "ВКЛЮЧЕНИЕ ОДУ" };
+        private static readonly string[] EventPl = { "ODERWANIE OD WYRZUTNI", "ODRZUT BOCZNYCH BLOKÓW", "KRZYŻ KOROLEWA", "ZRZUT OWIEWKI", "ZAPŁON III STOPNIA", "ODRZUT RDZENIA", "WYŁĄCZENIE III STOPNIA", "WEJŚCIE NA ORBITĘ",
+                                                     "MAKS. CIŚNIENIE DYNAMICZNE", "WYŁĄCZENIE RDZENIA", "ODŁĄCZENIE ORBITERA", "ZAPŁON SILNIKÓW ORBITERA" };
 
         private static TelemetryWindow instance;
 
@@ -57,7 +71,7 @@ namespace RSSBalancer
         private readonly List<Sample> refSamples = new List<Sample>();
         private readonly List<Sample> marks = new List<Sample>();
         private readonly List<Ev> events = new List<Ev>();
-        private readonly double[] lampTime = new double[8];
+        private readonly double[] lampTime = new double[12];
 
         private Texture2D graph;
         private Color32[] buf;
@@ -168,6 +182,8 @@ namespace RSSBalancer
 
             maxQ = Math.Max(maxQ, vessel.dynamicPressurekPa);
             maxG = Math.Max(maxG, vessel.geeForce);
+            if (double.IsNaN(lampTime[(int)LampId.MaxQ]) && maxQ > 5.0 && vessel.dynamicPressurekPa < 0.95 * maxQ)
+                SetLamp(LampId.MaxQ);
 
             if (double.IsNaN(lampTime[(int)LampId.Orbit]) && vessel.situation == Vessel.Situations.ORBITING &&
                 vessel.orbit.PeA > (vessel.mainBody.atmosphere ? vessel.mainBody.atmosphereDepth : 1000.0))
@@ -363,15 +379,17 @@ namespace RSSBalancer
 
         private void DrawLamps(Vessel v)
         {
-            string[] names = Ru ? LampRu : LampPl;
-            for (int i = 0; i < 8; i++)
+            string[] labels = Ru ? LampRu : LampPl;
+            LampId[] set = Kind == RocketKind.Energia ? LampsEnergia : LampsSoyuz;
+            for (int k = 0; k < 8; k++)
             {
-                float x = 20 + (i % 2) * 246, y = 166 + (i / 2) * 24;
+                int i = (int)set[k];
+                float x = 20 + (k % 2) * 246, y = 166 + (k / 2) * 24;
                 Texture2D tex = SovietSkin.LampOff;
                 if (!double.IsNaN(lampTime[i]))
                     tex = v.missionTime - lampTime[i] < FreshLamp ? SovietSkin.LampAmber : SovietSkin.LampGreen;
                 GUI.DrawTexture(new Rect(x - 4, y - 4, 26, 26), tex);
-                SovietSkin.Printed(new Rect(x + 22, y, 220, 18), names[i], sLamp);
+                SovietSkin.Printed(new Rect(x + 22, y, 220, 18), labels[i], sLamp);
             }
         }
 

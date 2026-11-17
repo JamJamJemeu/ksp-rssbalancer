@@ -19,7 +19,7 @@ namespace RSSBalancer
     {
         private const int WindowId = 0x52535342;
         private const string LockId = "RSSBalancer_WindowLock";
-        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Misja", "Presety" };
+        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Misja", "Presety" };
 
         private static bool show = false;
         private static int tab = 0;
@@ -129,8 +129,9 @@ namespace RSSBalancer
                 case 0: DrawShipTab(); break;
                 case 1: DrawGroupsTab(); break;
                 case 2: DrawSoyuzTab(); break;
-                case 3: DrawMissionTab(); break;
-                case 4: DrawPresetsTab(); break;
+                case 3: DrawEnergiaTab(); break;
+                case 4: DrawMissionTab(); break;
+                case 5: DrawPresetsTab(); break;
             }
 
             if (!string.IsNullOrEmpty(status))
@@ -488,6 +489,135 @@ namespace RSSBalancer
             GUILayout.EndVertical();
 
             if (changed) BalancerSettings.Save();
+        }
+
+        // ================================================================== zakładka: Energia
+
+        private static string eTB, eTC, eIspB, eIspC, ePropB, ePropC, eMass;
+        private static bool eFit = true;
+        private static float eDry = 0.3f;
+
+        private static void EnergiaDefaults()
+        {
+            CultureInfo c = CultureInfo.InvariantCulture;
+            eTB = EnergiaTemplate.BoosterTime.ToString("F0", c);
+            eTC = EnergiaTemplate.CoreTime.ToString("F0", c);
+            eIspB = EnergiaTemplate.BoosterIspVac.ToString("F0", c);
+            eIspC = EnergiaTemplate.CoreIspVac.ToString("F0", c);
+            ePropB = EnergiaTemplate.BoosterProp.ToString("F0", c);
+            ePropC = EnergiaTemplate.CoreProp.ToString("F1", c);
+            eMass = EnergiaTemplate.LiftoffMass.ToString("F0", c);
+        }
+
+        private void DrawEnergiaTab()
+        {
+            if (eTB == null) EnergiaDefaults();
+            GUILayout.Label("Wzorzec Energia / Buran: boczne bloki A (RD-170, nafta) i rdzeń Ц (RD-0120, wodór) mają własne ISP. " +
+                            "Dla każdego mod ustawia paliwo, ISP i ciąg tak, by masa paliwa, ISP w próżni i czas pracy były jak w oryginale.");
+
+            SoyuzTemplate.Result id = SoyuzTemplate.Identify(groups);
+            GUILayout.BeginVertical("box");
+            if (id.ok)
+            {
+                GUILayout.Label("Bloki A:  " + id.boosters.Label + "  ·  teraz " + Sec(id.boosters.BurnTimeNow) + ", ISP " + Sec(id.boosters.ispVac) +
+                                ", paliwo " + id.boosters.propMass.ToString("F0") + " / " + id.boosters.propCapacity.ToString("F0") + " t");
+                GUILayout.Label("Rdzeń Ц:  " + id.core.Label + "  ·  teraz " + Sec(id.core.BurnTimeNow) + ", ISP " + Sec(id.core.ispVac) +
+                                ", paliwo " + id.core.propMass.ToString("F0") + " / " + id.core.propCapacity.ToString("F0") + " t");
+                GUILayout.Label(id.upper != null
+                    ? "Orbiter (ОДУ):  " + id.upper.Label + "  ·  ISP " + Sec(id.upper.ispVac) + ", paliwo " + id.upper.propMass.ToString("F1") + " t (bez zmian)"
+                    : "Silniki orbitera: nie znaleziono");
+                GUILayout.Label("Masa startowa: teraz " + ShipMassNoClamps().ToString("F0") + " t · TWR na starcie: teraz " + Twr(CurrentTwr()));
+            }
+            else
+            {
+                GUILayout.Label(id.message);
+            }
+            GUILayout.EndVertical();
+
+            GUILayout.Space(4f);
+            GUILayout.Label("                                        Bloki A           Rdzeń Ц");
+            Row3("Czas pracy od startu [s]:", ref eTB, ref eTC);
+            Row3("ISP w próżni [s]:", ref eIspB, ref eIspC);
+            Row3("Paliwo [t] (bloki razem):", ref ePropB, ref ePropC);
+            GUILayout.BeginHorizontal();
+            eFit = GUILayout.Toggle(eFit, " Masa pustych zbiorników tak, by masa startowa wynosiła", GUILayout.Width(380f));
+            eMass = GUILayout.TextField(eMass ?? "", 7, GUILayout.Width(70f));
+            GUILayout.Label("t");
+            GUILayout.EndHorizontal();
+            if (!eFit)
+            {
+                GUILayout.Label("Masa pustych zbiorników × (bloki i rdzeń): " + eDry.ToString("F2"));
+                eDry = Slider(eDry, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry);
+            }
+            GUILayout.Label("Energia-Buran 1K1: bloki 143 s, rdzeń 466 s, ISP 338 / 454 s, paliwo 1228 / 704 t, masa startowa 2375 t, TWR ≈ 1,48.");
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Wartości Energii (1K1)")) EnergiaDefaults();
+            GUI.enabled = id.ok && HighLogic.LoadedSceneIsEditor;
+            if (GUILayout.Button("Oblicz i zastosuj")) RunEnergiaSolve();
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+            if (!HighLogic.LoadedSceneIsEditor)
+                GUILayout.Label("Paliwo i zbiorniki da się zmieniać tylko w VAB.");
+
+            GUILayout.Space(6f);
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("Profil lotu jak w oryginale:\n" +
+                            "• T+143 s – wyłączenie i odrzut bloków A (parami),\n" +
+                            "• T+466 s – wyłączenie rdzenia na torze z perygeum ok. −10 km (rdzeń spada do oceanu),\n" +
+                            "• kilkanaście sekund później – odłączenie orbitera,\n" +
+                            "• w apogeum – impuls silników orbitera (ОДУ), który podnosi perygeum i daje orbitę.\n" +
+                            "W MechJeb (PVG): orbita docelowa Pe −10 km / Ap ok. 150–160 km, Last Stage = stage odrzutu rdzenia.");
+            GUILayout.EndVertical();
+        }
+
+        private static void Row3(string label, ref string a, ref string b)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(250f));
+            a = GUILayout.TextField(a ?? "", 7, GUILayout.Width(80f));
+            GUILayout.Space(30f);
+            b = GUILayout.TextField(b ?? "", 7, GUILayout.Width(80f));
+            GUILayout.EndHorizontal();
+        }
+
+        private void RunEnergiaSolve()
+        {
+            EnergiaTemplate.Targets t = new EnergiaTemplate.Targets { fitMass = eFit, dry = eDry };
+            if (!TryNum(eTB, out t.tB) || !TryNum(eTC, out t.tC) || !TryNum(eIspB, out t.ispB) || !TryNum(eIspC, out t.ispC) ||
+                !TryNum(ePropB, out t.propB) || !TryNum(ePropC, out t.propC) || (eFit && !TryNum(eMass, out t.mass)) ||
+                t.tB <= 0 || t.tC <= t.tB || t.ispB <= 0 || t.ispC <= 0 || t.propB <= 0 || t.propC <= 0 || (eFit && t.mass <= 0))
+            {
+                status = "Wpisz poprawne wartości (rdzeń musi pracować dłużej niż bloki).";
+                return;
+            }
+
+            Refresh();
+            CelestialBody body = LaunchBody();
+            double g = body != null ? body.gravParameter / (body.Radius * body.Radius) : 9.80665;
+            EnergiaTemplate.Result r = EnergiaTemplate.Solve(groups, ShipMassNoClamps(), g, t);
+            if (r.ok)
+            {
+                ApplyGroups(false);
+                EngineGroups.FillTanks(r.id.boosters);
+                EngineGroups.FillTanks(r.id.core);
+                ModuleEngineBalancer.NotifyEditor();
+                Refresh();
+            }
+            status = r.message + (r.ok ? "\nZastosowano, zbiorniki bloków i rdzenia zatankowane do pełna." : "");
+        }
+
+        /// <summary>Masa statku bez klamer startowych [t] – z ciągu i TWR liczonych tak samo jak w całym modzie.</summary>
+        private double ShipMassNoClamps()
+        {
+            CelestialBody body = LaunchBody();
+            double twr = CurrentTwr();
+            if (body == null || twr <= 0) return TotalMass();
+            int launch = int.MinValue;
+            foreach (EngineGroup g in groups) launch = Math.Max(launch, g.ignition);
+            double thrust = 0;
+            foreach (EngineGroup g in groups) if (g.ignition == launch) thrust += g.thrustAsl;
+            return thrust / (twr * body.gravParameter / (body.Radius * body.Radius));
         }
 
         // ================================================================== zakładka: Misja

@@ -16,6 +16,8 @@ namespace RSSBalancer
         public string title = "";
         public double thrustAsl;       // aktualny ciąg grupy na poziomie morza [kN]
         public double propMass;        // paliwo dostępne dla grupy [t] (zbiorniki odrzucane razem z nią)
+        public double propCapacity;    // pojemność tych zbiorników [t] (gdy zatankowane do pełna)
+        public double tankDryBase;     // masa pustych zbiorników grupy przy mnożniku 1 [t]
         public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
         public double ispVac;          // ISP w próżni głównego silnika grupy [s] (z obecnymi mnożnikami)
         public readonly List<Part> parts = new List<Part>(); // części z silnikami w tej grupie
@@ -84,17 +86,46 @@ namespace RSSBalancer
             return d != null ? d.inverseStage : -1;
         }
 
-        /// <summary>Najbliższy odłączacz w górę drzewa części (albo sama część, jeśli ma wbudowany odłączacz).</summary>
+        /// <summary>
+        /// Odłączacz, który odrzuca tę część: spośród odłączaczy w górę drzewa (razem z samą częścią) wybieramy te,
+        /// które faktycznie ją odcinają od reszty, a z nich ten, który odpala najwcześniej (najwyższy numer stage'u).
+        /// Przykład Energii: blok boczny ma własny odłączacz (rozdział pary, stage 0), ale odpada razem z parą
+        /// odłączaczem wyżej (stage 3) – liczy się ten drugi. Gdy żaden nie pasuje – najbliższy (jak dawniej).
+        /// </summary>
         public static Part JettisonDecoupler(Part p)
         {
-            Part cur = p;
+            Part cur = p, below = null, nearest = null, best = null;
             int guard = 0;
             while (cur != null && guard++ < 500)
             {
-                if (IsDecoupler(cur)) return cur;
+                if (IsDecoupler(cur))
+                {
+                    if (nearest == null) nearest = cur;
+                    if (Separates(cur, below) && (best == null || cur.inverseStage > best.inverseStage)) best = cur;
+                }
+                below = cur;
                 cur = cur.parent;
             }
-            return null;
+            return best ?? nearest;
+        }
+
+        /// <summary>
+        /// Czy odłączacz <paramref name="dec"/> odcina od korzenia statku gałąź, w której leży <paramref name="below"/>
+        /// (część pod nim na ścieżce; null = sam odłączacz).
+        /// </summary>
+        private static bool Separates(Part dec, Part below)
+        {
+            if (dec.FindModuleImplementing<ModuleAnchoredDecoupler>() != null) return true; // odpada od rodzica razem z całą gałęzią
+            foreach (ModuleDecouple d in dec.FindModulesImplementing<ModuleDecouple>())
+            {
+                if (d.isOmniDecoupler) return true;
+                AttachNode n = string.IsNullOrEmpty(d.explosiveNodeID) || d.explosiveNodeID == "srf" ? null : dec.FindAttachNode(d.explosiveNodeID);
+                Part other = n != null ? n.attachedPart : dec.parent;
+                if (other == null) continue;
+                if (other == dec.parent) return true;              // odpada „w górę” – cała gałąź z nami odlatuje
+                if (below != null && other == below) return true;  // odrzuca dziecko, w którego gałęzi jesteśmy
+            }
+            return false;
         }
 
         /// <summary>Odpala odłączacz bezpośrednio (bez aktywowania całego stage'u).</summary>
@@ -284,7 +315,11 @@ namespace RSSBalancer
                     {
                         if (p == null || !decs.Contains(JettisonDecoupler(p))) continue;
                         ModuleTankBalancer t = p.FindModuleImplementing<ModuleTankBalancer>();
-                        if (t != null) g.tanks.Add(t);
+                        if (t != null) { g.tanks.Add(t); g.tankDryBase += p.prefabMass; }
+                        HashSet<string> pn = PropellantNames(g.parts);
+                        foreach (PartResource r in p.Resources)
+                            if (r != null && r.info != null && pn.Contains(r.resourceName))
+                                g.propCapacity += r.maxAmount * r.info.density;
                     }
                     if (g.tanks.Count > 0)
                     {
@@ -303,6 +338,16 @@ namespace RSSBalancer
             // Jak w VAB: najpierw to, co odpala się na starcie; przy równym odpaleniu – to, co odpada wcześniej.
             list.Sort((a, c) => a.ignition != c.ignition ? c.ignition.CompareTo(a.ignition) : c.jettison.CompareTo(a.jettison));
             return list;
+        }
+
+        /// <summary>Tankuje zbiorniki grupy do pełna (paliwo silników grupy).</summary>
+        public static void FillTanks(EngineGroup g)
+        {
+            HashSet<string> names = PropellantNames(g.parts);
+            foreach (ModuleTankBalancer t in g.tanks)
+                if (t != null && t.part != null)
+                    foreach (PartResource r in t.part.Resources)
+                        if (r != null && names.Contains(r.resourceName)) r.amount = r.maxAmount;
         }
 
         public static void Apply(List<Part> parts, List<EngineGroup> groups, bool resetLimiter)

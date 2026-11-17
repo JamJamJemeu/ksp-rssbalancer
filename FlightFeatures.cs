@@ -44,8 +44,8 @@ namespace RSSBalancer
         private readonly HashSet<Vessel> kicked = new HashSet<Vessel>();
         private readonly List<Kick> kicks = new List<Kick>();
 
-        private bool hotFired, autoSepDone, upperWasOn;
-        private double tBoosterSep = -1, tCoreSep = -1, tUpperOff = -1, tHotStaging = -1;
+        private bool hotFired, autoSepDone, upperWasOn, coreWasOn, energia;
+        private double tBoosterSep = -1, tCoreSep = -1, tUpperOff = -1, tHotStaging = -1, tCoreOff = -1, tUpperOn = -1;
         private float nextIdentify;
 
         private static Rect timelineWindow = new Rect(20f, 120f, 330f, 120f);
@@ -78,8 +78,9 @@ namespace RSSBalancer
             boosterParts.Clear(); coreParts.Clear(); upperParts.Clear();
             coreDecoupler = null;
             kicked.Clear(); kicks.Clear();
-            hotFired = autoSepDone = upperWasOn = false;
-            tBoosterSep = tCoreSep = tUpperOff = tHotStaging = -1;
+            hotFired = autoSepDone = upperWasOn = coreWasOn = energia = false;
+            tBoosterSep = tCoreSep = tUpperOff = tHotStaging = tCoreOff = tUpperOn = -1;
+            TelemetryWindow.Kind = TelemetryWindow.RocketKind.Other;
             tracked = v;
 
             List<EngineGroup> groups = EngineGroups.Build(v.parts, null);
@@ -90,6 +91,8 @@ namespace RSSBalancer
             coreParts.AddRange(id.core.parts);
             if (id.core.parts.Count > 0) coreDecoupler = EngineGroups.JettisonDecoupler(id.core.parts[0]);
             if (id.upper != null) upperParts.AddRange(id.upper.parts);
+            energia = EnergiaTemplate.Looks(id);
+            TelemetryWindow.Kind = energia ? TelemetryWindow.RocketKind.Energia : TelemetryWindow.RocketKind.Soyuz;
             identified = true;
         }
 
@@ -108,8 +111,14 @@ namespace RSSBalancer
                 if (p == null) { boosterParts.RemoveAt(i); continue; }
                 if (p.vessel == null || p.vessel == v) continue;
 
-                if (tBoosterSep < 0) { tBoosterSep = v.missionTime; FlightLogger.Event("Sojuz: odrzut bocznych bloków (cel " + BalancerSettings.BoosterTime.ToString("F0") + " s)"); TelemetryWindow.Lamp(TelemetryWindow.LampId.BoosterSep); }
-                if (BalancerSettings.KorolevCross && !kicked.Contains(p.vessel))
+                if (tBoosterSep < 0)
+                {
+                    tBoosterSep = v.missionTime;
+                    FlightLogger.Event(energia ? "Energia: odrzut bloków A (cel " + EnergiaTemplate.BoosterTime.ToString("F0") + " s)"
+                                               : "Sojuz: odrzut bocznych bloków (cel " + BalancerSettings.BoosterTime.ToString("F0") + " s)");
+                    TelemetryWindow.Lamp(TelemetryWindow.LampId.BoosterSep);
+                }
+                if (!energia && BalancerSettings.KorolevCross && !kicked.Contains(p.vessel))
                 {
                     kicked.Add(p.vessel);
                     StartKick(p.vessel, v);
@@ -121,16 +130,32 @@ namespace RSSBalancer
 
             bool boostersGone = boosterParts.Count == 0 && tBoosterSep >= 0;
 
+            // --- wyłączenie rdzenia (Energia: rdzeń gaśnie, orbiter odłącza się kilkanaście sekund później) ---
+            if (tCoreOff < 0 && tCoreSep < 0 && coreParts.Count > 0)
+            {
+                bool on = Running(coreParts, v);
+                if (on) coreWasOn = true;
+                else if (coreWasOn && energia)
+                {
+                    tCoreOff = v.missionTime;
+                    FlightLogger.Event("Energia: wyłączenie rdzenia (cel " + EnergiaTemplate.CoreTime.ToString("F0") + " s), Pe " +
+                                       (v.orbit.PeA / 1000.0).ToString("F1", CultureInfo.InvariantCulture) + " km, Ap " +
+                                       (v.orbit.ApA / 1000.0).ToString("F1", CultureInfo.InvariantCulture) + " km");
+                    TelemetryWindow.Lamp(TelemetryWindow.LampId.CoreCutoff);
+                }
+            }
+
             // --- odrzut rdzenia ---
             if (tCoreSep < 0 && coreParts.Count > 0 && !AnyAttached(coreParts, v))
             {
                 tCoreSep = v.missionTime;
-                FlightLogger.Event("Sojuz: odrzut rdzenia (cel " + BalancerSettings.CoreTime.ToString("F0") + " s)");
-                TelemetryWindow.Lamp(TelemetryWindow.LampId.CoreSep);
+                FlightLogger.Event(energia ? "Energia: odłączenie orbitera od rdzenia"
+                                           : "Sojuz: odrzut rdzenia (cel " + BalancerSettings.CoreTime.ToString("F0") + " s)");
+                TelemetryWindow.Lamp(energia ? TelemetryWindow.LampId.OrbiterSep : TelemetryWindow.LampId.CoreSep);
             }
 
             // --- gorące rozdzielenie: odpal III stopień tuż przed wypaleniem rdzenia ---
-            if (BalancerSettings.HotStaging && !hotFired && boostersGone && tCoreSep < 0 &&
+            if (!energia && BalancerSettings.HotStaging && !hotFired && boostersGone && tCoreSep < 0 &&
                 upperParts.Count > 0 && Running(coreParts, v))
             {
                 double rem = CoreRemaining(v);
@@ -150,7 +175,7 @@ namespace RSSBalancer
             // --- opcjonalnie: odrzut rdzenia, gdy zgaśnie ---
             // Odpalamy bezpośrednio odłączacz rdzenia, a nie „następny stage” – między rdzeniem a III stopniem
             // często jest jeszcze stage z owiewką, który odpadłby zamiast rdzenia.
-            if (BalancerSettings.AutoCoreSeparation && hotFired && !autoSepDone && tCoreSep < 0 && !Running(coreParts, v))
+            if (!energia && BalancerSettings.AutoCoreSeparation && hotFired && !autoSepDone && tCoreSep < 0 && !Running(coreParts, v))
             {
                 autoSepDone = true;
                 FlightLogger.Event("mod: automatyczny odrzut rdzenia");
@@ -162,8 +187,22 @@ namespace RSSBalancer
             if (upperParts.Count > 0 && tUpperOff < 0)
             {
                 bool on = Running(upperParts, v);
-                if (on) upperWasOn = true;
-                else if (upperWasOn) { tUpperOff = v.missionTime; FlightLogger.Event("Sojuz: koniec pracy III stopnia"); TelemetryWindow.Lamp(TelemetryWindow.LampId.UpperCutoff); }
+                if (on)
+                {
+                    upperWasOn = true;
+                    if (energia && tUpperOn < 0)
+                    {
+                        tUpperOn = v.missionTime;
+                        FlightLogger.Event("Energia: zapłon silników orbitera (ОДУ)");
+                        TelemetryWindow.Lamp(TelemetryWindow.LampId.OmsIgnition);
+                    }
+                }
+                else if (upperWasOn)
+                {
+                    tUpperOff = v.missionTime;
+                    FlightLogger.Event(energia ? "Energia: wyłączenie silników orbitera" : "Sojuz: koniec pracy III stopnia");
+                    TelemetryWindow.Lamp(TelemetryWindow.LampId.UpperCutoff);
+                }
             }
         }
 
@@ -256,7 +295,7 @@ namespace RSSBalancer
         private void OnGUI()
         {
             if (!BalancerSettings.Timeline || Hud.Hidden || !identified || tracked == null) return;
-            timelineWindow = GUILayout.Window(TimelineWindowId, timelineWindow, DrawTimeline, "Oś czasu lotu – Sojuz");
+            timelineWindow = GUILayout.Window(TimelineWindowId, timelineWindow, DrawTimeline, energia ? "Oś czasu lotu – Energia" : "Oś czasu lotu – Sojuz");
         }
 
         private void DrawTimeline(int id)
@@ -264,6 +303,18 @@ namespace RSSBalancer
             Vessel v = tracked;
             double now = v.situation == Vessel.Situations.PRELAUNCH ? 0 : v.missionTime;
             GUILayout.Label("T+ " + now.ToString("F0", CultureInfo.InvariantCulture) + " s");
+
+            if (energia)
+            {
+                EventLine("Odrzut bloków A", tBoosterSep, EnergiaTemplate.BoosterTime);
+                EventLine("Wyłączenie rdzenia", tCoreOff, EnergiaTemplate.CoreTime);
+                EventLine("Odłączenie orbitera", tCoreSep, EnergiaTemplate.CoreTime + 15.0);
+                if (tUpperOn >= 0)
+                    GUILayout.Label("Zapłon silników orbitera:  T+" + tUpperOn.ToString("F1", CultureInfo.InvariantCulture) + " s");
+                if (GUILayout.Button("Ukryj (włączysz w zakładce Sojuz)")) { BalancerSettings.Timeline = false; BalancerSettings.Save(); }
+                GUI.DragWindow();
+                return;
+            }
 
             EventLine("Odrzut bocznych bloków", tBoosterSep, BalancerSettings.BoosterTime);
             if (tHotStaging >= 0)
