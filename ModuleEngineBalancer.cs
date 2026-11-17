@@ -10,7 +10,7 @@ namespace RSSBalancer
     ///   ISP ×   – zmienia wydajność, ciąg zostaje bez zmian (przepływ paliwa liczony odwrotnie do ISP).
     ///   Ciąg ×  – zmienia ciąg, ISP zostaje bez zmian (przepływ paliwa rośnie razem z ciągiem).
     /// </summary>
-    public class ModuleEngineBalancer : PartModule
+    public class ModuleEngineBalancer : PartModule, IPartMassModifier
     {
         public const float MinIspMult = 0.1f;
         public const float MaxIspMult = 5f;
@@ -26,6 +26,21 @@ namespace RSSBalancer
         [UI_FloatRange(minValue = MinThrustMult, maxValue = MaxThrustMult, stepIncrement = 0.05f,
                        scene = UI_Scene.All, affectSymCounterparts = UI_Scene.All)]
         public float thrustMultiplier = 1f;
+
+        /// <summary>Mnożnik masy silnika (ustawiany przez wzorce, np. Energia – gdy silniki z modów są za ciężkie).</summary>
+        [KSPField(isPersistant = true)] public float massMultiplier = 1f;
+
+        public const float MinMass = 0.1f, MaxMass = 2f;
+
+        public float GetModuleMass(float defaultMass, ModifierStagingSituation sit)
+        {
+            return defaultMass * (Mathf.Clamp(massMultiplier, MinMass, MaxMass) - 1f);
+        }
+
+        public ModifierChangeWhen GetModuleMassChangeWhen()
+        {
+            return ModifierChangeWhen.FIXED;
+        }
 
         private class EngineBase
         {

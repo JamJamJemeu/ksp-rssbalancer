@@ -19,6 +19,8 @@ namespace RSSBalancer
         public double propCapacity;    // pojemność tych zbiorników [t] (gdy zatankowane do pełna)
         public double tankDryBase;     // masa pustych zbiorników grupy przy mnożniku 1 [t]
         public double dryMass;         // obecna masa konstrukcji odrzucanej razem z grupą (bez paliwa i klamer) [t]
+        public double engineDryBase;   // masa silników grupy przy mnożniku masy 1 [t] (bez części, które są też zbiornikami)
+        public float engMass = 1f, appliedEngMass = 1f;    // mnożnik masy silników
         public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
         public double ispVac;          // ISP w próżni głównego silnika grupy [s] (z obecnymi mnożnikami)
         public readonly List<Part> parts = new List<Part>(); // części z silnikami w tej grupie
@@ -58,7 +60,7 @@ namespace RSSBalancer
 
         public bool EnginesChanged
         {
-            get { return !Mathf.Approximately(isp, appliedIsp) || !Mathf.Approximately(thrust, appliedThrust); }
+            get { return !Mathf.Approximately(isp, appliedIsp) || !Mathf.Approximately(thrust, appliedThrust) || !Mathf.Approximately(engMass, appliedEngMass); }
         }
 
         public bool TanksChanged
@@ -276,6 +278,8 @@ namespace RSSBalancer
                         };
                         g.isp = keepSliders ? prev.isp : g.appliedIsp;
                         g.thrust = keepSliders ? prev.thrust : g.appliedThrust;
+                        g.appliedEngMass = b.massMultiplier;
+                        g.engMass = keepSliders ? prev.engMass : g.appliedEngMass;
                         found[key] = g;
                     }
                     else if (!Mathf.Approximately(b.ispMultiplier, g.appliedIsp) || !Mathf.Approximately(b.thrustMultiplier, g.appliedThrust))
@@ -284,6 +288,7 @@ namespace RSSBalancer
                     }
 
                     g.engines++;
+                    if (p.FindModuleImplementing<ModuleTankBalancer>() == null) g.engineDryBase += p.prefabMass;
                     g.thrustAsl += ThrustAsl(p);
                     g.parts.Add(p);
                 }
@@ -387,6 +392,7 @@ namespace RSSBalancer
                             b.ispMultiplier = g.isp;
                             b.thrustMultiplier = g.thrust;
                             b.ApplyMultipliers();
+                            if (!Mathf.Approximately(b.massMultiplier, g.engMass)) { b.massMultiplier = g.engMass; p.UpdateMass(); }
                         }
                     }
                 }
@@ -399,7 +405,7 @@ namespace RSSBalancer
             foreach (EngineGroup g in groups)
             {
                 g.appliedIsp = g.isp; g.appliedThrust = g.thrust; g.mixed = false;
-                g.appliedDry = g.dry; g.appliedFuel = g.fuel;
+                g.appliedDry = g.dry; g.appliedFuel = g.fuel; g.appliedEngMass = g.engMass;
             }
             ModuleEngineBalancer.NotifyEditor();
         }

@@ -169,8 +169,9 @@ namespace RSSBalancer
                 ispMult = 1f;
                 thrustMult = 1f;
                 SetAll(1f, 1f);
+                foreach (EngineGroup g in groups) g.engMass = 1f;
                 ApplyGroups(true);
-                status = "Przywrócono oryginalne wartości.";
+                status = "Przywrócono oryginalne wartości silników (ISP, ciąg, masa).";
             }
             GUILayout.EndHorizontal();
 

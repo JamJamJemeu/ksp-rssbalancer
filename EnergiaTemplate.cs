@@ -89,8 +89,8 @@ namespace RSSBalancer
 
             if (t.mode == DryMode.Original)
             {
-                B.dry = DryFor(B, t.dryB, ref dryClamped);
-                C.dry = DryFor(C, t.dryC, ref dryClamped);
+                FitDry(B, t.dryB, ref dryClamped);
+                FitDry(C, t.dryC, ref dryClamped);
             }
             else
             {
@@ -108,8 +108,8 @@ namespace RSSBalancer
                 B.dry = C.dry = Mathf.Round(d * 100f) / 100f;
             }
 
-            r.dryBAfter = B.dryMass + B.tankDryBase * (B.dry - B.appliedDry);
-            r.dryCAfter = C.dryMass + C.tankDryBase * (C.dry - C.appliedDry);
+            r.dryBAfter = DryAfter(B);
+            r.dryCAfter = DryAfter(C);
             r.massAfter = fixedMass + propB + propC + r.dryBAfter + r.dryCAfter;
 
             // Δv w próżni (własny model, niezależny od stockowego kalkulatora):
@@ -140,6 +140,7 @@ namespace RSSBalancer
             r.message = "Bloki A: paliwo ×" + B.fuel.ToString("F2") + ", ISP ×" + B.isp.ToString("F2") + ", ciąg ×" + B.thrust.ToString("F2") +
                         "   Rdzeń: paliwo ×" + C.fuel.ToString("F2") + ", ISP ×" + C.isp.ToString("F2") + ", ciąg ×" + C.thrust.ToString("F2") +
                         "\nMasa pustych ×: bloki " + B.dry.ToString("F2") + ", rdzeń " + C.dry.ToString("F2") +
+                        " · masa silników ×: bloki " + B.engMass.ToString("F2") + ", rdzeń " + C.engMass.ToString("F2") +
                         " · konstrukcja: bloki " + r.dryBAfter.ToString("F0") + " t (oryg. " + BoosterDry.ToString("F0") + "), rdzeń " +
                         r.dryCAfter.ToString("F0") + " t (oryg. " + CoreDry.ToString("F0") + "), orbiter i reszta " + r.restMass.ToString("F0") +
                         " t (oryg. ≈" + OrbiterMass.ToString("F0") + ")" +
@@ -149,8 +150,7 @@ namespace RSSBalancer
             if (clamped)
                 r.message += "\nUWAGA: część mnożników doszła do limitu suwaków – nie wszystkie cele będą osiągnięte.";
             if (dryClamped)
-                r.message += "\nUWAGA: masy konstrukcji nie da się osiągnąć samymi zbiornikami (limit " +
-                             ModuleTankBalancer.MinDry.ToString("F1") + "–" + ModuleTankBalancer.MaxDry.ToString("F1") + "×) – silniki i odłączacze ważą swoje.";
+                r.message += "\nUWAGA: masy konstrukcji nie da się osiągnąć zbiornikami i silnikami (limit 0,1–2×) – resztę ważą inne części (odłączacze, adaptery).";
             if (r.restMass > OrbiterMass * 1.4)
                 r.message += "\nUWAGA: orbiter i reszta ważą " + r.restMass.ToString("F0") + " t – dużo więcej niż Buran (≈105 t); to zabiera Δv rdzeniowi.";
             r.ok = true;
@@ -159,12 +159,36 @@ namespace RSSBalancer
 
         private const double G0 = 9.80665;
 
-        /// <summary>Mnożnik masy pustych zbiorników, przy którym konstrukcja grupy waży <paramref name="target"/> t.</summary>
-        private static float DryFor(EngineGroup g, double target, ref bool clamped)
+        /// <summary>
+        /// Ustawia masę pustych zbiorników grupy tak, by konstrukcja ważyła <paramref name="target"/> t.
+        /// Gdy same zbiorniki nie wystarczą (limit 0,1–2×), resztę bierze mnożnik masy silników.
+        /// </summary>
+        private static void FitDry(EngineGroup g, double target, ref bool clamped)
         {
-            if (g.tankDryBase <= 0) return g.appliedDry;
-            float m = (float)(g.appliedDry + (target - g.dryMass) / g.tankDryBase);
-            return Clamp(m, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry, ref clamped);
+            double delta = target - g.dryMass;
+            float tank = g.appliedDry;
+            if (g.tankDryBase > 0)
+            {
+                float want = (float)(g.appliedDry + delta / g.tankDryBase);
+                tank = Mathf.Round(Mathf.Clamp(want, ModuleTankBalancer.MinDry, ModuleTankBalancer.MaxDry) * 100f) / 100f;
+                delta -= g.tankDryBase * (tank - g.appliedDry);
+            }
+            g.dry = tank;
+
+            float eng = g.appliedEngMass;
+            if (Math.Abs(delta) > 0.5 && g.engineDryBase > 0)
+            {
+                float want = (float)(g.appliedEngMass + delta / g.engineDryBase);
+                eng = Mathf.Round(Mathf.Clamp(want, ModuleEngineBalancer.MinMass, ModuleEngineBalancer.MaxMass) * 100f) / 100f;
+                delta -= g.engineDryBase * (eng - g.appliedEngMass);
+            }
+            g.engMass = eng;
+            if (Math.Abs(delta) > 1.0) clamped = true;
+        }
+
+        private static double DryAfter(EngineGroup g)
+        {
+            return g.dryMass + g.tankDryBase * (g.dry - g.appliedDry) + g.engineDryBase * (g.engMass - g.appliedEngMass);
         }
 
         /// <summary>Ustawia paliwo, ISP i ciąg jednej grupy. Zwraca masę paliwa po zatankowaniu do pełna [t].</summary>
