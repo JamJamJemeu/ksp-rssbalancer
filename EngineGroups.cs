@@ -19,7 +19,9 @@ namespace RSSBalancer
         public double propCapacity;    // pojemność tych zbiorników [t] (gdy zatankowane do pełna)
         public double tankDryBase;     // masa pustych zbiorników grupy przy mnożniku 1 [t]
         public double dryMass;         // obecna masa konstrukcji odrzucanej razem z grupą (bez paliwa i klamer) [t]
-        public double engineDryBase;   // masa silników grupy przy mnożniku masy 1 [t] (bez części, które są też zbiornikami)
+        public double engineDryBase;   // masa silników grupy przy mnożniku masy 1 [t] (cała część, bez części, które są też zbiornikami)
+        public double ownModMass;      // masa dodawana teraz przez mnożniki RSSBalancera w tej grupie (zbiorniki i silniki) [t]
+        public double Core0 { get { return dryMass - ownModMass; } }   // konstrukcja przy wszystkich mnożnikach = 1
         public float engMass = 1f, appliedEngMass = 1f;    // mnożnik masy silników
         public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
         public double ispVac;          // ISP w próżni głównego silnika grupy [s] (z obecnymi mnożnikami)
@@ -288,7 +290,8 @@ namespace RSSBalancer
                     }
 
                     g.engines++;
-                    if (p.FindModuleImplementing<ModuleTankBalancer>() == null) g.engineDryBase += p.prefabMass;
+                    if (p.FindModuleImplementing<ModuleTankBalancer>() == null) g.engineDryBase += ModuleTankBalancer.WholeBase(p);
+                    foreach (ModuleEngineBalancer eb in mods) g.ownModMass += eb.GetModuleMass(p.prefabMass, ModifierStagingSituation.CURRENT);
                     g.thrustAsl += ThrustAsl(p);
                     g.parts.Add(p);
                 }
@@ -322,7 +325,15 @@ namespace RSSBalancer
                         if (p == null || !decs.Contains(JettisonDecoupler(p))) continue;
                         if (!IsClampRelated(p)) g.dryMass += p.mass;
                         ModuleTankBalancer t = p.FindModuleImplementing<ModuleTankBalancer>();
-                        if (t != null) { g.tanks.Add(t); g.tankDryBase += p.prefabMass; }
+                        if (t != null)
+                        {
+                            g.tanks.Add(t);
+                            if (!IsClampRelated(p))
+                            {
+                                g.tankDryBase += ModuleTankBalancer.WholeBase(p);
+                                g.ownModMass += t.GetModuleMass(p.prefabMass, ModifierStagingSituation.CURRENT);
+                            }
+                        }
                         HashSet<string> pn = PropellantNames(g.parts);
                         foreach (PartResource r in p.Resources)
                             if (r != null && r.info != null && pn.Contains(r.resourceName))

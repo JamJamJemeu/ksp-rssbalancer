@@ -610,7 +610,21 @@ namespace RSSBalancer
             EnergiaTemplate.Result r = EnergiaTemplate.Solve(groups, ShipMassNoClamps(), g, t);
             if (r.ok)
             {
+                // Energia: mnożniki masy obejmują całą część (też masę z TweakScale itp.).
+                foreach (EngineGroup g2 in new[] { r.id.boosters, r.id.core })
+                {
+                    foreach (ModuleTankBalancer tb in g2.tanks)
+                        if (tb != null) tb.scaleWholePart = true;
+                    foreach (Part p in g2.parts)
+                        foreach (ModuleEngineBalancer eb in p.FindModulesImplementing<ModuleEngineBalancer>())
+                            eb.scaleWholePart = true;
+                }
                 ApplyGroups(false);
+                foreach (EngineGroup g2 in new[] { r.id.boosters, r.id.core })
+                {
+                    foreach (ModuleTankBalancer tb in g2.tanks) if (tb != null && tb.part != null) tb.part.UpdateMass();
+                    foreach (Part p in g2.parts) if (p != null) p.UpdateMass();
+                }
                 EngineGroups.FillTanks(r.id.boosters);
                 EngineGroups.FillTanks(r.id.core);
                 ModuleEngineBalancer.NotifyEditor();

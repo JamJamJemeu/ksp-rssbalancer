@@ -32,9 +32,13 @@ namespace RSSBalancer
 
         public const float MinMass = 0.1f, MaxMass = 2f;
 
+        /// <summary>Jak w ModuleTankBalancer: true = mnożnik działa na całą masę części (z TweakScale itp.).</summary>
+        [KSPField(isPersistant = true)] public bool scaleWholePart = false;
+
         public float GetModuleMass(float defaultMass, ModifierStagingSituation sit)
         {
-            return defaultMass * (Mathf.Clamp(massMultiplier, MinMass, MaxMass) - 1f);
+            float b = defaultMass + (scaleWholePart ? ModuleTankBalancer.OtherMass(part, defaultMass, sit) : 0f);
+            return b * (Mathf.Clamp(massMultiplier, MinMass, MaxMass) - 1f);
         }
 
         public ModifierChangeWhen GetModuleMassChangeWhen()

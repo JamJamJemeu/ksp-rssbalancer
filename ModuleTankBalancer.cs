@@ -180,9 +180,38 @@ namespace RSSBalancer
         }
 
         // --- IPartMassModifier: dodatkowa masa = masa własna × (mnożnik − 1)
+        /// <summary>
+        /// Gdy true (ustawia wzorzec Energii), mnożnik działa na całą masę części – razem z tym, co dodają inne mody
+        /// (np. TweakScale przy przeskalowanej części). Gdy false – tylko na masę bazową części, jak dawniej.
+        /// </summary>
+        [KSPField(isPersistant = true)] public bool scaleWholePart = false;
+
         public float GetModuleMass(float defaultMass, ModifierStagingSituation sit)
         {
-            return defaultMass * (dryMassMultiplier - 1f);
+            float b = defaultMass + (scaleWholePart ? OtherMass(part, defaultMass, sit) : 0f);
+            return b * (dryMassMultiplier - 1f);
+        }
+
+        /// <summary>Masa dodawana do części przez moduły innych modów (TweakScale, B9PartSwitch…), bez modułów RSSBalancera.</summary>
+        public static float OtherMass(Part p, float defaultMass, ModifierStagingSituation sit)
+        {
+            if (p == null || p.Modules == null) return 0f;
+            float m = 0f;
+            for (int i = 0; i < p.Modules.Count; i++)
+            {
+                PartModule pm = p.Modules[i];
+                if (pm is ModuleTankBalancer || pm is ModuleEngineBalancer) continue;
+                IPartMassModifier mm = pm as IPartMassModifier;
+                if (mm == null) continue;
+                try { m += mm.GetModuleMass(defaultMass, sit); } catch { }
+            }
+            return m;
+        }
+
+        /// <summary>Masa części przy wszystkich mnożnikach RSSBalancera = 1 (masa bazowa + dodatki innych modów).</summary>
+        public static double WholeBase(Part p)
+        {
+            return p.prefabMass + OtherMass(p, p.prefabMass, ModifierStagingSituation.CURRENT);
         }
 
         public ModifierChangeWhen GetModuleMassChangeWhen()
