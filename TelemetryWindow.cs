@@ -411,6 +411,7 @@ namespace RSSBalancer
             if (events.Count == 0)
                 SovietSkin.Glow(new Rect(AmberRect.x + 10, y, AmberRect.width - 18, 18), L("ГОТОВНОСТЬ К ПУСКУ", "GOTOWOŚĆ DO STARTU"), sAmber);
             GUI.DrawTexture(AmberRect, SovietSkin.AmberOverlay);
+            GUI.DrawTexture(new Rect(AmberRect.x + 4, AmberRect.y + 4, AmberRect.width - 8, AmberRect.height - 8), SovietSkin.Glare);
         }
 
         // ---------------------------------------------------------------- porównanie
@@ -489,6 +490,7 @@ namespace RSSBalancer
                 SovietSkin.Glow(new Rect(r.x + GX, ly, GW, 16), L("ДВИГАТЕЛИ ВЫКЛЮЧЕНЫ", "SILNIKI WYŁĄCZONE"), sCrt);
 
             GUI.DrawTexture(r, SovietSkin.CrtOverlay);
+            GUI.DrawTexture(new Rect(r.x + 7, r.y + 7, r.width - 14, r.height - 14), SovietSkin.Glare);
         }
 
         private void Line2(float x1, float x2, ref float y, string a, string b)

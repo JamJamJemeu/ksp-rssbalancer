@@ -11,7 +11,7 @@ namespace RSSBalancer
     public static class SovietSkin
     {
         public static Texture2D Metal, Crt, CrtOverlay, Amber, AmberOverlay, Plate;
-        public static Texture2D Grip, Drum, Slot, LampGreen, LampAmber, LampOff, Screw, Button, ButtonOn;
+        public static Texture2D Glare, Grip, Drum, Slot, LampGreen, LampAmber, LampOff, Screw, Button, ButtonOn;
         public static Font Mono;
 
         public static readonly Color Phosphor = new Color(0.49f, 1f, 0.60f);
@@ -42,6 +42,7 @@ namespace RSSBalancer
 
             if (Drum == null) Drum = MakeDrum();
             if (Grip == null) Grip = MakeGrip();
+            if (Glare == null) Glare = MakeGlare();
             if (Slot == null) Slot = MakeVertical(8, 16, new Color32(3, 3, 3, 255), new Color32(23, 24, 24, 255));
             if (Button == null) Button = MakeButton(false);
             if (ButtonOn == null) ButtonOn = MakeButton(true);
@@ -280,23 +281,11 @@ namespace RSSBalancer
                         float ie = e - ring;
                         c *= 1f - (1 - Smooth(0, shadow, ie)) * (1 - Smooth(0, shadow, ie)) * 0.9f;
 
-                        // nakładka
-                        float a = 0f;
-                        Color oc = Color.black;
-                        if (sy % 3 == 0) a = 0.26f;
+                        // nakładka: tylko przyciemnienie (linie skanowania i winieta) – odblask jest osobną teksturą
+                        float a = (sy % 3 == 0) ? 0.18f : 0f;
                         float vig = crt ? Smooth(0.6f, 1.0f, d) * 0.45f : 0f;
                         a = 1 - (1 - a) * (1 - vig);
-                        float s = (u * 0.883f + v * 0.469f) / 1.352f;
-                        float glare = Mathf.Clamp01(1 - s / 0.40f) * 0.10f;
-                        if (glare > 0)
-                        {
-                            // odblask: biała warstwa ponad ciemną
-                            float aa = a + glare * (1 - a);
-                            oc = Color.Lerp(Color.black, Color.white, glare / Math.Max(aa, 0.001f));
-                            a = aa;
-                        }
-                        oc.a = a;
-                        ov[y * w + x] = oc;
+                        ov[y * w + x] = new Color(0f, 0f, 0f, a);
                         c.a = 1f;
                         px[y * w + x] = c;
                         continue;
@@ -312,6 +301,24 @@ namespace RSSBalancer
         }
 
         // ================================================================== drobne elementy
+
+        /// <summary>Odblask szyby: biały, płynnie zanikający od lewego górnego rogu (bez ostrej krawędzi).</summary>
+        private static Texture2D MakeGlare()
+        {
+            int n = 64;
+            Texture2D t = New(n, n);
+            Color32[] px = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float u = x / (float)(n - 1), v = 1f - y / (float)(n - 1);   // v = 0 u góry
+                    float s = (u * 0.883f + v * 0.469f) / 1.352f;
+                    float a = (1f - Smooth(0f, 0.55f, s)) * 0.07f;
+                    px[y * n + x] = new Color(1f, 1f, 1f, a);
+                }
+            t.SetPixels32(px); t.Apply();
+            return t;
+        }
 
         /// <summary>Uchwyt skalowania: trzy ukośne rowki wytłoczone w blasze.</summary>
         private static Texture2D MakeGrip()
