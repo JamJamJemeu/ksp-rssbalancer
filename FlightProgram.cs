@@ -148,6 +148,9 @@ namespace RSSBalancer
                 if (ll.Length >= 2) { siteLat = Num(ll[0], 0); siteLon = Num(ll[1], 0); siteSet = true; }
             }
             siteLead = p.node != null ? Num(p.node.GetValue("siteLead"), 3900) : 3900;
+            planAngle = p.node != null ? Num(p.node.GetValue("deorbitAngle"), 185) : 185;
+            planMaxXr = p.node != null ? Num(p.node.GetValue("maxCrossRange"), 1000) : 1000;
+            planUT = double.NaN; nextPlan = 0; PlanInfo = "";
             approachOn = false; rwySet = false;
             string rwy = p.node != null ? p.node.GetValue("runway") : null;
             if (rwy != null)
@@ -160,6 +163,7 @@ namespace RSSBalancer
             RefreshGroups();
             LastMessage = "Program „" + p.name + "” uzbrojony.";
             FlightLogger.Event("Program lotu: start „" + p.name + "”");
+            Debug.Log("[RSSBalancer] Program lotu: start " + p.name);
         }
 
         public void Stop()
@@ -214,6 +218,11 @@ namespace RSSBalancer
             if (holdAttitude) HoldAttitude();
             if (approachOn) Approach();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
+            if (!double.IsNaN(planUT) && !burnOn && TimeWarp.CurrentRateIndex > 0)
+            {
+                double tin = planUT - Planetarium.GetUniversalTime();
+                if (tin > 0 && tin < 90 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime) { TimeWarp.SetRate(0, true); LastMessage += "\nZatrzymano przyspieszenie przed impulsem."; }
+            }
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
             for (int guard = 0; guard < 8 && Active; guard++)
@@ -283,6 +292,7 @@ namespace RSSBalancer
                 case "landed": return vessel.Landed ? 1 : 0;
                 case "siteangle": return SiteAngle(false);
                 case "sitexrange": return SiteAngle(true);
+                case "deorbitin": return DeorbitIn();
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
                 case "upper": return id != null && id.ok ? Running_(id.upper, v) : double.NaN;
@@ -298,17 +308,94 @@ namespace RSSBalancer
         {
             if (!siteSet || vessel == null) return double.NaN;
             CelestialBody b = vessel.mainBody;
-            Vector3d site = b.GetWorldSurfacePosition(siteLat, siteLon, 0) - b.position;
-            double deg = b.rotates && b.rotationPeriod > 0 ? 360.0 * siteLead / b.rotationPeriod : 0;
-            Vector3d axis = b.angularVelocity.normalized;
-            if (axis.sqrMagnitude > 0.5) site = (Vector3d)(Quaternion.AngleAxis((float)deg, (Vector3)axis) * (Vector3)site);
             Vector3d r = vessel.CoMD - b.position;
             Vector3d h = Vector3d.Cross(r, vessel.obt_velocity).normalized;
+            return SiteGeometry(b, r, h, Planetarium.GetUniversalTime() + siteLead, crossRange);
+        }
+
+        /// <summary>
+        /// Geometria względem miejsca lądowania: r – położenie statku (względem środka planety, układ świata „teraz”),
+        /// h – normalna płaszczyzny orbity, siteUT – chwila, w której liczymy położenie miejsca.
+        /// Obrót Ziemi uwzględniamy przesunięciem długości geograficznej na wschód (bez kwaternionów – bez pułapki znaku).
+        /// </summary>
+        private double SiteGeometry(CelestialBody b, Vector3d r, Vector3d h, double siteUT, bool crossRange)
+        {
+            double now = Planetarium.GetUniversalTime();
+            double dLon = b.rotates && b.rotationPeriod > 0 ? 360.0 * (siteUT - now) / b.rotationPeriod : 0;
+            Vector3d site = b.GetWorldSurfacePosition(siteLat, siteLon + dLon, 0) - b.position;
             double off = Vector3d.Dot(site.normalized, h);
             if (crossRange) return Math.Abs(Math.Asin(Math.Max(-1, Math.Min(1, off)))) * b.Radius / 1000.0;
             Vector3d sp = site - h * Vector3d.Dot(site, h);
             double ang = Math.Atan2(Vector3d.Dot(Vector3d.Cross(r, sp), h), Vector3d.Dot(r, sp)) * 180.0 / Math.PI;
             return ang < 0 ? ang + 360 : ang;
+        }
+
+        // ------------------------------------------------------------------ plan zejścia z orbity
+        // Zamiast „łapać” okno siteangle w locie (przy dużym przyspieszeniu czasu jedna klatka fizyki to setki
+        // sekund i okno 14° po prostu się przeskakuje) liczymy z orbity Keplera chwilę impulsu z góry.
+
+        private double planUT = double.NaN, planXr = double.NaN, nextPlan;
+        private double planAngle = 185, planMaxXr = 1000;
+        public string PlanInfo = "";
+        public string SiteInfo
+        {
+            get
+            {
+                if (!Active || !siteSet || vessel == null) return "";
+                double a = SiteAngle(false), x = SiteAngle(true);
+                return "miejsce lądowania: " + a.ToString("F1") + "° przed statkiem, odejście boczne " + x.ToString("F0") + " km";
+            }
+        }
+
+        private double DeorbitIn()
+        {
+            double now = Planetarium.GetUniversalTime();
+            // plan „zamrażamy” na ostatnie 10 min przed impulsem i do 10 min po nim (żeby warunek „<= 0” był stabilny)
+            bool locked = !double.IsNaN(planUT) && now > planUT - 600 && now < planUT + 600;
+            if (!locked && Time.realtimeSinceStartup > nextPlan)
+            {
+                nextPlan = Time.realtimeSinceStartup + 5f;
+                PlanDeorbit();
+            }
+            return double.IsNaN(planUT) ? double.NaN : planUT - now;
+        }
+
+        private Vector3d PosAt(Orbit o, CelestialBody b, double ut) { return o.getPositionAtUT(ut) - b.position; }
+
+        private double AngleAt(Orbit o, CelestialBody b, double ut, bool xr)
+        {
+            Vector3d r = PosAt(o, b, ut), r2 = PosAt(o, b, ut + 1);
+            Vector3d h = Vector3d.Cross(r, r2 - r).normalized;
+            return SiteGeometry(b, r, h, ut + siteLead, xr);
+        }
+
+        private void PlanDeorbit()
+        {
+            planUT = double.NaN; planXr = double.NaN;
+            if (!siteSet || vessel == null || vessel.orbit == null) { PlanInfo = "brak miejsca lądowania w programie"; return; }
+            Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
+            if (o.eccentricity >= 1 || o.PeA < 0) { PlanInfo = "orbita nie jest zamknięta"; return; }
+            double now = Planetarium.GetUniversalTime(), step = 20, horizon = 3 * 86400;
+            double tPrev = now + 30, aPrev = AngleAt(o, b, tPrev, false);
+            double bestXr = double.MaxValue;
+            for (double t = tPrev + step; t < now + horizon; t += step)
+            {
+                double a = AngleAt(o, b, t, false);
+                // kąt do miejsca maleje w miarę lotu; przejście przez planAngle (bez skoku 0↔360)
+                if (aPrev > planAngle && a <= planAngle && aPrev - a < 90)
+                {
+                    double lo = t - step, hi = t;
+                    for (int i = 0; i < 20; i++) { double m = 0.5 * (lo + hi); if (AngleAt(o, b, m, false) > planAngle) lo = m; else hi = m; }
+                    double xr = AngleAt(o, b, hi, true);
+                    if (xr < bestXr) bestXr = xr;
+                    if (xr <= planMaxXr) { planUT = hi; planXr = xr; break; }
+                }
+                tPrev = t; aPrev = a;
+            }
+            if (double.IsNaN(planUT))
+                PlanInfo = "brak okna w 3 doby (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")";
+            else
+                PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", odejście boczne " + planXr.ToString("F0") + " km";
         }
 
         private static int Running_(EngineGroup g, Vessel v)
@@ -338,6 +425,7 @@ namespace RSSBalancer
             string log = n.GetValue("log");
             FlightLogger.Event("Program lotu: " + s.name + (string.IsNullOrEmpty(log) ? "" : " – " + log));
             LastMessage = s.name + (string.IsNullOrEmpty(log) ? "" : ": " + log);
+            Debug.Log("[RSSBalancer] Program lotu: krok " + s.name + " MET " + vessel.missionTime.ToString("F0"));
 
             foreach (ConfigNode.Value v in n.values)
             {
@@ -431,6 +519,17 @@ namespace RSSBalancer
                     else if (key == "warp")
                     {
                         if (val == "stop" && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+                    }
+                    else if (key == "warpto")
+                    {
+                        // warpto = deorbit <ile sekund przed impulsem>
+                        string[] w = val.ToLowerInvariant().Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        double lead = w.Length > 1 ? Num(w[1], 300) : 300;
+                        double tin = DeorbitIn();
+                        if (double.IsNaN(tin)) throw new Exception("brak planu zejścia: " + PlanInfo);
+                        if (tin > lead + 5) TimeWarp.fetch.WarpTo(planUT - lead);
+                        LastMessage += "\nPlan: " + PlanInfo;
+                        FlightLogger.Event("Program lotu: plan zejścia – " + PlanInfo);
                     }
                     else if (key == "sas") vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, val == "on");
                     else if (key == "rcs") vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, val == "on");
