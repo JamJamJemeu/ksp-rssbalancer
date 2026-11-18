@@ -24,6 +24,7 @@ namespace RSSBalancer
         public double Core0 { get { return dryMass - ownModMass; } }   // konstrukcja przy wszystkich mnożnikach = 1
         public float engMass = 1f, appliedEngMass = 1f;    // mnożnik masy silników
         public double massFlow;        // przepływ paliwa przy pełnym ciągu [t/s]
+        public double curveTime = 1.0; // ile razy dłużej pracuje silnik przez krzywą ciągu (thrustCurve, np. RD-170 dławiony do 70%); 1 = brak krzywej
         public double ispVac;          // ISP w próżni głównego silnika grupy [s] (z obecnymi mnożnikami)
         public readonly List<Part> parts = new List<Part>(); // części z silnikami w tej grupie
 
@@ -52,7 +53,7 @@ namespace RSSBalancer
         /// Czas pracy liczony przez mod: paliwo ÷ przepływ (bez stockowego kalkulatora Δv,
         /// który myli się przy stagingu z osobnym stage'em klamer startowych).
         /// </summary>
-        public double BurnTimeNow { get { return massFlow > 0 ? propMass / massFlow : 0.0; } }
+        public double BurnTimeNow { get { return massFlow > 0 ? propMass / massFlow * curveTime : 0.0; } }
 
         /// <summary>Czas pracy ∝ ISP / ciąg (przepływ paliwa = ciąg / ISP). Dokładne dla grupy z własnym paliwem.</summary>
         public double BurnTimeAfter(double now)
@@ -146,6 +147,25 @@ namespace RSSBalancer
         public const double G0 = 9.80665;
 
         /// <summary>Przepływ paliwa części przy pełnym ciągu [t/s], z mnożnikami i limiterem. Przy silnikach wielotrybowych – najmocniejszy tryb.</summary>
+        /// <summary>
+        /// Silnik z thrustCurve (useThrustCurve) mnoży przepływ przez krzywą zależną od ułamka pozostałego paliwa.
+        /// Zwraca ∫₀¹ df / krzywa(f) – o tyle dłużej pracuje niż przy stałym pełnym ciągu.
+        /// </summary>
+        public static double CurveTimeFactor(ModuleEngines e)
+        {
+            if (e == null || !e.useThrustCurve || e.thrustCurve == null || e.thrustCurve.Curve == null || e.thrustCurve.Curve.length < 2) return 1.0;
+            const int n = 400;
+            double sum = 0.0;
+            for (int i = 0; i < n; i++)
+            {
+                float f = (i + 0.5f) / n;
+                double c = e.thrustCurve.Evaluate(f);
+                sum += 1.0 / System.Math.Max(0.05, c);
+            }
+            double k = sum / n;
+            return (k > 0.5 && k < 20.0) ? k : 1.0;
+        }
+
         public static double MassFlow(Part p)
         {
             double best = 0.0;
@@ -302,6 +322,7 @@ namespace RSSBalancer
             {
                 g.massFlow = 0.0;
                 g.ispVac = 0.0;
+                g.curveTime = 1.0;
                 double bestFlow = -1.0;
                 foreach (Part p in g.parts)
                 {
@@ -310,7 +331,7 @@ namespace RSSBalancer
                     // ISP z silnika o największym przepływie (główny silnik, nie vernier).
                     if (f > bestFlow)
                         foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
-                            if (e.atmosphereCurve != null) { bestFlow = f; g.ispVac = e.atmosphereCurve.Evaluate(0f); break; }
+                            if (e.atmosphereCurve != null) { bestFlow = f; g.ispVac = e.atmosphereCurve.Evaluate(0f); g.curveTime = CurveTimeFactor(e); break; }
                 }
                 if (parts != null && g.parts.Count > 0)
                 {

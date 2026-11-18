@@ -64,7 +64,8 @@ namespace RSSBalancer
             if (v == null) return;
 
             // Rozpoznajemy układ na starcie (albo po przełączeniu na inną rakietę stojącą na wyrzutni).
-            bool needs = !identified || (v != tracked && v.situation == Vessel.Situations.PRELAUNCH);
+            // Na wyrzutni rozpoznajemy co sekundę – w pierwszych klatkach mnożniki ISP/ciągu mogą nie być jeszcze nałożone.
+            bool needs = !identified || v.situation == Vessel.Situations.PRELAUNCH;
             if (needs && Time.realtimeSinceStartup > nextIdentify)
             {
                 nextIdentify = Time.realtimeSinceStartup + 1f;

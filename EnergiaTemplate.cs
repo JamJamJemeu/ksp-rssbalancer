@@ -35,7 +35,7 @@ namespace RSSBalancer
         /// <summary>Energia ma rdzeń wodorowy – po tym odróżniamy ją od Sojuza (rdzeń na naftę, ≈320 s).</summary>
         public static bool Looks(SoyuzTemplate.Result id)
         {
-            return id != null && id.ok && id.core != null && id.core.ispVac > 400.0;
+            return id != null && id.ok && id.core != null && id.core.ispVac > 375.0;   // wodór-tlen (także przed nałożeniem mnożników ISP)
         }
 
         public class Targets
@@ -199,8 +199,8 @@ namespace RSSBalancer
 
             g.isp = Clamp((float)(g.appliedIsp * ispTarget / g.ispVac), ModuleEngineBalancer.MinIspMult, ModuleEngineBalancer.MaxIspMult, ref clamped);
 
-            // przepływ ∝ ciąg / ISP;  czas = paliwo / przepływ
-            double thr = g.appliedThrust * (prop / (g.massFlow * time)) * (g.isp / g.appliedIsp);
+            // przepływ ∝ ciąg / ISP;  czas = paliwo / przepływ × krzywa ciągu (RD-170 dławi się do 70% w drugiej połowie pracy)
+            double thr = g.appliedThrust * (prop * g.curveTime / (g.massFlow * time)) * (g.isp / g.appliedIsp);
             g.thrust = Clamp((float)thr, ModuleEngineBalancer.MinThrustMult, ModuleEngineBalancer.MaxThrustMult, ref clamped);
             return prop;
         }
