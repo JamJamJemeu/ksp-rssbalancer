@@ -802,6 +802,7 @@ namespace RSSBalancer
                 if (GUILayout.Button("Zatrzymaj")) { run.Stop(); status = "Program zatrzymany."; }
             }
             GUILayout.EndHorizontal();
+            if (run != null && !string.IsNullOrEmpty(run.ApproachInfo)) GUILayout.Label("Podejście: " + run.ApproachInfo);
             if (run != null && !string.IsNullOrEmpty(run.LastMessage)) GUILayout.Label(run.LastMessage);
         }
 

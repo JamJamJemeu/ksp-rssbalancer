@@ -114,6 +114,14 @@ namespace RSSBalancer
         private bool siteSet;
         private double siteLat, siteLon, siteLead = 3900;
         private double attError = 180;
+
+        // --- podejście i lądowanie (MechJeb Aircraft Autopilot) ---
+        private bool approachOn, rwySet, gearDone, landedDone;
+        private double rwyLatA, rwyLonA, rwyLatB, rwyLonB, rwyAlt;
+        private Vector3d thrPos, rwyDir;     // próg pasa (świat, względem ciała) i kierunek lądowania (jednostkowy)
+        private double rwyHeading;
+        private string approachPhase = "";
+        public string ApproachInfo { get { return approachOn ? approachPhase : ""; } }
         private List<EngineGroup> groups;
         private SoyuzTemplate.Result id;
         private float nextGroups;
@@ -140,6 +148,13 @@ namespace RSSBalancer
                 if (ll.Length >= 2) { siteLat = Num(ll[0], 0); siteLon = Num(ll[1], 0); siteSet = true; }
             }
             siteLead = p.node != null ? Num(p.node.GetValue("siteLead"), 3900) : 3900;
+            approachOn = false; rwySet = false;
+            string rwy = p.node != null ? p.node.GetValue("runway") : null;
+            if (rwy != null)
+            {
+                string[] r = rwy.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (r.Length >= 5) { rwyLatA = Num(r[0], 0); rwyLonA = Num(r[1], 0); rwyLatB = Num(r[2], 0); rwyLonB = Num(r[3], 0); rwyAlt = Num(r[4], 0); rwySet = true; }
+            }
             qMax = 0;
             lastActivation = Planetarium.GetUniversalTime();
             RefreshGroups();
@@ -151,6 +166,7 @@ namespace RSSBalancer
         {
             if (Running != null) FlightLogger.Event("Program lotu: zatrzymany („" + Running.name + "”)");
             ReleaseAttitude();
+            StopApproach();
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             Running = null;
             Current = -1;
@@ -186,6 +202,7 @@ namespace RSSBalancer
 
         private void FixedUpdate()
         {
+            if (approachOn && vessel != null && vessel == FlightGlobals.ActiveVessel && !Active) Approach();
             if (!Active) return;
             if (vessel == null || vessel != FlightGlobals.ActiveVessel) { LastMessage = "Zmieniono statek – program zatrzymany."; Stop(); return; }
 
@@ -195,6 +212,7 @@ namespace RSSBalancer
             if ((id == null || !id.ok) && vessel.situation == Vessel.Situations.PRELAUNCH && Time.realtimeSinceStartup > nextGroups)
             { nextGroups = Time.realtimeSinceStartup + 2f; RefreshGroups(); }
             if (holdAttitude) HoldAttitude();
+            if (approachOn) Approach();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
@@ -261,6 +279,8 @@ namespace RSSBalancer
                 case "lon": return v.longitude;
                 case "mach": return v.mach;
                 case "aligned": return holdAttitude && attError < 5.0 ? 1 : 0;
+                case "rwydist": return approachOn || rwySet ? RunwayDistance() / 1000.0 : double.NaN;
+                case "landed": return vessel.Landed ? 1 : 0;
                 case "siteangle": return SiteAngle(false);
                 case "sitexrange": return SiteAngle(true);
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
@@ -403,6 +423,11 @@ namespace RSSBalancer
                         burnOn = val == "on";
                         if (!burnOn) FlightInputHandler.state.mainThrottle = 0f;
                     }
+                    else if (key == "approach")
+                    {
+                        if (val == "on") StartApproach();
+                        else StopApproach();
+                    }
                     else if (key == "warp")
                     {
                         if (val == "stop" && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
@@ -476,6 +501,171 @@ namespace RSSBalancer
             if (pool == null) return "MechJeb: nie znaleziono autopilota wznoszenia.";
             PoolCall(pool, on ? "Add" : "Remove");
             return on ? "MechJeb: Ascent Guidance włączone." : "MechJeb: Ascent Guidance wyłączone.";
+        }
+
+        // ------------------------------------------------------------------ podejście i lądowanie
+
+        private Vector3d Surf(double lat, double lon, double alt)
+        {
+            CelestialBody b = vessel.mainBody;
+            return b.GetWorldSurfacePosition(lat, lon, alt) - b.position;
+        }
+
+        /// <summary>Odległość [m] do progu pasa wzdłuż osi pasa (dodatnia przed progiem).</summary>
+        private double RunwayDistance()
+        {
+            if (!rwySet) return double.NaN;
+            if (!approachOn) ChooseRunwayEnd();
+            Vector3d rel = (vessel.CoMD - vessel.mainBody.position) - thrPos;
+            return -Vector3d.Dot(rel, rwyDir);
+        }
+
+        private void ChooseRunwayEnd()
+        {
+            Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt), b = Surf(rwyLatB, rwyLonB, rwyAlt);
+            Vector3d ab = (b - a).normalized;
+            Vector3d v = vessel.srf_velocity;
+            Vector3d up = a.normalized;
+            Vector3d vh = (v - up * Vector3d.Dot(v, up)).normalized;
+            // lądujemy w kierunku bliższym obecnemu kursowi
+            if (Vector3d.Dot(vh, ab) >= 0) { thrPos = a; rwyDir = ab; } else { thrPos = b; rwyDir = -ab; }
+            Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized;
+            Vector3d east = Vector3d.Cross(up, north).normalized;
+            rwyHeading = (Math.Atan2(Vector3d.Dot(rwyDir, east), Vector3d.Dot(rwyDir, north)) * 180 / Math.PI + 360) % 360;
+        }
+
+        private object Airplane()
+        {
+            object core = Core();
+            return core != null ? Module(core, "MechJebModuleAirplaneAutopilot") : null;
+        }
+
+        private static void SetF(object o, string name, object value)
+        {
+            FieldInfo f = o.GetType().GetField(name, Flags);
+            if (f == null) return;
+            if (f.FieldType.Name.StartsWith("Editable"))
+            {
+                object e = f.GetValue(o);
+                PropertyInfo val = e.GetType().GetProperty("Val", Flags);
+                if (val != null) val.SetValue(e, Convert.ChangeType(value, val.PropertyType, Inv), null);
+            }
+            else f.SetValue(o, Convert.ChangeType(value, f.FieldType, Inv));
+        }
+
+        private static void Call(object o, string name)
+        {
+            MethodInfo m = o.GetType().GetMethod(name, Type.EmptyTypes);
+            if (m != null) m.Invoke(o, null);
+        }
+
+        private void StartApproach()
+        {
+            if (!rwySet) { LastMessage += "\nBrak „runway” w programie."; return; }
+            object ap = Airplane();
+            if (ap == null) { LastMessage += "\nMechJeb: brak Aircraft Autopilot."; return; }
+            ReleaseAttitude();
+            ChooseRunwayEnd();
+            object pool = Users(ap);
+            if (pool != null) PoolCall(pool, "Add");
+            SetF(ap, "PitchDownLimit", 35.0);
+            SetF(ap, "PitchUpLimit", 25.0);
+            SetF(ap, "RollLimit", 45.0);
+            SetF(ap, "BankAngle", 35.0);
+            SetF(ap, "HeadingTarget", rwyHeading);
+            SetF(ap, "VertSpeedTarget", vessel.verticalSpeed);
+            Call(ap, "EnableHeadingHold");
+            Call(ap, "EnableVertSpeedHold");
+            approachOn = true; gearDone = false; landedDone = false;
+            FlightLogger.Event("Podejście: pas kurs " + rwyHeading.ToString("F0", Inv) + "°, odległość " + (RunwayDistance() / 1000).ToString("F1", Inv) + " km");
+        }
+
+        private void StopApproach()
+        {
+            if (!approachOn) return;
+            approachOn = false;
+            object ap = Airplane();
+            if (ap == null) return;
+            Call(ap, "DisableVertSpeedHold");
+            Call(ap, "DisableHeadingHold");
+            object pool = Users(ap);
+            if (pool != null) PoolCall(pool, "Remove");
+        }
+
+        /// <summary>
+        /// Uproszczone podejście jak Buran/Shuttle: stroma ścieżka 18° (punkt celowania 2 km przed progiem),
+        /// wyrównanie od 550 m na ścieżkę 1,5° (przyziemienie 600 m za progiem), przyziemienie z −1 m/s,
+        /// podwozie poniżej 300 m, po przyziemieniu hamulce i spadochron.
+        /// </summary>
+        private void Approach()
+        {
+            object ap = Airplane();
+            if (ap == null) { approachOn = false; return; }
+            CelestialBody b = vessel.mainBody;
+            Vector3d pos = vessel.CoMD - b.position;
+            Vector3d up = pos.normalized;
+            Vector3d rel = pos - thrPos;
+            double d = -Vector3d.Dot(rel, rwyDir);                                // do progu wzdłuż osi
+            Vector3d right = Vector3d.Cross(up, rwyDir).normalized * -1;          // w prawo od osi (patrząc w kierunku lądowania)
+            double y = Vector3d.Dot(rel, right);                                  // odchyłka boczna
+            double h = vessel.altitude - rwyAlt;
+            double hr = vessel.heightFromTerrain > 0 && vessel.heightFromTerrain < 2000 ? vessel.heightFromTerrain : h;   // wysokość nad gruntem (radar)
+            Vector3d v = vessel.srf_velocity;
+            double vh = (v - up * Vector3d.Dot(v, up)).magnitude;
+
+            if (vessel.Landed)
+            {
+                if (!landedDone)
+                {
+                    landedDone = true;
+                    Call(ap, "DisableVertSpeedHold");
+                    vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, true);
+                    foreach (Part p in vessel.parts)
+                        foreach (ModuleParachute c in p.FindModulesImplementing<ModuleParachute>())
+                            if (c.deploymentState == ModuleParachute.deploymentStates.STOWED) c.Deploy();
+                    FlightLogger.Event("Przyziemienie: " + (vessel.srfSpeed * 3.6).ToString("F0", Inv) + " km/h, odchyłka " + y.ToString("F0", Inv) + " m");
+                    approachPhase = "dobieg";
+                }
+                SetF(ap, "HeadingTarget", rwyHeading);
+                if (vessel.srfSpeed < 3) { StopApproach(); approachPhase = "stop"; }
+                return;
+            }
+
+            // kurs: punkt na osi pasa przed nami (marchewka)
+            double L = Math.Max(1500, Math.Min(8000, Math.Max(d, 0) * 0.4));
+            Vector3d carrot = thrPos + rwyDir * (-(Math.Max(d, 0) - L));
+            Vector3d to = carrot - pos;
+            to -= up * Vector3d.Dot(to, up);
+            Vector3d north = Vector3d.Exclude(up, b.transform.up).normalized;
+            Vector3d east = Vector3d.Cross(up, north).normalized;
+            double hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
+            SetF(ap, "HeadingTarget", hdg);
+
+            // prędkość pionowa: ścieżki schodzenia
+            double vs;
+            if (hr < 20) { vs = -1.0; approachPhase = "przyziemienie"; }
+            else if (h < 550)
+            {
+                double ht = (d + 600) * Math.Tan(1.5 * Math.PI / 180);
+                vs = -vh * Math.Tan(1.5 * Math.PI / 180) + 0.15 * (ht - h);
+                vs = Math.Max(vs, -25); approachPhase = "wyrównanie (1,5°)";
+            }
+            else
+            {
+                double ht = (d - 2000) * Math.Tan(18 * Math.PI / 180);
+                vs = -vh * Math.Tan(18 * Math.PI / 180) + 0.08 * (ht - h);
+                approachPhase = "ścieżka 18°";
+            }
+            vs = Math.Max(-150, Math.Min(10, vs));
+            SetF(ap, "VertSpeedTarget", vs);
+
+            if (!gearDone && hr < 300)
+            {
+                gearDone = true;
+                vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, true);
+                FlightLogger.Event("Podwozie wypuszczone");
+            }
+            approachPhase += "  d=" + (d / 1000).ToString("F1", Inv) + " km  h=" + h.ToString("F0", Inv) + " m  boczna=" + y.ToString("F0", Inv) + " m";
         }
 
         private void HoldAttitude()
