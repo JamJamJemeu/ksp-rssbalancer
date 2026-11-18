@@ -171,7 +171,17 @@ namespace RSSBalancer
                 SetAll(1f, 1f);
                 foreach (EngineGroup g in groups) g.engMass = 1f;
                 ApplyGroups(true);
-                status = "Przywrócono oryginalne wartości silników (ISP, ciąg, masa).";
+                // Zbiorniki: masa pustych ×1, obecne paliwo zostaje i staje się nowym ×1.
+                if (EditorLogic.fetch != null && EditorLogic.fetch.ship != null)
+                    foreach (Part p in EditorLogic.fetch.ship.parts)
+                    {
+                        foreach (ModuleTankBalancer tb in p.FindModulesImplementing<ModuleTankBalancer>()) tb.ResetKeepCapacity();
+                        foreach (ModuleEngineBalancer eb in p.FindModulesImplementing<ModuleEngineBalancer>()) { eb.scaleWholePart = false; eb.massMultiplier = 1f; }
+                        p.UpdateMass();
+                    }
+                ModuleEngineBalancer.NotifyEditor();
+                Refresh();
+                status = "Przywrócono oryginalne wartości silników (ISP, ciąg, masa) i masy pustych zbiorników (paliwo bez zmian).";
             }
             GUILayout.EndHorizontal();
 

@@ -173,6 +173,26 @@ namespace RSSBalancer
             scaledCapacity = Capacity();
         }
 
+        /// <summary>
+        /// Reset bez utraty paliwa: obecne pojemności zbiorników stają się nowym oryginałem (×1),
+        /// mnożnik masy pustych wraca do 1. Potrzebne np. po patchu, który sam ustawia prawdziwe ilości paliwa.
+        /// </summary>
+        public void ResetKeepCapacity()
+        {
+            dryMassMultiplier = 1f;
+            appliedDry = 1f;
+            fuelMultiplier = 1f;
+            appliedFuelMultiplier = 1f;
+            scaleWholePart = false;
+            LoadBases();
+            bases.Clear();
+            foreach (PartResource r in part.Resources)
+                if (Scaled(r)) bases[r.resourceName] = r.maxAmount;
+            SaveBases();
+            scaledCapacity = Capacity();
+            part.UpdateMass();
+        }
+
         public void ApplyDry()
         {
             appliedDry = dryMassMultiplier;
