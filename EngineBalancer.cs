@@ -19,7 +19,7 @@ namespace RSSBalancer
     {
         private const int WindowId = 0x52535342;
         private const string LockId = "RSSBalancer_WindowLock";
-        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Misja", "Presety", "MechJeb" };
+        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Misja", "Presety", "MechJeb", "Program" };
 
         private static bool show = false;
         private static int tab = 0;
@@ -50,6 +50,9 @@ namespace RSSBalancer
         private Vector2 presetScroll;
         private Vector2 mjScroll;
         private bool mjLoaded;
+        private bool progLoaded;
+        private Vector2 progScroll;
+        private int progSel;
         private Preset pendingDelete;
 
         private string status;
@@ -135,6 +138,7 @@ namespace RSSBalancer
                 case 4: DrawMissionTab(); break;
                 case 5: DrawPresetsTab(); break;
                 case 6: DrawMechJebTab(); break;
+                case 7: DrawProgramTab(); break;
             }
 
             if (!string.IsNullOrEmpty(status))
@@ -758,6 +762,47 @@ namespace RSSBalancer
             {
                 GUILayout.Label("Potrzeba: " + Ms(required) + "    (brak danych Δv rakiety)");
             }
+        }
+
+        // ================================================================== zakładka: Program lotu
+        private void DrawProgramTab()
+        {
+            if (!progLoaded) { FlightPrograms.Reload(); progLoaded = true; }
+            GUILayout.Label("Programy lotu (cyklogramy) z plików GameData/RSSBalancer/PluginData/Programs/*.cfg.\nKroki wykonują się po kolei, każdy czeka na swój warunek. Działa tylko w locie.");
+            if (GUILayout.Button("Odśwież listę", GUILayout.Width(140f))) { FlightPrograms.Reload(); status = "Programów: " + FlightPrograms.Programs.Count; }
+            FlightProgramRunner run = FlightProgramRunner.Instance;
+            if (FlightPrograms.Programs.Count == 0) { GUILayout.Label("Brak programów w folderze."); return; }
+
+            string[] names = FlightPrograms.Programs.ConvertAll(x => x.name).ToArray();
+            progSel = Mathf.Clamp(progSel, 0, names.Length - 1);
+            progSel = GUILayout.SelectionGrid(progSel, names, 1);
+            FlightPrograms.Program p = run != null && run.Active ? run.Running : FlightPrograms.Programs[progSel];
+
+            foreach (string d in p.description) GUILayout.Label("• " + d);
+            GUILayout.Space(4f);
+            progScroll = GUILayout.BeginScrollView(progScroll, GUILayout.Height(240f));
+            for (int i = 0; i < p.steps.Count; i++)
+            {
+                FlightPrograms.Step st = p.steps[i];
+                bool cur = run != null && run.Active && run.Running == p && run.Current == i;
+                string mark = st.activatedAt >= 0 ? "✓ T+" + st.activatedAt.ToString("F0") + " s " : st.activatedAt == -2 ? "– pominięty " : cur ? "▶ " : "· ";
+                GUILayout.Label(mark + st.name + "   [" + (st.node.GetValue("when") ?? "always") + "]");
+            }
+            GUILayout.EndScrollView();
+
+            GUILayout.BeginHorizontal();
+            if (run == null) GUILayout.Label("Program lotu działa tylko w locie.");
+            else if (!run.Active)
+            {
+                if (GUILayout.Button("Start programu")) { run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage; }
+            }
+            else
+            {
+                if (GUILayout.Button("Pomiń krok")) run.Skip();
+                if (GUILayout.Button("Zatrzymaj")) { run.Stop(); status = "Program zatrzymany."; }
+            }
+            GUILayout.EndHorizontal();
+            if (run != null && !string.IsNullOrEmpty(run.LastMessage)) GUILayout.Label(run.LastMessage);
         }
 
         // ================================================================== zakładka: MechJeb
