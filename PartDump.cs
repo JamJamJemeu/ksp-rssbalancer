@@ -93,6 +93,7 @@ namespace RSSBalancer
                     sb.AppendLine();
                 }
             }
+            try { AppendOrbiterGeometry(v, sb); } catch (Exception e) { sb.AppendLine("# geometria orbitera: błąd " + e.Message); }
             sb.Insert(0, "# podejrzanych wartości: " + bad + Environment.NewLine);
 
             foreach (string dir in FlightLogger.LogFolders)
@@ -109,6 +110,51 @@ namespace RSSBalancer
                 }
                 catch { }
             }
+        }
+
+        /// <summary>
+        /// Geometria Burana (części BURAN*/Buran*): długość z brył modeli wzdłuż osi rakiety, środek masy
+        /// orbitera w % długości od nosa (prawdziwy Buran: 64–66 %), i które części mają moduły FAR skrzydeł/sterów.
+        /// </summary>
+        private static void AppendOrbiterGeometry(Vessel v, StringBuilder sb)
+        {
+            Vector3 ax = v.transform.up;
+            double lo = double.MaxValue, hi = double.MinValue, m = 0, mx = 0;
+            int n = 0;
+            StringBuilder aero = new StringBuilder();
+            foreach (Part p in v.parts)
+            {
+                string nm = p.partInfo != null ? p.partInfo.name : p.name;
+                if (!nm.StartsWith("BURAN", StringComparison.OrdinalIgnoreCase)) continue;
+                n++;
+                foreach (Renderer r in p.GetComponentsInChildren<Renderer>())
+                {
+                    if (!r.enabled || !(r is MeshRenderer || r is SkinnedMeshRenderer)) continue;
+                    Bounds b = r.bounds;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        Vector3 c = b.center + Vector3.Scale(b.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                        double d = Vector3.Dot(c, ax);
+                        lo = Math.Min(lo, d); hi = Math.Max(hi, d);
+                    }
+                }
+                double pm = p.mass + p.GetResourceMass();
+                Vector3 com = p.transform.position + p.transform.rotation * p.CoMOffset;
+                m += pm; mx += pm * Vector3.Dot(com, ax);
+                string mods = "";
+                foreach (PartModule pmod in p.Modules)
+                {
+                    string mn = pmod.moduleName;
+                    if (mn.StartsWith("FARWing") || mn.StartsWith("FARControllable") || mn.Contains("LiftingSurface") || mn.Contains("ControlSurface")) mods += " " + mn;
+                }
+                if (mods.Length > 0) aero.Append("#   ").Append(nm).Append(":").Append(mods).AppendLine();
+            }
+            if (n == 0 || m <= 0) return;
+            double cm = mx / m, len = hi - lo;
+            sb.AppendLine("# ORBITER (" + n + " części): masa " + F(m) + " t, długość z modeli " + F(len) + " m, środek masy " +
+                          F((hi - cm) / len * 100) + " % długości od nosa (" + F(hi - cm) + " m od nosa) – prawdziwy Buran: 19,7–20,4 m od nosa przy długości całkowitej 36,4 m (54–56 %), w skali 0,93 to 18,4–18,9 m");
+            sb.AppendLine("# aerodynamika części orbitera:");
+            sb.Append(aero);
         }
     }
 }
