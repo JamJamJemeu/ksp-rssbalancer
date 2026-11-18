@@ -19,7 +19,7 @@ namespace RSSBalancer
     {
         private const int WindowId = 0x52535342;
         private const string LockId = "RSSBalancer_WindowLock";
-        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Misja", "Presety" };
+        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Misja", "Presety", "MechJeb" };
 
         private static bool show = false;
         private static int tab = 0;
@@ -48,6 +48,8 @@ namespace RSSBalancer
         // --- Presety ---
         private string presetName = "";
         private Vector2 presetScroll;
+        private Vector2 mjScroll;
+        private bool mjLoaded;
         private Preset pendingDelete;
 
         private string status;
@@ -132,6 +134,7 @@ namespace RSSBalancer
                 case 3: DrawEnergiaTab(); break;
                 case 4: DrawMissionTab(); break;
                 case 5: DrawPresetsTab(); break;
+                case 6: DrawMechJebTab(); break;
             }
 
             if (!string.IsNullOrEmpty(status))
@@ -755,6 +758,30 @@ namespace RSSBalancer
             {
                 GUILayout.Label("Potrzeba: " + Ms(required) + "    (brak danych Δv rakiety)");
             }
+        }
+
+        // ================================================================== zakładka: MechJeb
+        private void DrawMechJebTab()
+        {
+            if (!mjLoaded) { MechJebPresets.Reload(); mjLoaded = true; }
+            GUILayout.Label("Presety ustawień MechJeba (Ascent Guidance / PVG, przepustnica, staging) z plików\nGameData/RSSBalancer/PluginData/MechJeb/*.cfg. „Wczytaj” wpisuje je do MechJeba na tym statku – także w locie.");
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Odśwież listę", GUILayout.Width(140f))) { MechJebPresets.Reload(); status = "Znaleziono presetów: " + MechJebPresets.Presets.Count; }
+            GUILayout.Label(MechJebPresets.MechJebPresent ? "MechJeb na statku: tak" : "MechJeb na statku: nie");
+            GUILayout.EndHorizontal();
+            if (MechJebPresets.Presets.Count == 0) { GUILayout.Label("Brak presetów w folderze."); return; }
+            mjScroll = GUILayout.BeginScrollView(mjScroll, GUILayout.Height(320f));
+            foreach (MechJebPresets.Preset p in MechJebPresets.Presets)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(p.name + "  (" + p.file + ")");
+                if (GUILayout.Button("Wczytaj", GUILayout.Width(90f))) status = MechJebPresets.Apply(p);
+                GUILayout.EndHorizontal();
+                foreach (string d in p.description) GUILayout.Label("• " + d);
+                GUILayout.EndVertical();
+            }
+            GUILayout.EndScrollView();
         }
 
         // ================================================================== zakładka: Presety
