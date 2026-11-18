@@ -167,7 +167,10 @@ namespace RSSBalancer
             if (vessel == null || vessel != FlightGlobals.ActiveVessel) { LastMessage = "Zmieniono statek – program zatrzymany."; Stop(); return; }
 
             qMax = Math.Max(qMax, vessel.dynamicPressurekPa);
-            if (Time.realtimeSinceStartup > nextGroups) { nextGroups = Time.realtimeSinceStartup + 2f; RefreshGroups(); }
+            // Grupy silników rozpoznajemy RAZ przy starcie programu (na wyrzutni) – po odrzucie bloków
+            // ponowne rozpoznanie widzi już tylko rdzeń i nie umie go nazwać „rdzeniem”.
+            if ((id == null || !id.ok) && vessel.situation == Vessel.Situations.PRELAUNCH && Time.realtimeSinceStartup > nextGroups)
+            { nextGroups = Time.realtimeSinceStartup + 2f; RefreshGroups(); }
             if (holdAttitude) HoldAttitude();
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
@@ -228,20 +231,20 @@ namespace RSSBalancer
                 case "qfalling": return qMax > 5 && v.dynamicPressurekPa < qMax * 0.9 ? 1 : 0;
                 case "g": return v.geeForce;
                 case "stage": return v.currentStage;
-                case "boosters": return Running_(id != null ? id.boosters : null);
-                case "core": return Running_(id != null ? id.core : null);
-                case "upper": return Running_(id != null ? id.upper : null);
+                case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
+                case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
+                case "upper": return id != null && id.ok ? Running_(id.upper, v) : double.NaN;
             }
             return double.NaN;
         }
 
-        private static int Running_(EngineGroup g)
+        private static int Running_(EngineGroup g, Vessel v)
         {
             if (g == null) return 0;
             int n = 0;
             foreach (Part p in g.parts)
             {
-                if (p == null || p.vessel == null) continue;
+                if (p == null || p.vessel != v) continue;
                 foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
                     if (e.EngineIgnited && !e.flameout && e.finalThrust > 0.01f) { n++; break; }
             }
@@ -285,6 +288,11 @@ namespace RSSBalancer
                         int k = (int)Num(val, 1);
                         for (int i = 0; i < k; i++) StageManager.ActivateNextStage();
                     }
+                    else if (key == "stageTo" && id != null && id.ok && Running_(id.core, vessel) > 0 && n.GetValue("force") != "true")
+                    {
+                        LastMessage += "\nPominięto staging: rdzeń jeszcze pracuje (dodaj force = true, żeby wymusić).";
+                        FlightLogger.Event("Program lotu: staging wstrzymany – rdzeń pracuje");
+                    }
                     else if (key == "stageTo")
                     {
                         int to = (int)Num(val, 0);
@@ -323,7 +331,6 @@ namespace RSSBalancer
         private List<EngineGroup> GroupsFor(string which)
         {
             List<EngineGroup> l = new List<EngineGroup>();
-            RefreshGroups();
             if (which == "all") { if (groups != null) l.AddRange(groups); return l; }
             if (id == null || !id.ok) return l;
             if (which == "boosters" && id.boosters != null) l.Add(id.boosters);
