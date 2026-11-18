@@ -23,7 +23,9 @@ namespace RSSBalancer
 
         private static bool show = false;
         private static int tab = 0;
-        private static Rect window = new Rect(300f, 150f, 420f, 200f);
+        private const float WinW = 440f, WinMinH = 600f;
+        private static Rect window = new Rect(300f, 120f, WinW, WinMinH);
+        private bool scaling; private Vector2 scaleStartMouse; private float scaleStart;
 
         // --- Statek ---
         private static float ispMult = 1f;
@@ -108,24 +110,45 @@ namespace RSSBalancer
         {
             if (!show || Hud.Hidden) return;
 
-            window = GUILayout.Window(WindowId, window, DrawWindow, "Engine Balancer");
+            float sc = Mathf.Clamp(BalancerSettings.WindowScale, 0.6f, 1.6f);
+            Matrix4x4 old = GUI.matrix;
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(sc, sc, 1f));
+
+            // Wąskie, wysokie okno: stała szerokość, etykiety zawijane.
+            bool wrap = GUI.skin.label.wordWrap;
+            GUI.skin.label.wordWrap = true;
+            window.width = WinW;
+            window.height = Mathf.Max(window.height, WinMinH);
+            window = GUILayout.Window(WindowId, window, DrawWindow, "Engine Balancer", GUILayout.Width(WinW), GUILayout.MinHeight(WinMinH));
+            GUI.skin.label.wordWrap = wrap;
 
             // Kursor nad oknem = gra nie reaguje na klawisze (wpisywanie liczb i nazw nie odpala stage'ów itd.)
             if (window.Contains(Event.current.mousePosition))
                 InputLockManager.SetControlLock(ControlTypes.All, LockId);
             else
                 InputLockManager.RemoveControlLock(LockId);
+            GUI.matrix = old;
         }
 
         private void DrawWindow(int id)
         {
-            int newTab = GUILayout.Toolbar(tab, Tabs);
+            // skala okna
+            GUILayout.BeginHorizontal();
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("Skala ×" + BalancerSettings.WindowScale.ToString("F2"), GUILayout.Width(80f));
+            if (GUILayout.Button("−", GUILayout.Width(26f))) { BalancerSettings.WindowScale = Mathf.Max(0.6f, BalancerSettings.WindowScale - 0.1f); BalancerSettings.Save(); }
+            if (GUILayout.Button("+", GUILayout.Width(26f))) { BalancerSettings.WindowScale = Mathf.Min(1.6f, BalancerSettings.WindowScale + 0.1f); BalancerSettings.Save(); }
+            if (GUILayout.Button("1:1", GUILayout.Width(36f))) { BalancerSettings.WindowScale = 1f; BalancerSettings.Save(); }
+            GUILayout.EndHorizontal();
+
+            // zakładki w dwóch rzędach
+            int newTab = GUILayout.SelectionGrid(tab, Tabs, 4);
             if (newTab != tab)
             {
                 tab = newTab;
                 status = null;
                 pendingDelete = null;
-                window.height = 100f; // okno samo dopasuje wysokość do zawartości zakładki
+                window.height = WinMinH; // okno samo dopasuje wysokość do zawartości zakładki
             }
             GUILayout.Space(6f);
 
@@ -146,6 +169,20 @@ namespace RSSBalancer
                 GUILayout.Space(4f);
                 GUILayout.Label(status);
             }
+
+            // uchwyt skalowania w prawym dolnym rogu
+            Rect grip = new Rect(window.width - 18f, window.height - 18f, 16f, 16f);
+            GUI.Label(grip, "◢");
+            Event ev = Event.current;
+            if (ev.type == EventType.MouseDown && grip.Contains(ev.mousePosition)) { scaling = true; scaleStartMouse = GUIUtility.GUIToScreenPoint(ev.mousePosition); scaleStart = BalancerSettings.WindowScale; ev.Use(); }
+            if (scaling && ev.type == EventType.MouseDrag)
+            {
+                Vector2 now = GUIUtility.GUIToScreenPoint(ev.mousePosition);
+                float k = 1f + (now.x - scaleStartMouse.x + now.y - scaleStartMouse.y) / (WinW + WinMinH);
+                BalancerSettings.WindowScale = Mathf.Clamp(scaleStart * k, 0.6f, 1.6f);
+                ev.Use();
+            }
+            if (scaling && ev.type == EventType.MouseUp) { scaling = false; BalancerSettings.Save(); ev.Use(); }
 
             GUI.DragWindow();
         }
@@ -567,7 +604,7 @@ namespace RSSBalancer
             else if (eMode == 1)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("Masa startowa (wspólny mnożnik):", GUILayout.Width(250f));
+                GUILayout.Label("Masa startowa (wspólny mnożnik):", GUILayout.Width(200f));
                 eMass = GUILayout.TextField(eMass ?? "", 7, GUILayout.Width(80f));
                 GUILayout.Label("t");
                 GUILayout.EndHorizontal();
@@ -602,7 +639,7 @@ namespace RSSBalancer
         private static void Row3(string label, ref string a, ref string b)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(250f));
+            GUILayout.Label(label, GUILayout.Width(200f));
             a = GUILayout.TextField(a ?? "", 7, GUILayout.Width(80f));
             GUILayout.Space(30f);
             b = GUILayout.TextField(b ?? "", 7, GUILayout.Width(80f));
@@ -1064,7 +1101,7 @@ namespace RSSBalancer
         private static void Field(string label, ref string value, string unit)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(230f));
+            GUILayout.Label(label, GUILayout.Width(200f));
             value = GUILayout.TextField(value ?? "", 6, GUILayout.Width(60f));
             GUILayout.Label(unit);
             GUILayout.EndHorizontal();

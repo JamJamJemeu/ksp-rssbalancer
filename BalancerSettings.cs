@@ -26,6 +26,7 @@ namespace RSSBalancer
         public static bool TelemetryRussian = true;
         public static bool TelemetryOnF2 = true;
         public static float TelemetryScale = 1f;
+        public static float WindowScale = 1f;   // skala okna F8 (0,6–1,6)
 
         // Misja (zapamiętane między uruchomieniami; NaN = domyślne)
         public static double LaunchLatitude = 45.9;   // Bajkonur
@@ -85,6 +86,11 @@ namespace RSSBalancer
                     if (float.TryParse(n.GetValue("telemetryScale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out sc) && sc >= 0.5f && sc <= 1.6f)
                         TelemetryScale = sc;
                 }
+                {
+                    float ws;
+                    if (float.TryParse(n.GetValue("windowScale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out ws) && ws >= 0.6f && ws <= 1.6f)
+                        WindowScale = ws;
+                }
                 LaunchLatitude = D(n, "launchLatitude", LaunchLatitude);
                 OrbitAltKm = D(n, "orbitAltKm", OrbitAltKm);
             }
@@ -119,6 +125,7 @@ namespace RSSBalancer
                 n.AddValue("telemetryRussian", TelemetryRussian.ToString());
                 n.AddValue("telemetryOnF2", TelemetryOnF2.ToString());
                 n.AddValue("telemetryScale", TelemetryScale.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                n.AddValue("windowScale", WindowScale.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                 n.AddValue("launchLatitude", S(LaunchLatitude));
                 if (!double.IsNaN(OrbitAltKm)) n.AddValue("orbitAltKm", S(OrbitAltKm));
 
