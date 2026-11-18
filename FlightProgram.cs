@@ -162,6 +162,7 @@ namespace RSSBalancer
             lastActivation = Planetarium.GetUniversalTime();
             RefreshGroups();
             LastMessage = "Program „" + p.name + "” uzbrojony.";
+            FlightLogger.StartFor(vessel);
             FlightLogger.Event("Program lotu: start „" + p.name + "”");
             Debug.Log("[RSSBalancer] Program lotu: start " + p.name);
         }
@@ -486,6 +487,11 @@ namespace RSSBalancer
                         {
                             // jak SmartASS „Surface prograde”: pochylenie (kąt natarcia), odchylenie, przechylenie względem wektora prędkości
                             float pit = w.Length > 1 ? (float)Num(w[1], 0) : 0f, yaw = w.Length > 2 ? (float)Num(w[2], 0) : 0f, rol = w.Length > 3 ? (float)Num(w[3], 0) : 0f;
+                            bool wasGuide = entryGuide;
+                            entryGuide = w.Length > 3 && w[3] == "guide";
+                            gAoa = pit; gYaw = yaw;
+                            if (entryGuide && !wasGuide) { bankCmd = 0; calStart = -1; nextGLog = 0; }
+                            if (entryGuide) rol = (float)bankCmd;
                             holdRot = Quaternion.AngleAxis(-rol, Vector3.forward) * Quaternion.AngleAxis(-pit, Vector3.right) * Quaternion.AngleAxis(yaw, Vector3.up);
                             holdMode = Hold.SrfVel; holdAttitude = true;
                         }
@@ -696,6 +702,7 @@ namespace RSSBalancer
         /// wyrównanie od 550 m na ścieżkę 1,5° (przyziemienie 600 m za progiem), przyziemienie z −1 m/s,
         /// podwozie poniżej 300 m, po przyziemieniu hamulce i spadochron.
         /// </summary>
+        private double nextALog;
         private void Approach()
         {
             object ap = Airplane();
@@ -754,8 +761,13 @@ namespace RSSBalancer
                 double ht = (d - 2000) * Math.Tan(18 * Math.PI / 180);
                 vs = -vh * Math.Tan(18 * Math.PI / 180) + 0.08 * (ht - h);
                 approachPhase = "ścieżka 18°";
+                // Poniżej ścieżki NIE wznosimy się (to wytraca prędkość i kończy się przeciągnięciem) –
+                // najwyżej lot ślizgowy ~10° (doskonałość Burana poddźwiękowo ≈ 5–6).
+                double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
+                if (vs > vsMin) { vs = vsMin; approachPhase = "PONIŻEJ ścieżki – najlepszy lot ślizgowy"; }
+                if (vessel.srfSpeed < 120) { vs = Math.Min(vs, -vh * Math.Tan(14 * Math.PI / 180)); approachPhase += " (za wolno – oddaję nos w dół)"; }
             }
-            vs = Math.Max(-150, Math.Min(10, vs));
+            vs = Math.Max(-150, Math.Min(0, vs));
             SetF(ap, "VertSpeedTarget", vs);
 
             if (!gearDone && hr < 300)
@@ -764,11 +776,132 @@ namespace RSSBalancer
                 vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, true);
                 FlightLogger.Event("Podwozie wypuszczone");
             }
+            if (Planetarium.GetUniversalTime() > nextALog) { nextALog = Planetarium.GetUniversalTime() + 10; FlightLogger.Event("Podejście: " + approachPhase + " d=" + (d / 1000).ToString("F1", Inv) + " km h=" + h.ToString("F0", Inv) + " m v=" + vessel.srfSpeed.ToString("F0", Inv)); }
             approachPhase += "  d=" + (d / 1000).ToString("F1", Inv) + " km  h=" + h.ToString("F0", Inv) + " m  boczna=" + y.ToString("F0", Inv) + " m";
+        }
+
+        // ------------------------------------------------------------------ naprowadzanie przy wejściu w atmosferę
+        // Jak w Buranie/Shuttle: kąt natarcia z programu, a zasięg reguluje przechylenie (bank).
+        // Przewidywany zasięg lotu ślizgowego w równowadze: R = (L/D)·cosσ · r/2 · ln(1 / (1 − v²/(g·r))).
+        // cosσ dobieramy tak, by R = odległość do lotniska; strona przechylenia – w stronę lotniska,
+        // z przerzutami (S-zakręty), gdy błąd kursu przekroczy próg. L/D na żywo z FAR.
+
+        private bool entryGuide;
+        private float gAoa, gYaw;
+        private double bankCmd, rollSign = 1, ldF = 1.0, calStart = -1, calHdg0, calBank, nextGLog;
+        private bool calDone;
+        public string EntryInfo = "";
+        private static Type farApi; private static bool farLooked;
+
+        private static double FarCall(string m)
+        {
+            if (!farLooked)
+            {
+                farLooked = true;
+                foreach (AssemblyLoader.LoadedAssembly a in AssemblyLoader.loadedAssemblies)
+                {
+                    Type t = a.assembly.GetType("FerramAerospaceResearch.FARAPI");
+                    if (t != null) { farApi = t; break; }
+                }
+            }
+            if (farApi == null) return double.NaN;
+            MethodInfo mi = farApi.GetMethod(m, BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
+            if (mi == null) return double.NaN;
+            object r = mi.Invoke(null, null);
+            return r is double ? (double)r : r is float ? (float)r : double.NaN;
+        }
+
+        private static double GreatCircle(double lat1, double lon1, double lat2, double lon2, out double bearing)
+        {
+            double f1 = lat1 * Math.PI / 180, f2 = lat2 * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+            double c = Math.Sin(f1) * Math.Sin(f2) + Math.Cos(f1) * Math.Cos(f2) * Math.Cos(dl);
+            double ang = Math.Acos(Math.Max(-1, Math.Min(1, c)));
+            bearing = (Math.Atan2(Math.Sin(dl) * Math.Cos(f2), Math.Cos(f1) * Math.Sin(f2) - Math.Sin(f1) * Math.Cos(f2) * Math.Cos(dl)) * 180 / Math.PI + 360) % 360;
+            return ang;
+        }
+
+        private void EntryGuidance()
+        {
+            Vessel v = vessel; CelestialBody b = v.mainBody;
+            Vector3d pos = v.CoMD - b.position, up = pos.normalized;
+            Vector3d vel = v.srf_velocity;
+            double V = vel.magnitude;
+            if (V < 100 || !siteSet) return;
+            Vector3d vh = vel - up * Vector3d.Dot(vel, up);
+            Vector3d north = Vector3d.Exclude(up, b.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
+            double hdg = (Math.Atan2(Vector3d.Dot(vh, east), Vector3d.Dot(vh, north)) * 180 / Math.PI + 360) % 360;
+            double brg;
+            double ang = GreatCircle(v.latitude, v.longitude, siteLat, siteLon, out brg);
+            double rgo = ang * b.Radius;                                            // m do lotniska po powierzchni
+            double dpsi = ((brg - hdg + 540) % 360) - 180;                          // + = lotnisko na prawo
+
+            double cl = FarCall("ActiveVesselLiftCoeff"), cd = FarCall("ActiveVesselDragCoeff");
+            if (!double.IsNaN(cl) && !double.IsNaN(cd) && cd > 1e-4 && v.dynamicPressurekPa > 0.3)
+                ldF += (Math.Max(0.2, Math.Min(6, cl / cd)) - ldF) * 0.05;
+            double r = pos.magnitude, g = b.gravParameter / (r * r);
+            double e = Math.Min(0.999, V * V / (g * r));
+            double kR = r / 2 * Math.Log(1 / (1 - e));                              // zasięg przy L/D = 1, σ = 0
+            double rMax = ldF * kR;
+            double cosS = rMax > 1 ? rgo / rMax : 1;
+
+            double mag;
+            string note = "";
+            if (v.dynamicPressurekPa < 0.5) { mag = 0; note = "za rzadkie powietrze"; }
+            else if (cosS >= 1) { mag = 0; note = "ZA MAŁO ENERGII – lecę bez przechylenia"; }
+            else mag = Math.Acos(Math.Max(0, cosS)) * 180 / Math.PI;
+            mag = Math.Min(mag, 70);
+
+            // strona przechylenia: w stronę lotniska; przerzut, gdy błąd kursu przekroczy próg (zawęża się z prędkością)
+            double dead = V > 4000 ? 12 : V > 2000 ? 8 : 5;
+            double side = Math.Sign(bankCmd);
+            if (side == 0 || Math.Abs(bankCmd) < 3) side = dpsi >= 0 ? 1 : -1;
+            else if (side > 0 && dpsi < -dead) side = -1;
+            else if (side < 0 && dpsi > dead) side = 1;
+            if (V < 1500) { mag = Math.Max(mag, Math.Min(45, Math.Abs(dpsi) * 2)); side = dpsi >= 0 ? 1 : -1; }   // końcowe wyrównanie kursu
+            double target = side * mag;
+            double dt = TimeWarp.fixedDeltaTime;
+            bankCmd += Math.Max(-8 * dt, Math.Min(8 * dt, target - bankCmd));     // max 8°/s – przerzut trwa kilkanaście s
+
+            // samokalibracja znaku przechylenia (nie wiemy na pewno, w którą stronę MechJeb liczy „roll”):
+            // po 15 s z przechyleniem > 25° kurs musi iść w stronę przechylenia, inaczej odwracamy znak.
+            if (!calDone)
+            {
+                if (Math.Abs(bankCmd) > 25 && attError < 10 && v.dynamicPressurekPa > 2)
+                {
+                    if (calStart < 0) { calStart = Planetarium.GetUniversalTime(); calHdg0 = hdg; calBank = Math.Sign(bankCmd); }
+                    else if (Math.Sign(bankCmd) != calBank) calStart = -1;
+                    else if (Planetarium.GetUniversalTime() - calStart > 15)
+                    {
+                        double turn = ((hdg - calHdg0 + 540) % 360) - 180;
+                        if (Math.Abs(turn) > 0.5)
+                        {
+                            calDone = true;
+                            if (Math.Sign(turn) != calBank) { rollSign = -rollSign; FlightLogger.Event("Wejście: odwrócono znak przechylenia (kalibracja)"); }
+                            else FlightLogger.Event("Wejście: znak przechylenia potwierdzony");
+                        }
+                        calStart = -1;
+                    }
+                }
+                else calStart = -1;
+            }
+
+            EntryInfo = "do lotniska " + (rgo / 1000).ToString("F0", Inv) + " km, zasięg bez przechylenia " + (rMax / 1000).ToString("F0", Inv) +
+                        " km, L/D " + ldF.ToString("F2", Inv) + ", przechylenie " + bankCmd.ToString("F0", Inv) + "°, błąd kursu " + dpsi.ToString("F0", Inv) + "°" +
+                        (note.Length > 0 ? " – " + note : "");
+            if (Planetarium.GetUniversalTime() > nextGLog)
+            {
+                nextGLog = Planetarium.GetUniversalTime() + 10;
+                FlightLogger.Event("Wejście: " + EntryInfo);
+            }
         }
 
         private void HoldAttitude()
         {
+            if (holdMode == Hold.SrfVel && entryGuide)
+            {
+                try { EntryGuidance(); } catch (Exception e) { EntryInfo = "błąd naprowadzania: " + e.Message; }
+                holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoa, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
+            }
             object core = Core();
             if (core == null) return;
             object att = Module(core, "MechJebModuleAttitudeController");
@@ -809,6 +942,7 @@ namespace RSSBalancer
 
         private void ReleaseAttitude()
         {
+            entryGuide = false; EntryInfo = "";
             if (!holdAttitude) return;
             holdAttitude = false;
             try

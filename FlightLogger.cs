@@ -61,6 +61,12 @@ namespace RSSBalancer
             if (instance != null) instance.AddEvent(text);
         }
 
+        /// <summary>Włącza dziennik dla statku już w locie (np. program lotu uruchomiony na orbicie po wczytaniu zapisu).</summary>
+        public static void StartFor(Vessel v)
+        {
+            if (instance != null && instance.writer == null && v != null && BalancerSettings.FlightLog) instance.Open(v);
+        }
+
         private void Start()
         {
             instance = this;
