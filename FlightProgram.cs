@@ -30,12 +30,16 @@ namespace RSSBalancer
     ///           mechjebPreset = nazwa            // preset z zakładki MechJeb
     ///           mechjebAscent = on / off         // włącz / wyłącz Ascent Guidance MechJeba
     ///           attitude = 90 85 / off           // kurs i pochylenie [°] przez MechJeba (powierzchniowo), off = zwolnij
+    ///           orient = retrograde | prograde | normal | antinormal | radialout | radialin | srfvel <AoA> <odchylenie> <przechylenie> | off
+    ///           burn = on / off                  // pełny ciąg, gdy statek jest ustawiony (błąd < 5°)
+    ///           warp = stop
     ///           sas = on / off,  rcs = on / off
     ///       }
     ///   }
     ///
     /// Zmienne w „when”: met [s], alt [km], speed [m/s pow.], vspeed, orbspeed, apo [km], peri [km], q [kPa],
-    /// qfalling (1 po minięciu max-Q), g, stage, boosters / core / upper (ile silników grupy pracuje), always.
+    /// qfalling (1 po minięciu max-Q), g, stage, boosters / core / upper (ile silników grupy pracuje), always,
+    /// timetoap, timetope [s], lat, lon, mach, aligned, siteangle [°], sitexrange [km] (miejsce „site = lat lon” w programie).
     /// </summary>
     public static class FlightPrograms
     {
@@ -49,6 +53,7 @@ namespace RSSBalancer
         public class Program
         {
             public string name, file;
+            public ConfigNode node;
             public readonly List<string> description = new List<string>();
             public readonly List<Step> steps = new List<Step>();
         }
@@ -72,7 +77,7 @@ namespace RSSBalancer
                     if (root == null) continue;
                     foreach (ConfigNode n in root.GetNodes("FLIGHT_PROGRAM"))
                     {
-                        Program p = new Program { file = Path.GetFileName(f), name = n.GetValue("name") ?? Path.GetFileNameWithoutExtension(f) };
+                        Program p = new Program { node = n, file = Path.GetFileName(f), name = n.GetValue("name") ?? Path.GetFileNameWithoutExtension(f) };
                         foreach (string d in n.GetValues("description")) p.description.Add(d);
                         int i = 0;
                         foreach (ConfigNode s in n.GetNodes("STEP"))
@@ -101,6 +106,14 @@ namespace RSSBalancer
         private double qMax;
         private bool holdAttitude;
         private double holdHeading, holdPitch;
+        private enum Hold { SurfaceNorth, Orbit, SrfVel }
+        private Hold holdMode = Hold.SurfaceNorth;
+        private Vector3d holdDir = Vector3d.forward;
+        private Quaternion holdRot = Quaternion.identity;
+        private bool burnOn;
+        private bool siteSet;
+        private double siteLat, siteLon, siteLead = 3900;
+        private double attError = 180;
         private List<EngineGroup> groups;
         private SoyuzTemplate.Result id;
         private float nextGroups;
@@ -118,6 +131,15 @@ namespace RSSBalancer
             foreach (FlightPrograms.Step s in p.steps) s.activatedAt = -1;
             Running = p;
             Current = 0;
+            burnOn = false;
+            siteSet = false;
+            string site = p.node != null ? p.node.GetValue("site") : null;
+            if (site != null)
+            {
+                string[] ll = site.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (ll.Length >= 2) { siteLat = Num(ll[0], 0); siteLon = Num(ll[1], 0); siteSet = true; }
+            }
+            siteLead = p.node != null ? Num(p.node.GetValue("siteLead"), 3900) : 3900;
             qMax = 0;
             lastActivation = Planetarium.GetUniversalTime();
             RefreshGroups();
@@ -129,6 +151,7 @@ namespace RSSBalancer
         {
             if (Running != null) FlightLogger.Event("Program lotu: zatrzymany („" + Running.name + "”)");
             ReleaseAttitude();
+            if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             Running = null;
             Current = -1;
         }
@@ -172,6 +195,7 @@ namespace RSSBalancer
             if ((id == null || !id.ok) && vessel.situation == Vessel.Situations.PRELAUNCH && Time.realtimeSinceStartup > nextGroups)
             { nextGroups = Time.realtimeSinceStartup + 2f; RefreshGroups(); }
             if (holdAttitude) HoldAttitude();
+            if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
             for (int guard = 0; guard < 8 && Active; guard++)
@@ -231,11 +255,40 @@ namespace RSSBalancer
                 case "qfalling": return qMax > 5 && v.dynamicPressurekPa < qMax * 0.9 ? 1 : 0;
                 case "g": return v.geeForce;
                 case "stage": return v.currentStage;
+                case "timetoap": return v.orbit != null ? v.orbit.timeToAp : double.NaN;
+                case "timetope": return v.orbit != null ? v.orbit.timeToPe : double.NaN;
+                case "lat": return v.latitude;
+                case "lon": return v.longitude;
+                case "mach": return v.mach;
+                case "aligned": return holdAttitude && attError < 5.0 ? 1 : 0;
+                case "siteangle": return SiteAngle(false);
+                case "sitexrange": return SiteAngle(true);
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
                 case "upper": return id != null && id.ok ? Running_(id.upper, v) : double.NaN;
             }
             return double.NaN;
+        }
+
+        /// <summary>
+        /// Kąt [°] wzdłuż toru od statku do miejsca lądowania (0–360, w kierunku lotu) albo odległość boczna [km]
+        /// – dla pozycji miejsca przesuniętej o obrót Ziemi przez siteLead sekund (ok. czas od impulsu do lądowania).
+        /// </summary>
+        private double SiteAngle(bool crossRange)
+        {
+            if (!siteSet || vessel == null) return double.NaN;
+            CelestialBody b = vessel.mainBody;
+            Vector3d site = b.GetWorldSurfacePosition(siteLat, siteLon, 0) - b.position;
+            double deg = b.rotates && b.rotationPeriod > 0 ? 360.0 * siteLead / b.rotationPeriod : 0;
+            Vector3d axis = b.angularVelocity.normalized;
+            if (axis.sqrMagnitude > 0.5) site = (Vector3d)(Quaternion.AngleAxis((float)deg, (Vector3)axis) * (Vector3)site);
+            Vector3d r = vessel.CoMD - b.position;
+            Vector3d h = Vector3d.Cross(r, vessel.obt_velocity).normalized;
+            double off = Vector3d.Dot(site.normalized, h);
+            if (crossRange) return Math.Abs(Math.Asin(Math.Max(-1, Math.Min(1, off)))) * b.Radius / 1000.0;
+            Vector3d sp = site - h * Vector3d.Dot(site, h);
+            double ang = Math.Atan2(Vector3d.Dot(Vector3d.Cross(r, sp), h), Vector3d.Dot(r, sp)) * 180.0 / Math.PI;
+            return ang < 0 ? ang + 360 : ang;
         }
 
         private static int Running_(EngineGroup g, Vessel v)
@@ -314,8 +367,45 @@ namespace RSSBalancer
                         else
                         {
                             string[] hp = val.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
-                            if (hp.Length >= 2) { holdHeading = Num(hp[0], 90); holdPitch = Num(hp[1], 90); holdAttitude = true; }
+                            if (hp.Length >= 2) { holdHeading = Num(hp[0], 90); holdPitch = Num(hp[1], 90); holdMode = Hold.SurfaceNorth; holdAttitude = true; }
                         }
+                    }
+                    else if (key == "orient")
+                    {
+                        string[] w = val.ToLowerInvariant().Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (w.Length == 0 || w[0] == "off") ReleaseAttitude();
+                        else if (w[0] == "srfvel")
+                        {
+                            // jak SmartASS „Surface prograde”: pochylenie (kąt natarcia), odchylenie, przechylenie względem wektora prędkości
+                            float pit = w.Length > 1 ? (float)Num(w[1], 0) : 0f, yaw = w.Length > 2 ? (float)Num(w[2], 0) : 0f, rol = w.Length > 3 ? (float)Num(w[3], 0) : 0f;
+                            holdRot = Quaternion.AngleAxis(-rol, Vector3.forward) * Quaternion.AngleAxis(-pit, Vector3.right) * Quaternion.AngleAxis(yaw, Vector3.up);
+                            holdMode = Hold.SrfVel; holdAttitude = true;
+                        }
+                        else
+                        {
+                            Vector3d d;
+                            switch (w[0])
+                            {
+                                case "prograde": d = Vector3d.forward; break;
+                                case "retrograde": d = Vector3d.back; break;
+                                case "normal": d = Vector3d.left; break;
+                                case "antinormal": d = Vector3d.right; break;
+                                case "radialout": d = Vector3d.up; break;
+                                case "radialin": d = Vector3d.down; break;
+                                default: throw new Exception("nieznany kierunek " + w[0]);
+                            }
+                            holdDir = d; holdMode = Hold.Orbit; holdAttitude = true;
+                        }
+                        attError = 180;
+                    }
+                    else if (key == "burn")
+                    {
+                        burnOn = val == "on";
+                        if (!burnOn) FlightInputHandler.state.mainThrottle = 0f;
+                    }
+                    else if (key == "warp")
+                    {
+                        if (val == "stop" && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
                     }
                     else if (key == "sas") vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, val == "on");
                     else if (key == "rcs") vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, val == "on");
@@ -396,15 +486,34 @@ namespace RSSBalancer
             if (att == null) return;
             object pool = Users(att);
             if (pool != null) PoolCall(pool, "Add");
+            Type refType = att.GetType().Assembly.GetType("MuMech.AttitudeReference");
             foreach (MethodInfo m in att.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public))
             {
                 if (m.Name != "attitudeTo") continue;
                 ParameterInfo[] ps = m.GetParameters();
-                if (ps.Length < 4 || ps[0].ParameterType != typeof(double) || ps[1].ParameterType != typeof(double) || ps[2].ParameterType != typeof(double)) continue;
-                object[] args = new object[ps.Length];
-                args[0] = holdHeading; args[1] = holdPitch; args[2] = 0.0; args[3] = this;
-                for (int i = 4; i < ps.Length; i++) args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : (ps[i].ParameterType == typeof(bool) ? (object)true : null);
+                if (ps.Length < 3) continue;
+                object[] args = null;
+                if (holdMode == Hold.SurfaceNorth && ps.Length >= 4 && ps[0].ParameterType == typeof(double) && ps[1].ParameterType == typeof(double) && ps[2].ParameterType == typeof(double))
+                {
+                    args = new object[ps.Length];
+                    args[0] = holdHeading; args[1] = holdPitch; args[2] = 0.0; args[3] = this;
+                    for (int i = 4; i < ps.Length; i++) args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : (object)true;
+                }
+                else if (holdMode == Hold.Orbit && ps.Length == 3 && ps[0].ParameterType == typeof(Vector3d) && refType != null)
+                {
+                    args = new object[] { holdDir, Enum.Parse(refType, "ORBIT"), this };
+                }
+                else if (holdMode == Hold.SrfVel && ps[0].ParameterType.Name == "QuaternionD" && refType != null)
+                {
+                    object q = Activator.CreateInstance(ps[0].ParameterType, (double)holdRot.x, (double)holdRot.y, (double)holdRot.z, (double)holdRot.w);
+                    args = new object[ps.Length];
+                    args[0] = q; args[1] = Enum.Parse(refType, "SURFACE_VELOCITY"); args[2] = this;
+                    for (int i = 3; i < ps.Length; i++) args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : (object)true;
+                }
+                if (args == null) continue;
                 m.Invoke(att, args);
+                MethodInfo err = att.GetType().GetMethod("attitudeAngleFromTarget", Type.EmptyTypes);
+                if (err != null) try { attError = (double)err.Invoke(att, null); } catch { }
                 return;
             }
         }
