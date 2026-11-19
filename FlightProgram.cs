@@ -128,7 +128,7 @@ namespace RSSBalancer
         private float nextGroups;
 
         private void Awake() { Instance = this; }
-        private void OnDestroy() { if (Instance == this) Instance = null; ReleaseAttitude(); if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw; }
+        private void OnDestroy() { if (Instance == this) Instance = null; RestoreWarpLimits(); ReleaseAttitude(); if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw; }
 
         public bool Active { get { return Running != null && Current >= 0 && Current < Running.steps.Count; } }
 
@@ -310,6 +310,27 @@ namespace RSSBalancer
             return "Przyspieszenie fizyczne ×3 do kroku „" + Running.steps[k].name + "”.";
         }
 
+        // Limity wysokości dla przyspieszenia czasu: w RSS na orbicie 155 km KSP pozwalał tylko na ×10 (lot 2026-11-19 21:20:
+        // „Warping to … Max Rate Allowed: 10.0x” – godzina czekania na impuls = 6 minut). Na czas programu obniżamy je
+        // do granicy atmosfery (+2 km na stopień) – na szynach orbita liczy się dokładnie, a WarpTo sam zwalnia przed celem.
+        private float[] warpLimOrig; private CelestialBody warpLimBody;
+        private void LowerWarpLimits()
+        {
+            if (vessel == null) return;
+            CelestialBody b = vessel.mainBody;
+            if (b == null || b.timeWarpAltitudeLimits == null || warpLimBody == b) return;
+            RestoreWarpLimits();
+            warpLimBody = b; warpLimOrig = (float[])b.timeWarpAltitudeLimits.Clone();
+            float top = b.atmosphere ? (float)b.atmosphereDepth : 0f;
+            for (int i = 1; i < b.timeWarpAltitudeLimits.Length; i++)
+                b.timeWarpAltitudeLimits[i] = Mathf.Min(warpLimOrig[i], top + 2000f * i);
+        }
+        private void RestoreWarpLimits()
+        {
+            if (warpLimBody != null && warpLimOrig != null) warpLimBody.timeWarpAltitudeLimits = warpLimOrig;
+            warpLimBody = null; warpLimOrig = null;
+        }
+
         private void PhysWarpUpdate()
         {
             if (physWarpTarget < 0 || vessel == null) return;
@@ -331,6 +352,7 @@ namespace RSSBalancer
 
         private void FixedUpdate()
         {
+            if (Active) LowerWarpLimits(); else if (warpLimBody != null) RestoreWarpLimits();
             PhysWarpUpdate();
             if (patternOn && vessel != null && vessel == FlightGlobals.ActiveVessel) Pattern();
             if (approachOn && vessel != null && vessel == FlightGlobals.ActiveVessel && !Active) Approach();
@@ -1010,6 +1032,7 @@ namespace RSSBalancer
         {
             if (!approachOn) return;
             approachOn = false;
+            if (recovering) { recovering = false; ReleaseAttitude(); }
             object ap = Airplane();
             if (ap == null) return;
             Call(ap, "DisableVertSpeedHold");
@@ -1025,6 +1048,63 @@ namespace RSSBalancer
         /// </summary>
         private double nextALog;
         private bool excessTurn, brakesOut;
+
+        // ------------------------------------------------------------------ wyprowadzanie z korkociągu
+        // Lot 2026-11-19 21:20: przy przeciągnięciu autopilot samolotowy MechJeba (kurs + prędkość pionowa) tylko
+        // pogarszał sprawę – Buran wirował od 21 do 10 km. Teraz przy przeciągnięciu (α > 25° albo EAS < 1,05×
+        // przeciągnięcia) odłączamy autopilot samolotowy, włączamy wszystkie osie RCS (w prawdziwym Buranie RCS
+        // w atmosferze działał tylko do pewnej prędkości – tu przekłamanie dla bezpieczeństwa) i ustawiamy nos
+        // na wektor prędkości (α 3°), skrzydła poziomo. Koniec, gdy przez 3 s: EAS > 1,35× przeciągnięcia i α < 12°.
+        private bool recovering;
+        private double recoverOk = -1, nextRLog;
+
+        private static void SetRcsAxes(Vessel v, bool all)
+        {
+            foreach (Part pp in v.parts)
+                foreach (ModuleRCS r in pp.FindModulesImplementing<ModuleRCS>())
+                { r.enablePitch = all; r.enableRoll = all; r.enableYaw = true; r.enableX = all; r.enableY = all; r.enableZ = all; }
+        }
+
+        private bool SpinRecovery(object ap, double eas, double vSt, double aoa, double hr, double d, double h)
+        {
+            double now = Planetarium.GetUniversalTime();
+            bool bad = aoa > 25 || eas < 1.05 * vSt;
+            if (!recovering)
+            {
+                if (!bad || hr < 300) return false;
+                recovering = true; recoverOk = -1; nextRLog = 0;
+                Call(ap, "DisableVertSpeedHold");
+                Call(ap, "DisableHeadingHold");
+                SetRcsAxes(vessel, true);
+                vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, true);
+                entryGuide = false; holdMode = Hold.SrfVel; holdAttitude = true;
+                ScreenMessages.PostScreenMessage("KORKOCIĄG – wyprowadzam: nos na wektor prędkości, skrzydła poziomo", 4f, ScreenMessageStyle.UPPER_CENTER, Color.red);
+                FlightLogger.Event("Wyprowadzanie z korkociągu: start – α " + aoa.ToString("F0", Inv) + "°, EAS " + eas.ToString("F0", Inv) + " m/s, h=" + h.ToString("F0", Inv) + " m");
+            }
+            holdRot = Quaternion.AngleAxis(-3f, Vector3.right);
+            HoldAttitude();
+            bool ok = eas > 1.35 * vSt && aoa < 12;
+            if (!ok || hr < 150) recoverOk = -1;
+            else if (recoverOk < 0) recoverOk = now;
+            if ((ok && now - recoverOk > 3) || hr < 150)
+            {
+                recovering = false;
+                ReleaseAttitude();
+                SetRcsAxes(vessel, false);
+                vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, false);
+                SetF(ap, "VertSpeedTarget", vessel.verticalSpeed);
+                SetF(ap, "HeadingTarget", HeadingOf(vessel.srf_velocity, (vessel.CoMD - vessel.mainBody.position).normalized,
+                    Vector3d.Exclude((vessel.CoMD - vessel.mainBody.position).normalized, vessel.mainBody.transform.up).normalized,
+                    Vector3d.Cross((vessel.CoMD - vessel.mainBody.position).normalized, Vector3d.Exclude((vessel.CoMD - vessel.mainBody.position).normalized, vessel.mainBody.transform.up).normalized).normalized));
+                Call(ap, "EnableHeadingHold");
+                Call(ap, "EnableVertSpeedHold");
+                FlightLogger.Event("Wyprowadzanie z korkociągu: koniec – EAS " + eas.ToString("F0", Inv) + " m/s, α " + aoa.ToString("F0", Inv) + "°, h=" + h.ToString("F0", Inv) + " m");
+                return false;
+            }
+            approachPhase = "KORKOCIĄG – wyprowadzam (RCS, nos na wektor prędkości, skrzydła poziomo), EAS " + eas.ToString("F0", Inv) + " m/s, α " + aoa.ToString("F0", Inv) + "°";
+            if (now > nextRLog) { nextRLog = now + 5; FlightLogger.Event("Podejście: " + approachPhase + " d=" + (d / 1000).ToString("F1", Inv) + " km h=" + h.ToString("F0", Inv) + " m"); }
+            return true;
+        }
 
         // ------------------------------------------------------------------ czujnik przeciągnięcia
         // Jak w samolocie: ostrzega, gdy kąt natarcia zbliża się do krytycznego albo prędkość równoważna (EAS –
@@ -1186,6 +1266,7 @@ namespace RSSBalancer
                 // Przechylenie zabiera nośność – przy małej prędkości ostrożne zakręty (lot 18:25: zakręt 45° na 17 km
                 // przy EAS ~85 m/s skończył się korkociągiem).
                 double rollLim = easNow < 1.3 * vSt ? 10 : easNow < 1.6 * vSt ? 20 : easNow < 2.0 * vSt ? 30 : 45;
+                if (SpinRecovery(ap, easNow, vSt, aoaNow, hr, d, h)) return;
                 if (StallLevel == 2)
                 {
                     // przeciągnięcie / korkociąg: skrzydła poziomo, kurs bieżący, nos w dół – aż odzyska prędkość
@@ -1233,11 +1314,11 @@ namespace RSSBalancer
         }
         private bool ldSeen;
 
-        // Doskonałość Burana w KSP po łatce „BuranWing” (nośność skrzydeł przy dużych Machach jak w prawdziwym Buranie:
-        // L/D 1,05–1,40 przy α 30–40°, M 28–10; poddźwiękowo ~5). Wartości z pomiaru 2026-11-19 20:05 przeliczone
-        // przez nową krzywą liftMach – do potwierdzenia w locie (bieżący pomiar i tak skaluje tablicę).
-        private static readonly double[,] LdTab = { { 7600, 1.2 }, { 6000, 1.12 }, { 4500, 1.05 }, { 3600, 1.1 }, { 2900, 1.7 }, { 2300, 2.0 },
-                                                    { 1600, 2.0 }, { 1100, 1.6 }, { 700, 1.55 }, { 450, 1.5 }, { 0, 1.4 } };
+        // Doskonałość Burana w KSP z łatką „BuranWing” – POMIAR z lotu 2026-11-19 21:20 (α wg programu, częściowo
+        // zmniejszony przy oszczędzaniu energii): M 23 → 0,7–0,8, M 20–13 → 0,9–1,0, M 11 → 1,15, M 9–4 → 1,45–1,55,
+        // M 3–2 → 1,7, M 1 → 1,4. Bieżący pomiar i tak skaluje tablicę.
+        private static readonly double[,] LdTab = { { 7600, 0.78 }, { 6500, 0.82 }, { 5700, 0.9 }, { 4900, 1.0 }, { 3900, 1.0 }, { 3400, 1.15 },
+                                                    { 3000, 1.45 }, { 2600, 1.55 }, { 1650, 1.52 }, { 1240, 1.54 }, { 900, 1.67 }, { 580, 1.73 }, { 320, 1.42 }, { 0, 1.4 } };
         private static double LdTable(double v)
         {
             if (v >= LdTab[0, 0]) return LdTab[0, 1];
@@ -1259,7 +1340,7 @@ namespace RSSBalancer
             return s;
         }
 
-        private double bankCmd, rollSign = 1, ldF = 1.1, calStart = -1, calHdg0, calBank, nextGLog;
+        private double bankCmd, rollSign = 1, ldF = 0.8, gEas = -1, gVst = 1, calStart = -1, calHdg0, calBank, nextGLog;
         private bool calDone;
         public string EntryInfo = "";
         private static Type farApi; private static bool farLooked;
@@ -1361,6 +1442,7 @@ namespace RSSBalancer
             // Mała prędkość równoważna nisko: przechylenie zabiera nośność – ograniczamy je, żeby nie przeciągnąć
             double easG = Math.Sqrt(2 * v.dynamicPressurekPa * 1000 / 1.225);
             double vStG = 70 * Math.Sqrt(Math.Max(10, v.totalMass) / 75.0);
+            gEas = easG; gVst = vStG;
             if (V < 2000 && easG < 1.7 * vStG)
             {
                 mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : 20);
@@ -1412,6 +1494,15 @@ namespace RSSBalancer
                 if (aoaByMach) gAoa = AoAForMach(vessel.mach);
                 float step = 1.0f * TimeWarp.fixedDeltaTime;
                 float aoaTarget = aoaBias < 0 ? Mathf.Min(45f, gAoa - aoaBias) : gAoa > 18 ? Mathf.Max(18f, gAoa - aoaBias) : gAoa;
+                // Ochrona prędkości nisko (lot 2026-11-19 21:20: przy M 2→1 na 27→21 km Buran trzymał α 10°, prędkość
+                // równoważna spadła do prędkości przeciągnięcia i wpadł w korkociąg). Poniżej 1,8× prędkości przeciągnięcia
+                // zmniejszamy kąt natarcia (do 3°) – nos idzie w dół, Buran schodzi stromiej i nabiera prędkości.
+                if (vessel.srfSpeed < 1500 && gEas > 0 && gEas < 1.8 * gVst)
+                {
+                    float cut = (float)Math.Min(1.0, (1.8 * gVst - gEas) / (0.5 * gVst));
+                    aoaTarget = Mathf.Max(3f, aoaTarget - cut * 9f);
+                    step = 3.0f * TimeWarp.fixedDeltaTime;
+                }
                 gAoaCmd += Mathf.Clamp(aoaTarget - gAoaCmd, -step, step);
                 holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoaCmd, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
             }
