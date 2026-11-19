@@ -106,7 +106,7 @@ namespace RSSBalancer
         private double qMax;
         private bool holdAttitude;
         private double holdHeading, holdPitch;
-        private enum Hold { SurfaceNorth, Orbit, SrfVel }
+        private enum Hold { SurfaceNorth, Orbit, SrfVel, Inertial }
         private Hold holdMode = Hold.SurfaceNorth;
         private Vector3d holdDir = Vector3d.forward;
         private Quaternion holdRot = Quaternion.identity;
@@ -128,6 +128,292 @@ namespace RSSBalancer
         private float nextGroups;
 
         private void Awake() { Instance = this; }
+        // ------------------------------------------------------------------ manewr orbitalny „orbittarget = pe ap inc”
+        // Ustawia orbitę o zadanym perygeum, apogeum [km] i nachyleniu [°] (węzeł dowolny) z dowolnej orbity zamkniętej.
+        // Liczy dwa warianty i wybiera tańszy w Δv:
+        //  A) bezpośredni: zmiana płaszczyzny w węźle (przejście przez równik) + Hohmann (apogeum w perygeum, perygeum w apogeum),
+        //     przy podnoszeniu orbity najpierw kształt (płaszczyzna na wyższej orbicie = taniej), przy obniżaniu odwrotnie;
+        //  B) dwueliptyczny: w węźle podniesienie apogeum na R (apogeum wypada w drugim węźle), tam – przy małej prędkości –
+        //     zmiana płaszczyzny razem z ustawieniem perygeum, potem w perygeum obniżenie apogeum. Przy dużej zmianie
+        //     nachylenia (np. 0° → 51,6°) wyraźnie taniej, ale trwa dłużej (R dobierane tak, by całość < 3 doby).
+        // Impulsy wektorowe w pętli zamkniętej: co klatkę liczymy prędkość docelową w bieżącym punkcie, nos na Δv,
+        // przepustnica maleje przy końcówce, koniec przy |Δv| < 0,3 m/s. Bez cheatu sprawdzamy, czy starczy paliwa.
+        private enum MPh { None, WaitNodePlane, BurnPlane, WaitPeA, BurnA, WaitApP, BurnP, WaitNodeRaise, BurnRaise, WaitApoCombo, BurnCombo, WaitPeLower, BurnLower, Done }
+        private MPh mph = MPh.None;
+        private readonly List<MPh> mplan = new List<MPh>();
+        private int mIdx;
+        private double mComboRa, mPe, mAp, mInc, mRhi, mBurnUT = double.NaN, mLastDv = double.MaxValue, mWarpedFor = double.NaN;
+        private bool mBi;
+        public string ManeuverInfo = "";
+        public bool ManeuverDone { get { return mph == MPh.Done; } }
+
+        private double Mu { get { return vessel.mainBody.gravParameter; } }
+        private double AccelNow() { double t = EngineThrustKN(); return t > 1 ? t / vessel.totalMass : 2.0; }
+        private static double IncDv(double v, double di) { return 2 * v * Math.Sin(Math.Abs(di) * Math.PI / 360); }
+
+        private void StartManeuver(double peKm, double apKm, double incDeg)
+        {
+            CelestialBody b = vessel.mainBody; Orbit o = vessel.orbit;
+            if (apKm < peKm) { double t = apKm; apKm = peKm; peKm = t; }
+            mPe = peKm; mAp = apKm; mInc = incDeg;
+            double R = b.Radius, r0 = o.semiMajorAxis, rt = R + 0.5 * (peKm + apKm) * 1000;
+            double di = incDeg - o.inclination;
+            // Δv wariantu A (przybliżenie orbit kołowych)
+            double vt = Math.Sqrt(Mu / rt), v0 = Math.Sqrt(Mu / r0);
+            double at = 0.5 * (r0 + rt);
+            double hoh = Math.Abs(Math.Sqrt(Mu * (2 / r0 - 1 / at)) - v0) + Math.Abs(vt - Math.Sqrt(Mu * (2 / rt - 1 / at)));
+            double planeA = IncDv(Math.Min(v0, vt), di);
+            double dvA = hoh + planeA;
+            // wariant B: najlepsze R przy limicie czasu ~3 doby
+            double dvB = double.MaxValue, bestR = 0;
+            if (Math.Abs(di) > 5)
+                for (double Rhi = Math.Max(r0, rt) * 1.5; Rhi < 400e6; Rhi *= 1.15)
+                {
+                    double a1 = 0.5 * (r0 + Rhi), a2 = 0.5 * (rt + Rhi);
+                    double period = Math.PI * (Math.Sqrt(a1 * a1 * a1 / Mu) + Math.Sqrt(a2 * a2 * a2 / Mu));
+                    if (period > 3 * 86400) break;
+                    if (Rhi > b.sphereOfInfluence * 0.5) break;
+                    double dv1 = Math.Sqrt(Mu * (2 / r0 - 1 / a1)) - v0;
+                    double va1 = Math.Sqrt(Mu * (2 / Rhi - 1 / a1)), va2 = Math.Sqrt(Mu * (2 / Rhi - 1 / a2));
+                    double dv2 = Math.Sqrt(va1 * va1 + va2 * va2 - 2 * va1 * va2 * Math.Cos(di * Math.PI / 180));
+                    double dv3 = Math.Sqrt(Mu * (2 / rt - 1 / a2)) - vt;
+                    double tot = dv1 + dv2 + dv3;
+                    if (tot < dvB) { dvB = tot; bestR = Rhi; }
+                }
+            mBi = dvB < dvA * 0.97;
+            mRhi = bestR;
+            double need = mBi ? dvB : dvA;
+            mplan.Clear();
+            if (mBi) { mplan.Add(MPh.WaitNodeRaise); mplan.Add(MPh.WaitApoCombo); mplan.Add(MPh.WaitPeLower); }
+            else
+            {
+                bool plane = Math.Abs(di) > 0.05;
+                bool higher = rt > r0;
+                if (plane && !higher) mplan.Add(MPh.WaitNodePlane);
+                mplan.Add(MPh.WaitPeA); mplan.Add(MPh.WaitApP);
+                if (plane && higher) mplan.Add(MPh.WaitNodePlane);
+            }
+            mplan.Add(MPh.Done);
+            mIdx = 0; mph = mplan[0]; mBurnUT = double.NaN; mWarpedFor = double.NaN;
+            double have = 0;
+            try { VesselDeltaV vd = vessel.VesselDeltaV; if (vd != null) have = vd.TotalDeltaVVac; } catch { }
+            bool cheat = CheatOptions.InfinitePropellant;
+            ManeuverInfo = (mBi ? "dwueliptyczny przez " + ((mRhi - R) / 1000).ToString("F0", Inv) + " km" : "bezpośredni") +
+                           ", Δv ≈ " + need.ToString("F0", Inv) + " m/s (A " + dvA.ToString("F0", Inv) + (dvB < 1e9 ? ", B " + dvB.ToString("F0", Inv) : "") + "), zmiana nachylenia " + di.ToString("F1", Inv) + "°" +
+                           (cheat ? ", paliwo nieskończone (cheat)" : ", w zbiornikach " + have.ToString("F0", Inv) + " m/s");
+            FlightLogger.Event("Manewr orbitalny: cel " + peKm.ToString("F0", Inv) + "×" + apKm.ToString("F0", Inv) + " km, " + incDeg.ToString("F1", Inv) + "° – " + ManeuverInfo);
+            if (!cheat && have > 1 && need > have * 0.98)
+            {
+                ManeuverInfo = "ZA MAŁO PALIWA: potrzeba ~" + need.ToString("F0", Inv) + " m/s, jest " + have.ToString("F0", Inv) + " m/s (Buran ma tylko ODU; większą zmianę nachylenia zrób z cheatem paliwa albo HyperEdit)";
+                FlightLogger.Event("Manewr orbitalny: " + ManeuverInfo);
+                mph = MPh.Done;
+            }
+        }
+
+        private void NextManeuverPhase()
+        {
+            FlightInputHandler.state.mainThrottle = 0f;
+            mIdx++; mph = mIdx < mplan.Count ? mplan[mIdx] : MPh.Done; mBurnUT = double.NaN; mWarpedFor = double.NaN; mLastDv = double.MaxValue;
+            if (mph == MPh.Done) { FlightLogger.Event("Manewr orbitalny: gotowe – " + (vessel.orbit.PeA / 1000).ToString("F0", Inv) + "×" + (vessel.orbit.ApA / 1000).ToString("F0", Inv) + " km, nachylenie " + vessel.orbit.inclination.ToString("F2", Inv) + "°"); holdDir = Vector3d.back; holdMode = Hold.Orbit; }
+        }
+
+        /// <summary>Najbliższe przejście przez równik (węzeł) po chwili t0.</summary>
+        private double NextNodeUT(double t0)
+        {
+            Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
+            Vector3d ax = b.transform.up;
+            double step = Math.Max(5, o.period / 720), prev = Vector3d.Dot(o.getPositionAtUT(t0) - b.position, ax);
+            for (double t = t0 + step; t < t0 + o.period + step; t += step)
+            {
+                double z = Vector3d.Dot(o.getPositionAtUT(t) - b.position, ax);
+                if (Math.Sign(z) != Math.Sign(prev))
+                {
+                    double lo = t - step, hi = t;
+                    for (int i = 0; i < 30; i++) { double m = 0.5 * (lo + hi); if (Math.Sign(Vector3d.Dot(o.getPositionAtUT(m) - b.position, ax)) == Math.Sign(prev)) lo = m; else hi = m; }
+                    return hi;
+                }
+                prev = z;
+            }
+            return t0;   // orbita równikowa – każdy punkt jest węzłem
+        }
+
+        /// <summary>Prędkość docelowa (świat) w bieżącym punkcie: pozioma składowa o długości vh pod kursem dla nachylenia mInc, pionowa vz.</summary>
+        private Vector3d TargetVel(double vh, double vz)
+        {
+            CelestialBody b = vessel.mainBody;
+            Vector3d up = (vessel.CoMD - b.position).normalized, ax = b.transform.up;
+            Vector3d north = Vector3d.Exclude(up, ax).normalized, east = Vector3d.Cross(up, north).normalized;
+            double lat = Math.Asin(Math.Max(-1, Math.Min(1, Vector3d.Dot(up, ax))));
+            double s = Math.Cos(mInc * Math.PI / 180) / Math.Max(1e-6, Math.Cos(lat));
+            double psi = Math.Asin(Math.Max(-1, Math.Min(1, s)));            // kurs (od północy) dla ruchu „na wschód”
+            Vector3d v = vessel.obt_velocity; Vector3d vhNow = v - up * Vector3d.Dot(v, up);
+            double curHdg = Math.Atan2(Vector3d.Dot(vhNow, east), Vector3d.Dot(vhNow, north));
+            double h1 = psi, h2 = Math.PI - psi;                               // wznoszący / zstępujący
+            if (mInc > 90) { h1 = -psi; h2 = Math.PI + psi; }
+            double d1 = Math.Abs(Math.IEEERemainder(h1 - curHdg, 2 * Math.PI)), d2 = Math.Abs(Math.IEEERemainder(h2 - curHdg, 2 * Math.PI));
+            double h = d1 <= d2 ? h1 : h2;
+            return (north * Math.Cos(h) + east * Math.Sin(h)) * vh + up * vz;
+        }
+
+        private void ManeuverWarp(double burnStart)
+        {
+            double now = Planetarium.GetUniversalTime();
+            if (mWarpedFor == burnStart) return;
+            mWarpedFor = burnStart;
+            if (burnStart - now > 120 && TimeWarp.CurrentRateIndex == 0) TimeWarp.fetch.WarpTo(burnStart - 60);
+        }
+
+        /// <summary>Impuls wektorowy: nos na Δv, przepustnica proporcjonalna przy końcówce. true = skończony.</summary>
+        private bool VectorBurn(Vector3d dv)
+        {
+            double m = dv.magnitude;
+            holdDir = dv.normalized; holdMode = Hold.Inertial; holdAttitude = true;
+            if (m < 0.3 || (m > mLastDv + 0.05 && mLastDv < 3)) return true;
+            mLastDv = Math.Min(mLastDv, m);
+            double a = AccelNow();
+            float thr = (float)Math.Max(0.02, Math.Min(1, m / (a * 1.5)));
+            FlightInputHandler.state.mainThrottle = attError < 3 ? thr : 0f;
+            return false;
+        }
+
+        /// <summary>Impuls wzdłuż prędkości (prograde/retro) aż wartość dojdzie do celu. true = skończony.</summary>
+        private bool AxisBurn(double cur, double target, bool raises)
+        {
+            holdDir = raises ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
+            double err = (target - cur) * (raises ? 1 : -1);
+            if (err <= 0) return true;
+            double a = AccelNow();
+            FlightInputHandler.state.mainThrottle = attError < 3 ? (float)Math.Max(0.02, Math.Min(1, err / 5000.0)) : 0f;   // err w m
+            return false;
+        }
+
+        private void Maneuver()
+        {
+            if (mph == MPh.None || mph == MPh.Done || vessel == null) return;
+            Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
+            double now = Planetarium.GetUniversalTime(), R = b.Radius;
+            double a = AccelNow();
+            Vector3d up = (vessel.CoMD - b.position).normalized;
+            Vector3d v = vessel.obt_velocity;
+            double vz = Vector3d.Dot(v, up), vhm = (v - up * vz).magnitude;
+            bool circ = o.eccentricity < 0.002;
+            switch (mph)
+            {
+                case MPh.WaitNodePlane:
+                case MPh.WaitNodeRaise:
+                {
+                    if (double.IsNaN(mBurnUT))
+                    {
+                        double tn = NextNodeUT(now + 30);
+                        double dv = mph == MPh.WaitNodePlane ? IncDv(o.orbitalSpeed, mInc - o.inclination)
+                                  : Math.Sqrt(Mu * (2 / o.radius - 2 / (o.radius + mRhi))) - o.orbitalSpeed;
+                        mBurnUT = tn - 0.5 * dv / a;
+                        if (mBurnUT < now + 20) mBurnUT = NextNodeUT(tn + 60) - 0.5 * dv / a;
+                        ManeuverInfo = (mph == MPh.WaitNodePlane ? "zmiana nachylenia" : "podniesienie apogeum na " + ((mRhi - R) / 1000).ToString("F0", Inv) + " km") + " w węźle, Δv " + dv.ToString("F0", Inv) + " m/s";
+                    }
+                    holdDir = mph == MPh.WaitNodeRaise ? Vector3d.forward : holdDir; if (mph == MPh.WaitNodeRaise) holdMode = Hold.Orbit; holdAttitude = true;
+                    if (mph == MPh.WaitNodePlane) VectorBurnAim(TargetVel(vhm, vz) - v);
+                    ManeuverWarp(mBurnUT);
+                    if (now >= mBurnUT) { mph = mph == MPh.WaitNodePlane ? MPh.BurnPlane : MPh.BurnRaise; mLastDv = double.MaxValue; FlightLogger.Event("Manewr orbitalny: start – " + ManeuverInfo); }
+                    break;
+                }
+                case MPh.BurnPlane:
+                    if (VectorBurn(TargetVel(vhm, vz) - v)) NextManeuverPhase();
+                    break;
+                case MPh.BurnRaise:
+                    if (AxisBurn(o.ApR, mRhi, true)) NextManeuverPhase();
+                    break;
+                case MPh.WaitPeA:
+                {
+                    double tgt = R + mAp * 1000;
+                    bool raise = o.ApR < tgt;
+                    if (double.IsNaN(mBurnUT))
+                    {
+                        double dv = Math.Abs(Math.Sqrt(Mu * (2 / o.PeR - 2 / (o.PeR + tgt))) - Math.Sqrt(Mu * (2 / o.PeR - 1 / o.semiMajorAxis)));
+                        mBurnUT = (circ ? now + 60 : now + o.timeToPe) - 0.5 * dv / a;
+                        if (mBurnUT < now + 20) mBurnUT = now + 20;
+                        ManeuverInfo = (raise ? "podniesienie" : "obniżenie") + " apogeum do " + mAp.ToString("F0", Inv) + " km, Δv " + dv.ToString("F0", Inv) + " m/s";
+                    }
+                    if (Math.Abs(o.ApR - tgt) < 300) { NextManeuverPhase(); break; }
+                    holdDir = raise ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
+                    ManeuverWarp(mBurnUT);
+                    if (now >= mBurnUT) { mph = MPh.BurnA; FlightLogger.Event("Manewr orbitalny: start – " + ManeuverInfo); }
+                    break;
+                }
+                case MPh.BurnA:
+                {
+                    double tgt = R + mAp * 1000;
+                    bool raise = holdDir == Vector3d.forward;
+                    if (AxisBurn(o.ApR, tgt, raise)) NextManeuverPhase();
+                    break;
+                }
+                case MPh.WaitApP:
+                case MPh.WaitPeLower:
+                {
+                    bool atAp = mph == MPh.WaitApP;
+                    double tgt = atAp ? R + mPe * 1000 : R + mAp * 1000;
+                    double curV = atAp ? o.PeR : o.ApR;
+                    bool raise = curV < tgt;
+                    if (double.IsNaN(mBurnUT))
+                    {
+                        double rr = atAp ? o.ApR : o.PeR;
+                        double dv = Math.Abs(Math.Sqrt(Mu * (2 / rr - 2 / (rr + tgt))) - Math.Sqrt(Mu * (2 / rr - 1 / o.semiMajorAxis)));
+                        double tt = atAp ? o.timeToAp : o.timeToPe;
+                        mBurnUT = (circ ? now + 60 : now + tt) - 0.5 * dv / a;
+                        if (mBurnUT < now + 20) mBurnUT = now + 20;
+                        ManeuverInfo = (raise ? "podniesienie " : "obniżenie ") + (atAp ? "perygeum do " + mPe.ToString("F0", Inv) : "apogeum do " + mAp.ToString("F0", Inv)) + " km, Δv " + dv.ToString("F0", Inv) + " m/s";
+                    }
+                    if (Math.Abs(curV - tgt) < 300) { NextManeuverPhase(); break; }
+                    holdDir = raise ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
+                    ManeuverWarp(mBurnUT);
+                    if (now >= mBurnUT) { mph = atAp ? MPh.BurnP : MPh.BurnLower; FlightLogger.Event("Manewr orbitalny: start – " + ManeuverInfo); }
+                    break;
+                }
+                case MPh.BurnP:
+                case MPh.BurnLower:
+                {
+                    bool atAp = mph == MPh.BurnP;
+                    double tgt = atAp ? R + mPe * 1000 : R + mAp * 1000;
+                    double curV = atAp ? o.PeR : o.ApR;
+                    if (AxisBurn(curV, tgt, holdDir == Vector3d.forward)) NextManeuverPhase();
+                    break;
+                }
+                case MPh.WaitApoCombo:
+                {
+                    // w apogeum (wysoko, wolno): płaszczyzna + perygeum razem
+                    double ra = o.ApR, rp = R + mPe * 1000;
+                    double vNew = Math.Sqrt(Mu * 2 * rp / (ra * (ra + rp))), vOld = Math.Sqrt(Mu * (2 / ra - 1 / o.semiMajorAxis));
+                    if (double.IsNaN(mBurnUT))
+                    {
+                        double dv = Math.Sqrt(vOld * vOld + vNew * vNew - 2 * vOld * vNew * Math.Cos((mInc - o.inclination) * Math.PI / 180));
+                        mBurnUT = now + o.timeToAp - 0.5 * dv / a;
+                        if (mBurnUT < now + 20) mBurnUT = now + 20;
+                        ManeuverInfo = "w apogeum " + ((ra - R) / 1000).ToString("F0", Inv) + " km: nachylenie " + mInc.ToString("F1", Inv) + "° i perygeum " + mPe.ToString("F0", Inv) + " km, Δv " + dv.ToString("F0", Inv) + " m/s";
+                    }
+                    VectorBurnAim(TargetVel(vNew, 0) - v);
+                    ManeuverWarp(mBurnUT);
+                    if (now >= mBurnUT) { mph = MPh.BurnCombo; mLastDv = double.MaxValue; mComboRa = o.ApR; FlightLogger.Event("Manewr orbitalny: start – " + ManeuverInfo); }
+                    break;
+                }
+                case MPh.BurnCombo:
+                {
+                    // prędkość docelowa w bieżącym punkcie dla orbity r × rp o zadanym nachyleniu (energia i moment pędu)
+                    double r = o.radius, rp = R + mPe * 1000, ra = Math.Max(mComboRa, r);
+                    double aT = 0.5 * (ra + rp);
+                    double spd = Math.Sqrt(Math.Max(0, Mu * (2 / r - 1 / aT)));
+                    double hT = Math.Sqrt(Mu * 2 * ra * rp / (ra + rp));
+                    double vht = Math.Min(spd, hT / r), vzt = Math.Sign(vz) * Math.Sqrt(Math.Max(0, spd * spd - vht * vht));
+                    if (VectorBurn(TargetVel(vht, vzt) - v)) NextManeuverPhase();
+                    break;
+                }
+            }
+        }
+
+        private void VectorBurnAim(Vector3d dv)
+        {
+            if (dv.magnitude > 0.1) { holdDir = dv.normalized; holdMode = Hold.Inertial; holdAttitude = true; }
+        }
+
         // ---- duży licznik odległości od lotniska (na górze ekranu, gdy program albo podejście działa)
         private double hudRMax = double.NaN, hudDpsi = double.NaN;
         private GUIStyle hudBig, hudSmall, hudShadowBig, hudShadowSmall;
@@ -138,7 +424,7 @@ namespace RSSBalancer
         }
         private void OnGUI()
         {
-            if (!HighLogic.LoadedSceneIsFlight || vessel == null || vessel != FlightGlobals.ActiveVessel || !siteSet) return;
+            if (!HighLogic.LoadedSceneIsFlight || vessel == null || vessel != FlightGlobals.ActiveVessel) return;
             if (!Active && !approachOn) return;
             if (hudBig == null)
             {
@@ -147,6 +433,19 @@ namespace RSSBalancer
                 hudShadowBig = new GUIStyle(hudBig); hudShadowBig.normal.textColor = Color.black;
                 hudShadowSmall = new GUIStyle(hudSmall); hudShadowSmall.normal.textColor = Color.black;
             }
+            if (mph != MPh.None && mph != MPh.Done)
+            {
+                double tb = !double.IsNaN(mBurnUT) ? mBurnUT - Planetarium.GetUniversalTime() : double.NaN;
+                bool burning = mph == MPh.BurnPlane || mph == MPh.BurnRaise || mph == MPh.BurnA || mph == MPh.BurnP || mph == MPh.BurnCombo || mph == MPh.BurnLower;
+                string bigM = burning ? "IMPULS" : !double.IsNaN(tb) && tb > 0 ? "IMPULS ZA " + KSPUtil.PrintTimeCompact(tb, false) : "MANEWR";
+                string smallM = ManeuverInfo + " · orbita " + (vessel.orbit.PeA / 1000).ToString("F0", Inv) + "×" + (vessel.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + vessel.orbit.inclination.ToString("F1", Inv) + "° → cel " +
+                                mPe.ToString("F0", Inv) + "×" + mAp.ToString("F0", Inv) + " km, " + mInc.ToString("F1", Inv) + "°";
+                float wm = 1100, xm = (Screen.width - wm) / 2, ym = Screen.height * 0.11f;
+                HudText(new Rect(xm, ym, wm, 50), bigM, hudBig, hudShadowBig, burning ? Color.yellow : Color.white);
+                HudText(new Rect(xm, ym + 46, wm, 26), smallM, hudSmall, hudShadowSmall, Color.white);
+                return;
+            }
+            if (!siteSet) return;
             double brg;
             double km = GreatCircle(vessel.latitude, vessel.longitude, siteLat, siteLon, out brg) * vessel.mainBody.Radius / 1000;
             string big; Color col = Color.white;
@@ -224,6 +523,8 @@ namespace RSSBalancer
             StopApproach();
             steerHdg = double.NaN;
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
+            if (mph != MPh.None && mph != MPh.Done) FlightInputHandler.state.mainThrottle = 0f;
+            mph = MPh.None;
             Running = null;
             Current = -1;
         }
@@ -414,6 +715,7 @@ namespace RSSBalancer
             if (holdAttitude) HoldAttitude();
             if (!approachOn && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth) { double e1, v1, a1; StallLevel = StallCheck(out e1, out v1, out a1); }
             if (approachOn) Approach();
+            if (mph != MPh.None && mph != MPh.Done) Maneuver();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
             // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
             // – przy warpie ×100 000 to wypadało godziny przed impulsem, a nagłe zrzucenie warpa z takiej prędkości
@@ -499,6 +801,7 @@ namespace RSSBalancer
                 case "siteangle": return SiteAngle(false);
                 case "sitexrange": return SiteAngle(true);
                 case "deorbitin": return DeorbitIn();
+                case "orbitdone": return mph == MPh.Done ? 1 : 0;
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
                 case "upper": return id != null && id.ok ? Running_(id.upper, v) : double.NaN;
@@ -884,6 +1187,14 @@ namespace RSSBalancer
                             LastMessage += "\nPlan: " + PlanInfo;
                             FlightLogger.Event("Program lotu: plan zejścia – " + PlanInfo);
                         }
+                    }
+                    else if (key == "orbittarget")
+                    {
+                        // orbittarget = <perygeum km> <apogeum km> <nachylenie °>
+                        string[] w = val.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (w.Length < 3) throw new Exception("orbittarget = perygeum apogeum nachylenie");
+                        StartManeuver(Num(w[0], 251), Num(w[1], 263), Num(w[2], 51.6));
+                        LastMessage += "\nManewr: " + ManeuverInfo;
                     }
                     else if (key == "sas") vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, val == "on");
                     else if (key == "rcs") vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, val == "on");
@@ -1696,6 +2007,14 @@ namespace RSSBalancer
                     args = new object[ps.Length];
                     args[0] = holdHeading; args[1] = holdPitch; args[2] = 0.0; args[3] = this;
                     for (int i = 4; i < ps.Length; i++) args[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : (object)true;
+                }
+                else if (holdMode == Hold.Inertial && ps.Length == 3 && ps[0].ParameterType == typeof(Vector3d) && refType != null)
+                {
+                    // kierunek w świecie → układ ORBIT MechJeba (LookRotation(prędkość orbitalna, góra)): z = prograde, y = „góra”, x = góra × prograde
+                    Vector3d fwd = vessel.obt_velocity.normalized, upv = (vessel.CoMD - vessel.mainBody.position).normalized;
+                    Vector3d yAx = Vector3d.Exclude(fwd, upv).normalized, xAx = Vector3d.Cross(yAx, fwd);
+                    Vector3d loc = new Vector3d(Vector3d.Dot(holdDir, xAx), Vector3d.Dot(holdDir, yAx), Vector3d.Dot(holdDir, fwd));
+                    args = new object[] { loc, Enum.Parse(refType, "ORBIT"), this };
                 }
                 else if (holdMode == Hold.Orbit && ps.Length == 3 && ps[0].ParameterType == typeof(Vector3d) && refType != null)
                 {
