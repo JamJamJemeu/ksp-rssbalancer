@@ -611,8 +611,8 @@ namespace RSSBalancer
                             bool wasGuide = entryGuide;
                             entryGuide = w.Length > 3 && w[3] == "guide";
                             gAoa = pit; gYaw = yaw;
-                            if (entryGuide && !wasGuide) { bankCmd = 0; calStart = -1; nextGLog = 0; }
-                            if (entryGuide) rol = (float)bankCmd;
+                            if (entryGuide && !wasGuide) { bankCmd = 0; calStart = -1; nextGLog = 0; gAoaCmd = pit; }
+                            if (entryGuide) { rol = (float)bankCmd; pit = gAoaCmd; }
                             holdRot = Quaternion.AngleAxis(-rol, Vector3.forward) * Quaternion.AngleAxis(-pit, Vector3.right) * Quaternion.AngleAxis(yaw, Vector3.up);
                             holdMode = Hold.SrfVel; holdAttitude = true;
                         }
@@ -908,7 +908,7 @@ namespace RSSBalancer
         // z przerzutami (S-zakręty), gdy błąd kursu przekroczy próg. L/D na żywo z FAR.
 
         private bool entryGuide;
-        private float gAoa, gYaw;
+        private float gAoa, gYaw, gAoaCmd;
         private double bankCmd, rollSign = 1, ldF = 1.0, calStart = -1, calHdg0, calBank, nextGLog;
         private bool calDone;
         public string EntryInfo = "";
@@ -987,7 +987,15 @@ namespace RSSBalancer
             if (side == 0 || Math.Abs(bankCmd) < 3) side = dpsi >= 0 ? 1 : -1;
             else if (side > 0 && dpsi < -dead) side = -1;
             else if (side < 0 && dpsi > dead) side = 1;
-            if (V < 1500) { mag = Math.Max(mag, Math.Min(45, Math.Abs(dpsi) * 2)); side = dpsi >= 0 ? 1 : -1; }   // końcowe wyrównanie kursu
+            // Wyrównanie kursu: gdy lotnisko ucieka w bok (duży błąd kursu przy małej odległości), kurs ma pierwszeństwo
+            // przed zasięgiem – inaczej Buran przelatuje obok lotniska z wystarczającą energią, ale w złą stronę.
+            double headLimit = V < 3000 ? 20 : V < 5000 ? 30 : 45;
+            if (v.dynamicPressurekPa >= 0.5 && (Math.Abs(dpsi) > headLimit || V < 1500))
+            {
+                mag = Math.Max(mag, Math.Min(V < 1500 ? 45 : 60, Math.Abs(dpsi) * 1.5));
+                side = dpsi >= 0 ? 1 : -1;
+                note = note.StartsWith("ZA MAŁO") ? note + ", wyrównuję kurs" : "wyrównuję kurs";
+            }
             double target = side * mag;
             double dt = TimeWarp.fixedDeltaTime;
             bankCmd += Math.Max(-8 * dt, Math.Min(8 * dt, target - bankCmd));     // max 8°/s – przerzut trwa kilkanaście s
@@ -1030,7 +1038,10 @@ namespace RSSBalancer
             if (holdMode == Hold.SrfVel && entryGuide)
             {
                 try { EntryGuidance(); } catch (Exception e) { EntryInfo = "błąd naprowadzania: " + e.Message; }
-                holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoa, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
+                // zmiana kąta natarcia płynnie, 1°/s (skok 35°→25° przy dużym ciśnieniu dynamicznym wytrącał Burana)
+                float step = 1.0f * TimeWarp.fixedDeltaTime;
+                gAoaCmd += Mathf.Clamp(gAoa - gAoaCmd, -step, step);
+                holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoaCmd, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
             }
             object core = Core();
             if (core == null) return;
