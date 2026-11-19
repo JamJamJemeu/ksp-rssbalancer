@@ -338,6 +338,7 @@ namespace RSSBalancer
             if ((id == null || !id.ok) && vessel.situation == Vessel.Situations.PRELAUNCH && Time.realtimeSinceStartup > nextGroups)
             { nextGroups = Time.realtimeSinceStartup + 2f; RefreshGroups(); }
             if (holdAttitude) HoldAttitude();
+            if (!approachOn && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth) { double e1, v1, a1; StallLevel = StallCheck(out e1, out v1, out a1); }
             if (approachOn) Approach();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
             if (!double.IsNaN(planUT) && !burnOn && TimeWarp.CurrentRateIndex > 0)
@@ -824,6 +825,36 @@ namespace RSSBalancer
         /// podwozie poniżej 300 m, po przyziemieniu hamulce i spadochron.
         /// </summary>
         private double nextALog;
+        private bool excessTurn, brakesOut;
+
+        // ------------------------------------------------------------------ czujnik przeciągnięcia
+        // Jak w samolocie: ostrzega, gdy kąt natarcia zbliża się do krytycznego albo prędkość równoważna (EAS –
+        // ta sama nośność na każdej wysokości) spada blisko prędkości przeciągnięcia. Prędkość przeciągnięcia Burana
+        // ~80 m/s EAS przy masie 75 t (przyziemienie 1K1: 263 km/h), skalowana z pierwiastkiem z masy.
+        public string StallInfo = "";
+        public int StallLevel;      // 0 ok, 1 ostrzeżenie, 2 przeciągnięcie
+        private float nextStallMsg;
+
+        private int StallCheck(out double eas, out double vStall, out double aoa)
+        {
+            eas = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
+            vStall = 80 * Math.Sqrt(Math.Max(10, vessel.totalMass) / 75.0);
+            Vector3d vel = vessel.srf_velocity;
+            aoa = vel.magnitude > 1 ? Vector3d.Angle((Vector3d)vessel.ReferenceTransform.up, vel) : 0;
+            if (vessel.mach > 2 || vessel.LandedOrSplashed || vessel.altitude > 60000) { StallInfo = ""; return 0; }
+            int lvl = aoa > 22 || eas < 1.05 * vStall ? 2 : aoa > 16 || eas < 1.25 * vStall ? 1 : 0;
+            StallInfo = (lvl == 2 ? "PRZECIĄGNIĘCIE! " : lvl == 1 ? "Ostrzeżenie: blisko przeciągnięcia. " : "") +
+                        "EAS " + eas.ToString("F0", Inv) + " m/s (przeciągnięcie ~" + vStall.ToString("F0", Inv) + "), kąt natarcia " + aoa.ToString("F0", Inv) + "°";
+            if (lvl > 0 && Time.realtimeSinceStartup > nextStallMsg)
+            {
+                nextStallMsg = Time.realtimeSinceStartup + 4f;
+                ScreenMessages.PostScreenMessage(lvl == 2 ? "PRZECIĄGNIĘCIE – oddaję nos w dół" : "Ostrzeżenie: blisko przeciągnięcia", 3f,
+                    ScreenMessageStyle.UPPER_CENTER, lvl == 2 ? Color.red : Color.yellow);
+                FlightLogger.Event("Czujnik przeciągnięcia: " + StallInfo);
+            }
+            return lvl;
+        }
+
         private void Approach()
         {
             object ap = Airplane();
@@ -874,11 +905,20 @@ namespace RSSBalancer
                 Vector3d to = aim - pos; to -= up * Vector3d.Dot(to, up);
                 hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
                 double togo = to.magnitude + 12000;
-                double gamma = Math.Atan2(Math.Max(h, 0), togo) * 180 / Math.PI;
-                gamma = Math.Max(4, Math.Min(14, gamma));
+                double gNeed = Math.Atan2(Math.Max(h, 0), togo) * 180 / Math.PI;
+                double gamma = Math.Max(4, Math.Min(14, gNeed));
                 vs = -vh * Math.Tan(gamma * Math.PI / 180);
                 approachPhase = "dolot do pasa " + (togo / 1000).ToString("F0", Inv) + " km, schodzenie " + gamma.ToString("F0", Inv) + "°" +
-                                (Math.Atan2(Math.Max(h, 0), togo) * 180 / Math.PI < 4 ? " (za mało wysokości – nie doleci)" : "");
+                                (gNeed < 4 ? " (za mało wysokości – nie doleci)" : "");
+                // NADMIAR ENERGII (jest wyżej, niż trzeba): krąży wokół punktu dolotu jak Buran/Shuttle na okręgu HAC,
+                // aż kąt potrzebny do dolotu spadnie; do tego hamulec aerodynamiczny (ster kierunku), gdy za szybko.
+                if (gNeed > 14 || (excessTurn && gNeed > 10))
+                {
+                    excessTurn = true;
+                    hdg = (hdg + 75) % 360;
+                    approachPhase = "NADMIAR ENERGII – krążę nad punktem dolotu (" + gNeed.ToString("F0", Inv) + "° potrzeba), " + (togo / 1000).ToString("F0", Inv) + " km";
+                }
+                else excessTurn = false;
             }
             else
             {
@@ -911,15 +951,26 @@ namespace RSSBalancer
             // wysoko w rzadkim powietrzu Buran musi lecieć dużo szybciej i stromiej. Lot 2026-11-19 17:32: na 20 km
             // autopilot trzymał łagodne schodzenie 5°, prędkość spadła z 350 do 30 m/s i Buran wpadł w płaski korkociąg.
             // Cel: EAS ~150 m/s w dolocie, ~110 m/s na ścieżce, przy przyziemieniu zostawiamy wyrównanie.
-            if (hr >= 20 && approachPhase != "przyziemienie" && !approachPhase.StartsWith("wyrównanie"))
+            double easNow, vSt, aoaNow;
+            StallLevel = StallCheck(out easNow, out vSt, out aoaNow);
+            if (hr >= 20 && approachPhase != "przyziemienie")
             {
-                double eas = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
-                double easT = farAway ? 150 : 115;
-                if (eas < easT)
+                bool flare = approachPhase.StartsWith("wyrównanie");
+                double easT = flare ? 1.15 * vSt : farAway ? Math.Max(150, 1.8 * vSt) : Math.Max(115, 1.4 * vSt);
+                if (easNow < easT)
                 {
-                    vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - eas));
-                    approachPhase += " (EAS " + eas.ToString("F0", Inv) + " m/s – za wolno, nos w dół)";
+                    vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - easNow));
+                    approachPhase += " (EAS " + easNow.ToString("F0", Inv) + " m/s – za wolno, nos w dół)";
                 }
+                if (StallLevel == 2)
+                {
+                    // przeciągnięcie: bez względu na fazę – stromo w dół, aż odzyska prędkość i kąt natarcia
+                    vs = Math.Min(vs, -vh * Math.Tan(25 * Math.PI / 180) - 30);
+                    approachPhase = "PRZECIĄGNIĘCIE – wyprowadzam (nos w dół)";
+                }
+                // hamulec aerodynamiczny przy nadmiarze prędkości
+                bool wantBrakes = easNow > 200 || (excessTurn && easNow > 170);
+                if (wantBrakes != brakesOut) { brakesOut = wantBrakes; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wantBrakes); }
             }
             vs = Math.Max(-250, Math.Min(0, vs));
             SetF(ap, "VertSpeedTarget", vs);
