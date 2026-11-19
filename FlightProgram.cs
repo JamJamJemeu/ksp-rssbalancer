@@ -121,7 +121,7 @@ namespace RSSBalancer
         private Vector3d thrPos, rwyDir;     // próg pasa (świat, względem ciała) i kierunek lądowania (jednostkowy)
         private double rwyHeading;
         private string approachPhase = "";
-        public string ApproachInfo { get { return approachOn ? approachPhase : ""; } }
+        public string ApproachInfo { get { return approachOn ? approachPhase : patternOn ? patternPhase : ""; } }
         private List<EngineGroup> groups;
         private SoyuzTemplate.Result id;
         private float nextGroups;
@@ -172,6 +172,7 @@ namespace RSSBalancer
         {
             if (Running != null) FlightLogger.Event("Program lotu: zatrzymany („" + Running.name + "”)");
             ReleaseAttitude();
+            StopPattern();
             StopApproach();
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             Running = null;
@@ -329,6 +330,7 @@ namespace RSSBalancer
         private void FixedUpdate()
         {
             PhysWarpUpdate();
+            if (patternOn && vessel != null && vessel == FlightGlobals.ActiveVessel) Pattern();
             if (approachOn && vessel != null && vessel == FlightGlobals.ActiveVessel && !Active) Approach();
             if (!Active) return;
             if (vessel == null || vessel != FlightGlobals.ActiveVessel) { LastMessage = "Zmieniono statek – program zatrzymany."; Stop(); return; }
@@ -663,6 +665,10 @@ namespace RSSBalancer
                         burnOn = val == "on";
                         if (!burnOn) FlightInputHandler.state.mainThrottle = 0f;
                     }
+                    else if (key == "pattern")
+                    {
+                        if (val == "on") StartPattern(); else StopPattern();
+                    }
                     else if (key == "approach")
                     {
                         if (val == "on") StartApproach();
@@ -837,6 +843,126 @@ namespace RSSBalancer
             Call(ap, "EnableVertSpeedHold");
             approachOn = true; gearDone = false; landedDone = false;
             FlightLogger.Event("Podejście: pas kurs " + rwyHeading.ToString("F0", Inv) + "°, odległość " + (RunwayDistance() / 1000).ToString("F1", Inv) + " km");
+        }
+
+
+        // ------------------------------------------------------------------ lot próbny po kręgu (jak OK-GLI)
+        // Analog Burana OK-GLI (BTS-002) z silnikami odrzutowymi latał w latach 1985–88 próby automatycznego podejścia
+        // i lądowania. Tu: start z pasa, wznoszenie na 4 km, krąg z czterema zakrętami (lewy), na prostej do lądowania
+        // silniki na jałowy bieg i dalej zwykłe podejście Burana (stroma ścieżka 19°, wyrównanie, przyziemienie).
+        private bool patternOn, patAirborne, patGearUp;
+        private string patternPhase = "";
+        private readonly List<Vector2d> patWps = new List<Vector2d>();
+        private int patWp;
+        private const double PatAlt = 4000;      // wysokość kręgu nad pasem (punkt kluczowy Burana: ~4 km, 12,5 km przed pasem)
+
+        private void StartPattern()
+        {
+            if (!rwySet) { LastMessage += "\nBrak „runway” w programie."; return; }
+            object ap = Airplane();
+            if (ap == null) { LastMessage += "\nMechJeb: brak Aircraft Autopilot."; return; }
+            ReleaseAttitude();
+            // kierunek startu = kierunek pasa najbliższy kursowi nosa; lądujemy w tym samym kierunku (próg „za plecami”)
+            Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt), b = Surf(rwyLatB, rwyLonB, rwyAlt);
+            Vector3d ab = (b - a).normalized, up = a.normalized;
+            Vector3d fwd = (Vector3d)vessel.ReferenceTransform.up; fwd -= up * Vector3d.Dot(fwd, up);
+            if (Vector3d.Dot(fwd, ab) >= 0) { thrPos = a; rwyDir = ab; } else { thrPos = b; rwyDir = -ab; }
+            Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
+            rwyHeading = (Math.Atan2(Vector3d.Dot(rwyDir, east), Vector3d.Dot(rwyDir, north)) * 180 / Math.PI + 360) % 360;
+            double len = (b - a).magnitude;
+            // punkty kręgu w układzie pasa: x wzdłuż kierunku lądowania od progu, y w prawo; krąg lewy
+            patWps.Clear();
+            patWps.Add(new Vector2d(len + 7000, 0));        // wznoszenie po starcie
+            patWps.Add(new Vector2d(len + 9000, -6000));    // 1. i 2. zakręt – przecięcie, potem z wiatrem
+            patWps.Add(new Vector2d(-14000, -6000));        // koniec odcinka z wiatrem
+            patWps.Add(new Vector2d(-16000, 0));            // 3. i 4. zakręt – baza, wyjście na prostą
+            patWp = 0; patAirborne = false; patGearUp = false;
+            foreach (Part p in vessel.parts)
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                    if (!e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Activate();
+            vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, false);
+            vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+            object pool = Users(ap);
+            if (pool != null) PoolCall(pool, "Add");
+            SetF(ap, "PitchDownLimit", 15.0); SetF(ap, "PitchUpLimit", 20.0);
+            SetF(ap, "RollLimit", 30.0); SetF(ap, "BankAngle", 25.0);
+            SetF(ap, "HeadingTarget", rwyHeading); SetF(ap, "VertSpeedTarget", 0.0);
+            Call(ap, "EnableHeadingHold"); Call(ap, "EnableVertSpeedHold");
+            SetF(ap, "SpeedTarget", 200.0); Call(ap, "EnableSpeedHold");
+            patternOn = true; patternPhase = "rozbieg";
+            FlightLogger.Event("Krąg: start z pasa kurs " + rwyHeading.ToString("F0", Inv) + "°, krąg lewy na " + PatAlt.ToString("F0", Inv) + " m");
+        }
+
+        private void StopPattern()
+        {
+            if (!patternOn) return;
+            patternOn = false;
+            object ap = Airplane();
+            if (ap == null) return;
+            Call(ap, "DisableSpeedHold");
+            if (!approachOn) { Call(ap, "DisableVertSpeedHold"); Call(ap, "DisableHeadingHold"); object pool = Users(ap); if (pool != null) PoolCall(pool, "Remove"); }
+        }
+
+        private void Pattern()
+        {
+            object ap = Airplane();
+            if (ap == null) { patternOn = false; return; }
+            CelestialBody b = vessel.mainBody;
+            Vector3d pos = vessel.CoMD - b.position, up = pos.normalized;
+            Vector3d right = Vector3d.Cross(up, rwyDir).normalized * -1;
+            Vector3d rel = pos - thrPos;
+            double x = Vector3d.Dot(rel, rwyDir), y = Vector3d.Dot(rel, right);
+            double h = vessel.altitude - rwyAlt;
+            Vector3d north = Vector3d.Exclude(up, b.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
+            double easNow, vSt, aoaNow;
+            StallLevel = StallCheck(out easNow, out vSt, out aoaNow);
+            // prędkość jak Buran w kręgu: ~1,9× przeciągnięcia (EAS), przeliczona na prędkość prawdziwą
+            double rho = Math.Max(0.05, vessel.atmDensity);
+            double easT = 1.9 * vSt;
+            SetF(ap, "SpeedTarget", easT * Math.Sqrt(1.225 / rho));
+
+            if (!patAirborne)
+            {
+                double vr = 1.35 * vSt;                     // prędkość oderwania
+                SetF(ap, "HeadingTarget", rwyHeading);
+                SetF(ap, "VertSpeedTarget", easNow > vr ? 8.0 : 0.0);
+                patternPhase = "rozbieg  EAS " + easNow.ToString("F0", Inv) + " / oderwanie " + vr.ToString("F0", Inv) + " m/s";
+                if (!vessel.Landed && h > 30) { patAirborne = true; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
+                return;
+            }
+            if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
+
+            Vector2d wp = patWps[patWp];
+            Vector3d target = thrPos + rwyDir * wp.x + right * wp.y;
+            Vector3d to = target - pos; to -= up * Vector3d.Dot(to, up);
+            double dist = to.magnitude;
+            double hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
+            double vs = Math.Max(-25, Math.Min(25, 0.05 * (PatAlt - h)));
+            if (StallLevel >= 1) { vs = Math.Min(vs, -10); hdg = HeadingOf(vessel.srf_velocity, up, north, east); }
+            SetF(ap, "HeadingTarget", hdg);
+            SetF(ap, "VertSpeedTarget", vs);
+            SetF(ap, "RollLimit", StallLevel >= 1 ? 5.0 : easNow < 1.6 * vSt ? 15.0 : 30.0);
+            string[] names = { "wznoszenie po starcie", "odcinek przecinający (zakręty 1–2)", "z wiatrem", "baza (zakręty 3–4)" };
+            patternPhase = "krąg: " + names[Math.Min(patWp, names.Length - 1)] + ", do punktu " + (dist / 1000).ToString("F1", Inv) + " km, h " + h.ToString("F0", Inv) +
+                           " m, EAS " + easNow.ToString("F0", Inv) + " m/s";
+            if (Planetarium.GetUniversalTime() > nextALog) { nextALog = Planetarium.GetUniversalTime() + 10; FlightLogger.Event("Krąg: " + patternPhase); }
+            if (dist < 1500)
+            {
+                patWp++;
+                if (patWp >= patWps.Count)
+                {
+                    // na prostej: silniki na jałowy bieg – dalej jak Buran, bez napędu
+                    Call(ap, "DisableSpeedHold");
+                    FlightInputHandler.state.mainThrottle = 0f;
+                    foreach (Part p in vessel.parts)
+                        foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                            if (e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Shutdown();
+                    patternOn = false;
+                    FlightLogger.Event("Krąg: na prostej, silniki wyłączone – podejście jak Buran");
+                    StartApproach();
+                }
+                else FlightLogger.Event("Krąg: punkt " + patWp + " – " + names[Math.Min(patWp, names.Length - 1)]);
+            }
         }
 
         private void StopApproach()
