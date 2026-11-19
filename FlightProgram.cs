@@ -907,13 +907,21 @@ namespace RSSBalancer
             }
             SetF(ap, "HeadingTarget", hdg);
 
-            // ochrona przed przeciągnięciem: Buran ląduje ~75 m/s (1K1: 263 km/h); poniżej 110 m/s nie trzymamy wysokości
-            if (hr >= 20 && vessel.srfSpeed < 110)
+            // Utrzymanie prędkości (prędkość równoważna EAS – to ona decyduje o nośności, nie prędkość prawdziwa):
+            // wysoko w rzadkim powietrzu Buran musi lecieć dużo szybciej i stromiej. Lot 2026-11-19 17:32: na 20 km
+            // autopilot trzymał łagodne schodzenie 5°, prędkość spadła z 350 do 30 m/s i Buran wpadł w płaski korkociąg.
+            // Cel: EAS ~150 m/s w dolocie, ~110 m/s na ścieżce, przy przyziemieniu zostawiamy wyrównanie.
+            if (hr >= 20 && approachPhase != "przyziemienie" && !approachPhase.StartsWith("wyrównanie"))
             {
-                vs = Math.Min(vs, -vh * Math.Tan(12 * Math.PI / 180));
-                approachPhase += " (za wolno – oddaję nos w dół)";
+                double eas = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
+                double easT = farAway ? 150 : 115;
+                if (eas < easT)
+                {
+                    vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - eas));
+                    approachPhase += " (EAS " + eas.ToString("F0", Inv) + " m/s – za wolno, nos w dół)";
+                }
             }
-            vs = Math.Max(-150, Math.Min(0, vs));
+            vs = Math.Max(-250, Math.Min(0, vs));
             SetF(ap, "VertSpeedTarget", vs);
 
             if (!gearDone && hr < 300)
@@ -1024,7 +1032,7 @@ namespace RSSBalancer
             // Za mało energii przy dużej prędkości: zmniejsz kąt natarcia (większa doskonałość) – do 12° mniej, min. 22°.
             aoaBias = 0;
             if (cosS > 1 && V > 1500 && v.dynamicPressurekPa >= 0.5)
-                aoaBias = (float)Math.Min(12, (cosS - 1) * 40);
+                aoaBias = (float)Math.Min(18, (cosS - 1) * 40);
             double target = side * mag;
             double dt = TimeWarp.fixedDeltaTime;
             bankCmd += Math.Max(-8 * dt, Math.Min(8 * dt, target - bankCmd));     // max 8°/s – przerzut trwa kilkanaście s
@@ -1069,7 +1077,7 @@ namespace RSSBalancer
                 try { EntryGuidance(); } catch (Exception e) { EntryInfo = "błąd naprowadzania: " + e.Message; }
                 // zmiana kąta natarcia płynnie, 1°/s (skok 35°→25° przy dużym ciśnieniu dynamicznym wytrącał Burana)
                 float step = 1.0f * TimeWarp.fixedDeltaTime;
-                float aoaTarget = gAoa > 22 ? Mathf.Max(22f, gAoa - aoaBias) : gAoa;
+                float aoaTarget = gAoa > 18 ? Mathf.Max(18f, gAoa - aoaBias) : gAoa;
                 gAoaCmd += Mathf.Clamp(aoaTarget - gAoaCmd, -step, step);
                 holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoaCmd, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
             }
