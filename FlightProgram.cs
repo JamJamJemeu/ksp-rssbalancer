@@ -150,6 +150,7 @@ namespace RSSBalancer
             siteLead = p.node != null ? Num(p.node.GetValue("siteLead"), 3900) : 3900;
             planAngle = p.node != null ? Num(p.node.GetValue("deorbitAngle"), 185) : 185;
             planMaxXr = p.node != null ? Num(p.node.GetValue("maxCrossRange"), 1000) : 1000;
+            if (p.node != null && p.node.HasValue("daylight")) RequireDaylight = p.node.GetValue("daylight").Trim().ToLowerInvariant() == "true";
             planUT = double.NaN; nextPlan = 0; PlanInfo = "";
             approachOn = false; rwySet = false;
             string rwy = p.node != null ? p.node.GetValue("runway") : null;
@@ -457,8 +458,22 @@ namespace RSSBalancer
         // Zamiast „łapać” okno siteangle w locie (przy dużym przyspieszeniu czasu jedna klatka fizyki to setki
         // sekund i okno 14° po prostu się przeskakuje) liczymy z orbity Keplera chwilę impulsu z góry.
 
-        private double planUT = double.NaN, planXr = double.NaN, nextPlan;
+        private double planUT = double.NaN, planXr = double.NaN, nextPlan, planSun;
         private double planAngle = 185, planMaxXr = 1000;
+        public bool RequireDaylight;
+        public void Replan() { planUT = double.NaN; nextPlan = 0; PlanInfo = "przeliczam…"; }
+
+        /// <summary>Wysokość Słońca nad horyzontem w miejscu lądowania w chwili ut (stopnie).</summary>
+        private double SunElevationAtSite(CelestialBody b, double ut)
+        {
+            CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
+            if (sun == null || sun == b) return 90;
+            double now = Planetarium.GetUniversalTime();
+            double dLon = b.rotates && b.rotationPeriod > 0 ? 360.0 * (ut - now) / b.rotationPeriod : 0;
+            Vector3d siteUp = (b.GetWorldSurfacePosition(siteLat, siteLon + dLon, 0) - b.position).normalized;
+            Vector3d toSun = (sun.position - b.position).normalized;      // przez kilka dób kierunek Słońca prawie stały
+            return 90 - Vector3d.Angle(siteUp, toSun);
+        }
         public string PlanInfo = "";
         public string SiteInfo
         {
@@ -501,6 +516,7 @@ namespace RSSBalancer
             double now = Planetarium.GetUniversalTime(), step = 20, horizon = 3 * 86400;
             double tPrev = now + 30, aPrev = AngleAt(o, b, tPrev, false);
             double bestXr = double.MaxValue;
+            int nightSkips = 0;
             for (double t = tPrev + step; t < now + horizon; t += step)
             {
                 double a = AngleAt(o, b, t, false);
@@ -511,14 +527,21 @@ namespace RSSBalancer
                     for (int i = 0; i < 20; i++) { double m = 0.5 * (lo + hi); if (AngleAt(o, b, m, false) > planAngle) lo = m; else hi = m; }
                     double xr = AngleAt(o, b, hi, true);
                     if (xr < bestXr) bestXr = xr;
-                    if (xr <= planMaxXr) { planUT = hi; planXr = xr; break; }
+                    if (xr <= planMaxXr)
+                    {
+                        double sunEl = SunElevationAtSite(b, hi + siteLead);
+                        if (!RequireDaylight || sunEl >= 10) { planUT = hi; planXr = xr; planSun = sunEl; break; }
+                        nightSkips++;
+                    }
                 }
                 tPrev = t; aPrev = a;
             }
             if (double.IsNaN(planUT))
-                PlanInfo = "brak okna w 3 doby (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")";
+                PlanInfo = "brak okna w 3 doby (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")" +
+                           (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych" : "");
             else
-                PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", odejście boczne " + planXr.ToString("F0") + " km";
+                PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", odejście boczne " + planXr.ToString("F0") + " km, Słońce nad lotniskiem przy lądowaniu " +
+                           planSun.ToString("F0") + "° (" + (planSun >= 10 ? "dzień" : planSun > -6 ? "zmierzch/świt" : "noc") + ")" + (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych przelotów" : "");
         }
 
         private static int Running_(EngineGroup g, Vessel v)
@@ -844,6 +867,12 @@ namespace RSSBalancer
         public int StallLevel;      // 0 ok, 1 ostrzeżenie, 2 przeciągnięcie
         private float nextStallMsg;
 
+        private static double HeadingOf(Vector3d v, Vector3d up, Vector3d north, Vector3d east)
+        {
+            Vector3d h = v - up * Vector3d.Dot(v, up);
+            return (Math.Atan2(Vector3d.Dot(h, east), Vector3d.Dot(h, north)) * 180 / Math.PI + 360) % 360;
+        }
+
         private int StallCheck(out double eas, out double vStall, out double aoa)
         {
             eas = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
@@ -973,12 +1002,18 @@ namespace RSSBalancer
                     vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - easNow));
                     approachPhase += " (EAS " + easNow.ToString("F0", Inv) + " m/s – za wolno, nos w dół)";
                 }
+                // Przechylenie zabiera nośność – przy małej prędkości ostrożne zakręty (lot 18:25: zakręt 45° na 17 km
+                // przy EAS ~85 m/s skończył się korkociągiem).
+                double rollLim = easNow < 1.3 * vSt ? 10 : easNow < 1.6 * vSt ? 20 : easNow < 2.0 * vSt ? 30 : 45;
                 if (StallLevel == 2)
                 {
-                    // przeciągnięcie: bez względu na fazę – stromo w dół, aż odzyska prędkość i kąt natarcia
+                    // przeciągnięcie / korkociąg: skrzydła poziomo, kurs bieżący, nos w dół – aż odzyska prędkość
                     vs = Math.Min(vs, -vh * Math.Tan(25 * Math.PI / 180) - 30);
-                    approachPhase = "PRZECIĄGNIĘCIE – wyprowadzam (nos w dół)";
+                    rollLim = 0;
+                    SetF(ap, "HeadingTarget", vessel.srf_velocity.magnitude > 1 ? HeadingOf(vessel.srf_velocity, up, north, east) : hdg);
+                    approachPhase = "PRZECIĄGNIĘCIE – wyprowadzam (skrzydła poziomo, nos w dół)";
                 }
+                SetF(ap, "RollLimit", rollLim);
                 // hamulec aerodynamiczny przy nadmiarze prędkości
                 // hamulec (rozchylony ster kierunku w Buranie) trzyma prędkość na stromej ścieżce
                 bool wantBrakes = easNow > (farAway ? 200 : 155) || (excessTurn && easNow > 170);
@@ -1085,7 +1120,7 @@ namespace RSSBalancer
             if (v.dynamicPressurekPa < 0.5) { mag = 0; note = "za rzadkie powietrze"; }
             else if (cosS >= 1) { mag = 0; note = "ZA MAŁO ENERGII – lecę bez przechylenia"; }
             else mag = Math.Acos(Math.Max(0, cosS)) * 180 / Math.PI;
-            mag = Math.Min(mag, 70);
+            mag = Math.Min(mag, 80);
 
             // strona przechylenia: w stronę lotniska; przerzut, gdy błąd kursu przekroczy próg (zawęża się z prędkością)
             double dead = V > 4000 ? 12 : V > 2000 ? 8 : 5;
@@ -1106,6 +1141,18 @@ namespace RSSBalancer
             aoaBias = 0;
             if (cosS > 1 && V > 1500 && v.dynamicPressurekPa >= 0.5)
                 aoaBias = (float)Math.Min(18, (cosS - 1) * 40);
+            // Duży nadmiar energii (lot 2026-11-19 18:25: Buran przeleciał nad lotniskiem z prędkością naddźwiękową
+            // mimo przechylenia 70°): większy kąt natarcia = większy opór, do +8° (maks. 45°).
+            else if (cosS < 0.6 && V > 1500 && v.dynamicPressurekPa >= 0.5)
+                aoaBias = -(float)Math.Min(8, (0.6 - cosS) * 25);
+            // Mała prędkość równoważna nisko: przechylenie zabiera nośność – ograniczamy je, żeby nie przeciągnąć
+            double easG = Math.Sqrt(2 * v.dynamicPressurekPa * 1000 / 1.225);
+            double vStG = 70 * Math.Sqrt(Math.Max(10, v.totalMass) / 75.0);
+            if (V < 2000 && easG < 1.7 * vStG)
+            {
+                mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : 20);
+                note += (note.Length > 0 ? ", " : "") + "mała prędkość – ograniczam przechylenie";
+            }
             double target = side * mag;
             double dt = TimeWarp.fixedDeltaTime;
             bankCmd += Math.Max(-8 * dt, Math.Min(8 * dt, target - bankCmd));     // max 8°/s – przerzut trwa kilkanaście s
@@ -1133,7 +1180,7 @@ namespace RSSBalancer
                 else calStart = -1;
             }
 
-            EntryInfo = (aoaBias > 0.5f ? "kąt natarcia −" + aoaBias.ToString("F0", Inv) + "° (oszczędzam energię), " : "") + "do lotniska " + (rgo / 1000).ToString("F0", Inv) + " km, zasięg bez przechylenia " + (rMax / 1000).ToString("F0", Inv) +
+            EntryInfo = (aoaBias > 0.5f ? "kąt natarcia −" + aoaBias.ToString("F0", Inv) + "° (oszczędzam energię), " : aoaBias < -0.5f ? "kąt natarcia +" + (-aoaBias).ToString("F0", Inv) + "° (wytracam nadmiar), " : "") + "do lotniska " + (rgo / 1000).ToString("F0", Inv) + " km, zasięg bez przechylenia " + (rMax / 1000).ToString("F0", Inv) +
                         " km, L/D " + ldF.ToString("F2", Inv) + ", przechylenie " + bankCmd.ToString("F0", Inv) + "°, błąd kursu " + dpsi.ToString("F0", Inv) + "°" +
                         (note.Length > 0 ? " – " + note : "");
             if (Planetarium.GetUniversalTime() > nextGLog)
@@ -1151,7 +1198,7 @@ namespace RSSBalancer
                 // zmiana kąta natarcia płynnie, 1°/s (skok 35°→25° przy dużym ciśnieniu dynamicznym wytrącał Burana)
                 if (aoaByMach) gAoa = AoAForMach(vessel.mach);
                 float step = 1.0f * TimeWarp.fixedDeltaTime;
-                float aoaTarget = gAoa > 18 ? Mathf.Max(18f, gAoa - aoaBias) : gAoa;
+                float aoaTarget = aoaBias < 0 ? Mathf.Min(45f, gAoa - aoaBias) : gAoa > 18 ? Mathf.Max(18f, gAoa - aoaBias) : gAoa;
                 gAoaCmd += Mathf.Clamp(aoaTarget - gAoaCmd, -step, step);
                 holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoaCmd, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
             }

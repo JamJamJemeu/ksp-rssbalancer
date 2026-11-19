@@ -847,6 +847,11 @@ namespace RSSBalancer
                 if (GUILayout.Button("Zatrzymaj")) { run.Stop(); status = "Program zatrzymany."; }
             }
             GUILayout.EndHorizontal();
+            if (run != null)
+            {
+                bool day = GUILayout.Toggle(run.RequireDaylight, " ☀ Lądowanie w dzień (Słońce ≥ 10° nad lotniskiem)");
+                if (day != run.RequireDaylight) { run.RequireDaylight = day; run.Replan(); status = day ? "Szukam przelotu z lądowaniem w dzień…" : "Najbliższy przelot, bez względu na porę dnia."; }
+            }
             if (run != null && !string.IsNullOrEmpty(run.SiteInfo)) GUILayout.Label(run.SiteInfo);
             if (run != null && !string.IsNullOrEmpty(run.PlanInfo)) GUILayout.Label("Zejście: " + run.PlanInfo);
             if (run != null && !string.IsNullOrEmpty(run.EntryInfo)) GUILayout.Label("Wejście: " + run.EntryInfo);
