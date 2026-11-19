@@ -838,6 +838,15 @@ namespace RSSBalancer
             double cl = FarCall("ActiveVesselLiftCoeff"), cd = FarCall("ActiveVesselDragCoeff");
             if (!double.IsNaN(cl) && !double.IsNaN(cd) && cd > 1e-4 && v.dynamicPressurekPa > 0.3)
                 ldF += (Math.Max(0.2, Math.Min(6, cl / cd)) - ldF) * 0.05;
+            else if (double.IsNaN(cl) && v.dynamicPressurekPa > 0.3)
+            {
+                // bez FAR: L/D z przyspieszenia aerodynamicznego (przyspieszenie − grawitacja), rozłożonego na oś prędkości
+                Vector3d aAero = v.acceleration - FlightGlobals.getGeeForceAtPosition(v.CoMD);
+                Vector3d vn = vel / V;
+                double drag = -Vector3d.Dot(aAero, vn);
+                double lift = (aAero + vn * drag).magnitude;
+                if (drag > 0.5) ldF += (Math.Max(0.2, Math.Min(6, lift / drag)) - ldF) * 0.02;
+            }
             double r = pos.magnitude, g = b.gravParameter / (r * r);
             double e = Math.Min(0.999, V * V / (g * r));
             double kR = r / 2 * Math.Log(1 / (1 - e));                              // zasięg przy L/D = 1, σ = 0
