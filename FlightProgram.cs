@@ -127,7 +127,7 @@ namespace RSSBalancer
         private float nextGroups;
 
         private void Awake() { Instance = this; }
-        private void OnDestroy() { if (Instance == this) Instance = null; ReleaseAttitude(); }
+        private void OnDestroy() { if (Instance == this) Instance = null; ReleaseAttitude(); if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw; }
 
         public bool Active { get { return Running != null && Current >= 0 && Current < Running.steps.Count; } }
 
@@ -174,6 +174,7 @@ namespace RSSBalancer
             ReleaseAttitude();
             StopPattern();
             StopApproach();
+            steerHdg = double.NaN;
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             Running = null;
             Current = -1;
@@ -924,10 +925,12 @@ namespace RSSBalancer
             if (!patAirborne)
             {
                 double vr = 1.35 * vSt;                     // prędkość oderwania
-                SetF(ap, "HeadingTarget", rwyHeading);
+                HookSteer();
+                steerHdg = CenterlineHeading(pos, up);
+                SetF(ap, "HeadingTarget", steerHdg);
                 SetF(ap, "VertSpeedTarget", easNow > vr ? 8.0 : 0.0);
                 patternPhase = "rozbieg  EAS " + easNow.ToString("F0", Inv) + " / oderwanie " + vr.ToString("F0", Inv) + " m/s";
-                if (!vessel.Landed && h > 30) { patAirborne = true; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
+                if (!vessel.Landed && h > 30) { patAirborne = true; steerHdg = double.NaN; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
                 return;
             }
             if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
@@ -963,6 +966,43 @@ namespace RSSBalancer
                 }
                 else FlightLogger.Event("Krąg: punkt " + patWp + " – " + names[Math.Min(patWp, names.Length - 1)]);
             }
+        }
+
+
+        // ------------------------------------------------------------------ sterowanie kołem przednim na ziemi
+        // MechJeb (Aircraft Autopilot) steruje tylko lotkami/sterem kierunku – na rozbiegu i dobiegu przy małej
+        // prędkości ster nic nie daje, a koła nie skręcają (lot próbny 19:22: Buran zjechał z pasa w lewo).
+        private Vessel steerVessel;
+        private double steerHdg = double.NaN;
+
+        private void HookSteer()
+        {
+            if (steerVessel == vessel) return;
+            if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw;
+            if (vessel != null) vessel.OnFlyByWire += SteerFbw;
+            steerVessel = vessel;
+        }
+
+        private void SteerFbw(FlightCtrlState s)
+        {
+            if (double.IsNaN(steerHdg) || vessel == null || !vessel.Landed) return;
+            Vector3d up = (vessel.CoMD - vessel.mainBody.position).normalized;
+            Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
+            Vector3d fwd = (Vector3d)vessel.ReferenceTransform.up;
+            double hdg = HeadingOf(fwd, up, north, east);
+            double err = ((steerHdg - hdg + 540) % 360) - 180;
+            s.wheelSteer = Mathf.Clamp((float)(-err / 12.0), -1f, 1f);     // A (+1) = w lewo
+        }
+
+        /// <summary>Kurs na punkt na osi pasa ~400 m przed nosem (koryguje też zjechanie w bok).</summary>
+        private double CenterlineHeading(Vector3d pos, Vector3d up)
+        {
+            Vector3d rel = pos - thrPos;
+            double along = Vector3d.Dot(rel, rwyDir);
+            Vector3d aim = thrPos + rwyDir * (along + 400);
+            Vector3d to = aim - pos; to -= up * Vector3d.Dot(to, up);
+            Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
+            return HeadingOf(to, up, north, east);
         }
 
         private void StopApproach()
@@ -1048,8 +1088,10 @@ namespace RSSBalancer
                     FlightLogger.Event("Przyziemienie: " + (vessel.srfSpeed * 3.6).ToString("F0", Inv) + " km/h, odchyłka " + y.ToString("F0", Inv) + " m");
                     approachPhase = "dobieg";
                 }
-                SetF(ap, "HeadingTarget", rwyHeading);
-                if (vessel.srfSpeed < 3) { StopApproach(); approachPhase = "stop"; }
+                HookSteer();
+                steerHdg = CenterlineHeading(pos, up);
+                SetF(ap, "HeadingTarget", steerHdg);
+                if (vessel.srfSpeed < 3) { steerHdg = double.NaN; StopApproach(); approachPhase = "stop"; }
                 return;
             }
 
