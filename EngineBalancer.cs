@@ -823,7 +823,14 @@ namespace RSSBalancer
                 FlightPrograms.Step st = p.steps[i];
                 bool cur = run != null && run.Active && run.Running == p && run.Current == i;
                 string mark = st.activatedAt >= 0 ? "✓ T+" + st.activatedAt.ToString("F0") + " s " : st.activatedAt == -2 ? "– pominięty " : cur ? "▶ " : "· ";
+                GUILayout.BeginHorizontal();
                 GUILayout.Label(mark + st.name + "   [" + (st.node.GetValue("when") ?? "always") + "]");
+                if (run != null && run.Active && run.Running == p && i >= run.Current && st.activatedAt == -1)
+                {
+                    bool tgt = run.PhysWarpTarget == i;
+                    if (GUILayout.Button(tgt ? "⏩×3" : "⏩", GUILayout.Width(44f))) status = run.WarpToStep(i);
+                }
+                GUILayout.EndHorizontal();
             }
             GUILayout.EndScrollView();
 
@@ -836,6 +843,7 @@ namespace RSSBalancer
             else
             {
                 if (GUILayout.Button("Pomiń krok")) run.Skip();
+                if (GUILayout.Button("⏩ Następny")) status = run.WarpToStep(run.Current);
                 if (GUILayout.Button("Zatrzymaj")) { run.Stop(); status = "Program zatrzymany."; }
             }
             GUILayout.EndHorizontal();

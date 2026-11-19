@@ -205,8 +205,129 @@ namespace RSSBalancer
             catch { groups = null; id = null; }
         }
 
+
+        // ------------------------------------------------------------------ przyspieszanie czasu do kroku
+        // Krok, którego chwilę da się policzyć z orbity (impuls „deorbitin”, wysokość „alt < X” nad atmosferą),
+        // przeskakujemy warpem „na szynach” (jak warp do manewru). Kroki w atmosferze – przyspieszeniem fizycznym ×3
+        // aż program dojdzie do wybranego kroku (wtedy wraca ×1). Wcześniejsze kroki i tak wykonują się po drodze:
+        // warp na szynach zatrzymuje się przed impulsem, a przy wejściu w atmosferę KSP sam go przerywa.
+        private int physWarpTarget = -1;
+        public int PhysWarpTarget { get { return physWarpTarget; } }
+
+        private static double FirstNumberAfter(string when, string key, out string op)
+        {
+            op = "";
+            int i = when.IndexOf(key, StringComparison.Ordinal);
+            if (i < 0) return double.NaN;
+            string rest = when.Substring(i + key.Length).TrimStart();
+            int k = 0;
+            while (k < rest.Length && "<>=!".IndexOf(rest[k]) >= 0) k++;
+            op = rest.Substring(0, k);
+            rest = rest.Substring(k).TrimStart();
+            int e = 0;
+            while (e < rest.Length && (char.IsDigit(rest[e]) || rest[e] == '.' || rest[e] == '-')) e++;
+            double v;
+            return double.TryParse(rest.Substring(0, e), NumberStyles.Float, CultureInfo.InvariantCulture, out v) ? v : double.NaN;
+        }
+
+        /// <summary>Najbliższa chwila, w której statek schodzi (malejący promień) do promienia r; NaN gdy nie schodzi.</summary>
+        private static double NextDescentToRadius(Orbit o, double now, double r)
+        {
+            if (o.PeR >= r) return double.NaN;
+            double period = o.eccentricity < 1 ? o.period : 86400;
+            double step = Math.Max(5, Math.Min(60, period / 400));
+            double tPrev = now, rPrev = o.getRelativePositionAtUT(now).magnitude;
+            if (rPrev <= r) return now;
+            for (double t = now + step; t <= now + period + step; t += step)
+            {
+                double rr = o.getRelativePositionAtUT(t).magnitude;
+                if (rr <= r)
+                {
+                    double lo = tPrev, hi = t;
+                    for (int i = 0; i < 30; i++) { double m = 0.5 * (lo + hi); if (o.getRelativePositionAtUT(m).magnitude > r) lo = m; else hi = m; }
+                    return hi;
+                }
+                tPrev = t; rPrev = rr;
+            }
+            return double.NaN;
+        }
+
+        public string WarpToStep(int k)
+        {
+            if (!Active || vessel == null) return "Program nie działa.";
+            if (k < Current) return "Ten krok już się wykonał.";
+            physWarpTarget = -1;
+            double now = Planetarium.GetUniversalTime();
+            CelestialBody b = vessel.mainBody;
+            double atmTop = b.atmosphere ? b.atmosphereDepth : 0;
+            bool inAtm = b.atmosphere && vessel.altitude < atmTop;
+            string when = Running.steps[k].node.GetValue("when") ?? "always";
+            string op;
+
+            if (!inAtm)
+            {
+                // 1) impuls hamujący – według planu (krok z deorbitin albo dowolny późniejszy, gdy impulsu jeszcze nie było)
+                double din = FirstNumberAfter(when, "deorbitin", out op);
+                if (siteSet && vessel.orbit.PeA > atmTop) DeorbitIn();
+                bool burnPending = !double.IsNaN(planUT) && planUT > now && vessel.orbit.PeA > atmTop;
+                if (!double.IsNaN(din) || burnPending)
+                {
+                    double tin = DeorbitIn();
+                    if (double.IsNaN(tin)) return "Brak planu zejścia: " + PlanInfo;
+                    double lead = !double.IsNaN(din) && op.StartsWith("<") ? Math.Max(din, 60) : 240;
+                    if (tin <= lead + 5) return "Do impulsu zostało " + tin.ToString("F0") + " s – nie ma czego przeskakiwać.";
+                    TimeWarp.fetch.WarpTo(planUT - lead);
+                    return "Przyspieszam do " + lead.ToString("F0") + " s przed impulsem" + (double.IsNaN(din) ? " (najpierw impuls – dalsze kroki po nim)." : ".");
+                }
+                // 2) wysokość nad atmosferą – z orbity
+                double altKm = FirstNumberAfter(when, "alt", out op);
+                if (!double.IsNaN(altKm) && op.StartsWith("<"))
+                {
+                    double r = b.Radius + Math.Max(altKm * 1000.0, atmTop + 1000);
+                    if (vessel.orbit.PeR >= r) return "Orbita nie schodzi tak nisko – najpierw impuls hamujący.";
+                    double t = NextDescentToRadius(vessel.orbit, now, r);
+                    if (double.IsNaN(t) || t <= now + 30) return "Ten punkt jest za chwilę.";
+                    TimeWarp.fetch.WarpTo(t - 20);
+                    return "Przyspieszam do " + (Math.Max(altKm * 1000.0, atmTop + 1000) / 1000).ToString("F0") + " km.";
+                }
+                // 3) nie da się policzyć – szyny do granicy atmosfery, jeśli tam schodzimy
+                if (vessel.orbit.PeA < atmTop)
+                {
+                    double t = NextDescentToRadius(vessel.orbit, now, b.Radius + atmTop + 1000);
+                    if (!double.IsNaN(t) && t > now + 30) { TimeWarp.fetch.WarpTo(t - 20); physWarpTarget = k; return "Przyspieszam do granicy atmosfery, dalej ×3 do kroku „" + Running.steps[k].name + "”."; }
+                }
+                return "Tego kroku nie umiem przewidzieć na orbicie.";
+            }
+
+            if (vessel.LandedOrSplashed) return "Już na ziemi.";
+            physWarpTarget = k;
+            TimeWarp.fetch.Mode = TimeWarp.Modes.LOW;
+            TimeWarp.SetRate(Math.Min(2, TimeWarp.fetch.physicsWarpRates.Length - 1), false);
+            return "Przyspieszenie fizyczne ×3 do kroku „" + Running.steps[k].name + "”.";
+        }
+
+        private void PhysWarpUpdate()
+        {
+            if (physWarpTarget < 0 || vessel == null) return;
+            CelestialBody b = vessel.mainBody;
+            bool inAtm = b.atmosphere && vessel.altitude < b.atmosphereDepth;
+            if (!Active || Current >= physWarpTarget || approachOn || vessel.LandedOrSplashed)
+            {
+                if (inAtm && TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.LOW) TimeWarp.SetRate(0, false);
+                physWarpTarget = -1;
+                return;
+            }
+            // po przerwaniu warpa „na szynach” przy wejściu w atmosferę – włącz fizyczne ×3
+            if (inAtm && TimeWarp.CurrentRateIndex == 0)
+            {
+                TimeWarp.fetch.Mode = TimeWarp.Modes.LOW;
+                TimeWarp.SetRate(Math.Min(2, TimeWarp.fetch.physicsWarpRates.Length - 1), false);
+            }
+        }
+
         private void FixedUpdate()
         {
+            PhysWarpUpdate();
             if (approachOn && vessel != null && vessel == FlightGlobals.ActiveVessel && !Active) Approach();
             if (!Active) return;
             if (vessel == null || vessel != FlightGlobals.ActiveVessel) { LastMessage = "Zmieniono statek – program zatrzymany."; Stop(); return; }
