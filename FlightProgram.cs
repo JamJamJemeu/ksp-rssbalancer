@@ -278,7 +278,7 @@ namespace RSSBalancer
                 {
                     double tin = DeorbitIn();
                     if (double.IsNaN(tin)) return "Brak planu zejścia: " + PlanInfo;
-                    double lead = !double.IsNaN(din) && op.StartsWith("<") ? Math.Max(din, 60) : 240;
+                    double lead = !double.IsNaN(din) && op.StartsWith("<") ? Math.Max(din, 20) : 60;
                     if (tin <= lead + 5) return "Do impulsu zostało " + tin.ToString("F0") + " s – nie ma czego przeskakiwać.";
                     TimeWarp.fetch.WarpTo(planUT - lead);
                     return "Przyspieszam do " + lead.ToString("F0") + " s przed impulsem" + (double.IsNaN(din) ? " (najpierw impuls – dalsze kroki po nim)." : ".");
@@ -371,7 +371,7 @@ namespace RSSBalancer
             if (!double.IsNaN(planUT) && !burnOn && TimeWarp.CurrentRateIndex > 0)
             {
                 double tin = planUT - Planetarium.GetUniversalTime();
-                if (tin > 0 && tin < 90 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime) { TimeWarp.SetRate(0, true); LastMessage += "\nZatrzymano przyspieszenie przed impulsem."; }
+                if (tin > 0 && tin < 20 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime) { TimeWarp.SetRate(0, true); LastMessage += "\nZatrzymano przyspieszenie przed impulsem."; }
             }
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
