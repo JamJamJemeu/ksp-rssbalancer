@@ -608,7 +608,8 @@ namespace RSSBalancer
                         else if (w[0] == "srfvel")
                         {
                             // jak SmartASS „Surface prograde”: pochylenie (kąt natarcia), odchylenie, przechylenie względem wektora prędkości
-                            float pit = w.Length > 1 ? (float)Num(w[1], 0) : 0f, yaw = w.Length > 2 ? (float)Num(w[2], 0) : 0f, rol = w.Length > 3 ? (float)Num(w[3], 0) : 0f;
+                            aoaByMach = w.Length > 1 && w[1] == "mach";
+                            float pit = aoaByMach ? AoAForMach(vessel.mach) : w.Length > 1 ? (float)Num(w[1], 0) : 0f, yaw = w.Length > 2 ? (float)Num(w[2], 0) : 0f, rol = w.Length > 3 ? (float)Num(w[3], 0) : 0f;
                             bool wasGuide = entryGuide;
                             entryGuide = w.Length > 3 && w[3] == "guide";
                             gAoa = pit; gYaw = yaw;
@@ -661,6 +662,14 @@ namespace RSSBalancer
                     }
                     else if (key == "sas") vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, val == "on");
                     else if (key == "rcs") vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, val == "on");
+                    else if (key == "rcsaxes")
+                    {
+                        // jak w Buranie: przy gęstszym powietrzu silniki orientacji tylko w odchyleniu (pochylenie i przechylenie – stery)
+                        bool all = val.Trim().ToLowerInvariant() != "yaw";
+                        foreach (Part pp in vessel.parts)
+                            foreach (ModuleRCS r in pp.FindModulesImplementing<ModuleRCS>())
+                            { r.enablePitch = all; r.enableRoll = all; r.enableYaw = true; r.enableX = all; r.enableY = all; r.enableZ = all; }
+                    }
                 }
                 catch (Exception e)
                 {
@@ -830,7 +839,7 @@ namespace RSSBalancer
         // ------------------------------------------------------------------ czujnik przeciągnięcia
         // Jak w samolocie: ostrzega, gdy kąt natarcia zbliża się do krytycznego albo prędkość równoważna (EAS –
         // ta sama nośność na każdej wysokości) spada blisko prędkości przeciągnięcia. Prędkość przeciągnięcia Burana
-        // ~80 m/s EAS przy masie 75 t (przyziemienie 1K1: 263 km/h), skalowana z pierwiastkiem z masy.
+        // ~70 m/s EAS przy masie 75 t (Buran przyziemia przy 300–320 km/h ≈ 1,2× prędkości przeciągnięcia), skalowana z pierwiastkiem z masy.
         public string StallInfo = "";
         public int StallLevel;      // 0 ok, 1 ostrzeżenie, 2 przeciągnięcie
         private float nextStallMsg;
@@ -838,7 +847,7 @@ namespace RSSBalancer
         private int StallCheck(out double eas, out double vStall, out double aoa)
         {
             eas = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
-            vStall = 80 * Math.Sqrt(Math.Max(10, vessel.totalMass) / 75.0);
+            vStall = 70 * Math.Sqrt(Math.Max(10, vessel.totalMass) / 75.0);
             Vector3d vel = vessel.srf_velocity;
             aoa = vel.magnitude > 1 ? Vector3d.Angle((Vector3d)vessel.ReferenceTransform.up, vel) : 0;
             if (vessel.mach > 2 || vessel.LandedOrSplashed || vessel.altitude > 60000) { StallInfo = ""; return 0; }
@@ -938,9 +947,10 @@ namespace RSSBalancer
                 }
                 else
                 {
-                    double ht = (d - 2000) * Math.Tan(18 * Math.PI / 180);
-                    vs = -vh * Math.Tan(18 * Math.PI / 180) + 0.08 * (ht - h);
-                    approachPhase = "ścieżka 18°";
+                    // stroma ścieżka jak w Buranie: 17–22° (tu 19°), punkt kluczowy ~12,5 km przed pasem na ~4 km
+                    double ht = (d - 900) * Math.Tan(19 * Math.PI / 180);
+                    vs = -vh * Math.Tan(19 * Math.PI / 180) + 0.08 * (ht - h);
+                    approachPhase = "stroma ścieżka 19°";
                     double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
                     if (vs > vsMin) { vs = vsMin; approachPhase = "PONIŻEJ ścieżki – najlepszy lot ślizgowy"; }
                 }
@@ -956,7 +966,8 @@ namespace RSSBalancer
             if (hr >= 20 && approachPhase != "przyziemienie")
             {
                 bool flare = approachPhase.StartsWith("wyrównanie");
-                double easT = flare ? 1.15 * vSt : farAway ? Math.Max(150, 1.8 * vSt) : Math.Max(115, 1.4 * vSt);
+                // Buran: szybowanie przed lądowaniem 450–540 km/h (≈125–150 m/s), przyziemienie 300–320 km/h (≈86 m/s)
+                double easT = flare ? 1.15 * vSt : farAway ? Math.Max(150, 1.8 * vSt) : Math.Max(140, 1.6 * vSt);
                 if (easNow < easT)
                 {
                     vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - easNow));
@@ -969,7 +980,8 @@ namespace RSSBalancer
                     approachPhase = "PRZECIĄGNIĘCIE – wyprowadzam (nos w dół)";
                 }
                 // hamulec aerodynamiczny przy nadmiarze prędkości
-                bool wantBrakes = easNow > 200 || (excessTurn && easNow > 170);
+                // hamulec (rozchylony ster kierunku w Buranie) trzyma prędkość na stromej ścieżce
+                bool wantBrakes = easNow > (farAway ? 200 : 155) || (excessTurn && easNow > 170);
                 if (wantBrakes != brakesOut) { brakesOut = wantBrakes; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wantBrakes); }
             }
             vs = Math.Max(-250, Math.Min(0, vs));
@@ -993,6 +1005,16 @@ namespace RSSBalancer
 
         private bool entryGuide;
         private float gAoa, gYaw, gAoaCmd, aoaBias;
+        private bool aoaByMach;
+
+        /// <summary>Program kąta natarcia Burana α(M) z lotu 1K1: 39° w górnej atmosferze, 22° przy M = 5, 10° przy M = 2.</summary>
+        private static float AoAForMach(double m)
+        {
+            if (m >= 12) return 39f;
+            if (m >= 5) return (float)(22 + (39 - 22) * (m - 5) / 7.0);
+            if (m >= 2) return (float)(10 + (22 - 10) * (m - 2) / 3.0);
+            return 10f;
+        }
         private double bankCmd, rollSign = 1, ldF = 1.0, calStart = -1, calHdg0, calBank, nextGLog;
         private bool calDone;
         public string EntryInfo = "";
@@ -1127,6 +1149,7 @@ namespace RSSBalancer
             {
                 try { EntryGuidance(); } catch (Exception e) { EntryInfo = "błąd naprowadzania: " + e.Message; }
                 // zmiana kąta natarcia płynnie, 1°/s (skok 35°→25° przy dużym ciśnieniu dynamicznym wytrącał Burana)
+                if (aoaByMach) gAoa = AoAForMach(vessel.mach);
                 float step = 1.0f * TimeWarp.fixedDeltaTime;
                 float aoaTarget = gAoa > 18 ? Mathf.Max(18f, gAoa - aoaBias) : gAoa;
                 gAoaCmd += Mathf.Clamp(aoaTarget - gAoaCmd, -step, step);
