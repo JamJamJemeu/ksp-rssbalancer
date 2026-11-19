@@ -1233,8 +1233,11 @@ namespace RSSBalancer
         }
         private bool ldSeen;
 
-        private static readonly double[,] LdTab = { { 7600, 0.36 }, { 5500, 0.36 }, { 4400, 0.37 }, { 3600, 0.42 }, { 2900, 0.70 }, { 2300, 1.0 },
-                                                    { 2000, 1.2 }, { 1600, 1.3 }, { 1100, 1.45 }, { 700, 1.75 }, { 450, 1.6 }, { 0, 1.4 } };
+        // Doskonałość Burana w KSP po łatce „BuranWing” (nośność skrzydeł przy dużych Machach jak w prawdziwym Buranie:
+        // L/D 1,05–1,40 przy α 30–40°, M 28–10; poddźwiękowo ~5). Wartości z pomiaru 2026-11-19 20:05 przeliczone
+        // przez nową krzywą liftMach – do potwierdzenia w locie (bieżący pomiar i tak skaluje tablicę).
+        private static readonly double[,] LdTab = { { 7600, 1.2 }, { 6000, 1.12 }, { 4500, 1.05 }, { 3600, 1.1 }, { 2900, 1.7 }, { 2300, 2.0 },
+                                                    { 1600, 2.0 }, { 1100, 1.6 }, { 700, 1.55 }, { 450, 1.5 }, { 0, 1.4 } };
         private static double LdTable(double v)
         {
             if (v >= LdTab[0, 0]) return LdTab[0, 1];
@@ -1256,7 +1259,7 @@ namespace RSSBalancer
             return s;
         }
 
-        private double bankCmd, rollSign = 1, ldF = 0.36, calStart = -1, calHdg0, calBank, nextGLog;
+        private double bankCmd, rollSign = 1, ldF = 1.1, calStart = -1, calHdg0, calBank, nextGLog;
         private bool calDone;
         public string EntryInfo = "";
         private static Type farApi; private static bool farLooked;
@@ -1321,7 +1324,7 @@ namespace RSSBalancer
             // Doskonałość zmienia się z prędkością (program α(M)): ~0,35 przy 39°, ~1,3 przy 18°, ~1,7 przy 10°
             // (pomiar z lotu 2026-11-19 20:05). Zamiast stałej L/D całkujemy zasięg po prędkości z tablicą,
             // przeskalowaną bieżącym pomiarem (ldF / tablica przy obecnej prędkości).
-            double calib = ldSeen ? Math.Max(0.5, Math.Min(2.0, ldF / LdTable(V))) : 1.0;
+            double calib = ldSeen ? Math.Max(0.3, Math.Min(2.5, ldF / LdTable(V))) : 1.0;
             double rMax = RangeIntegral(V, r, g) * calib;
             double cosS = rMax > 1 ? rgo / rMax : 1;
 
