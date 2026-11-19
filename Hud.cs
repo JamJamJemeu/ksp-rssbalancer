@@ -11,13 +11,18 @@ namespace RSSBalancer
         {
             if (hooked) return;
             hooked = true;
-            GameEvents.onHideUI.Add(OnHide);
-            GameEvents.onShowUI.Add(OnShow);
-            GameEvents.onGameSceneLoadRequested.Add(OnScene);
+            // KSP's EventVoid nie przyjmuje metod statycznych (NullReferenceException w EvtDelegate) – obiekt pośredni
+            var l = new Listener();
+            GameEvents.onHideUI.Add(l.OnHide);
+            GameEvents.onShowUI.Add(l.OnShow);
+            GameEvents.onGameSceneLoadRequested.Add(l.OnScene);
         }
 
-        private static void OnHide() { Hidden = true; }
-        private static void OnShow() { Hidden = false; }
-        private static void OnScene(GameScenes s) { Hidden = false; }
+        private class Listener
+        {
+            public void OnHide() { Hidden = true; }
+            public void OnShow() { Hidden = false; }
+            public void OnScene(GameScenes s) { Hidden = false; }
+        }
     }
 }
