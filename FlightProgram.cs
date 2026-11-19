@@ -516,7 +516,7 @@ namespace RSSBalancer
             if (!siteSet || vessel == null || vessel.orbit == null) { PlanInfo = "brak miejsca lądowania w programie"; return; }
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
             if (o.eccentricity >= 1 || o.PeA < 0) { PlanInfo = "orbita nie jest zamknięta"; return; }
-            double now = Planetarium.GetUniversalTime(), step = 20, horizon = 3 * 86400;
+            double now = Planetarium.GetUniversalTime(), step = 20, horizon = 6 * 86400;
             double tPrev = now + 30, aPrev = AngleAt(o, b, tPrev, false);
             double bestXr = double.MaxValue;
             int nightSkips = 0;
@@ -540,7 +540,7 @@ namespace RSSBalancer
                 tPrev = t; aPrev = a;
             }
             if (double.IsNaN(planUT))
-                PlanInfo = "brak okna w 3 doby (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")" +
+                PlanInfo = "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")" +
                            (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych" : "");
             else
                 PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", odejście boczne " + planXr.ToString("F0") + " km, Słońce nad lotniskiem przy lądowaniu " +
