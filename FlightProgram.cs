@@ -1218,7 +1218,32 @@ namespace RSSBalancer
             if (m >= 2) return (float)(10 + (22 - 10) * (m - 2) / 3.0);
             return 10f;
         }
-        private double bankCmd, rollSign = 1, ldF = 1.0, calStart = -1, calHdg0, calBank, nextGLog;
+        private bool ldSeen;
+
+        private static readonly double[,] LdTab = { { 7600, 0.36 }, { 5500, 0.36 }, { 4400, 0.37 }, { 3600, 0.42 }, { 2900, 0.70 }, { 2300, 1.0 },
+                                                    { 2000, 1.2 }, { 1600, 1.3 }, { 1100, 1.45 }, { 700, 1.75 }, { 450, 1.6 }, { 0, 1.4 } };
+        private static double LdTable(double v)
+        {
+            if (v >= LdTab[0, 0]) return LdTab[0, 1];
+            for (int i = 0; i < LdTab.GetLength(0) - 1; i++)
+                if (v <= LdTab[i, 0] && v >= LdTab[i + 1, 0])
+                    return LdTab[i + 1, 1] + (LdTab[i, 1] - LdTab[i + 1, 1]) * (v - LdTab[i + 1, 0]) / (LdTab[i, 0] - LdTab[i + 1, 0]);
+            return LdTab[LdTab.GetLength(0) - 1, 1];
+        }
+
+        /// <summary>Zasięg lotu ślizgowego w równowadze z L/D zależną od prędkości: ∫ L/D(v) · r/2 · d ln(1/(1 − v²/gr)).</summary>
+        private static double RangeIntegral(double v0, double r, double g)
+        {
+            double s = 0, dv = 20;
+            for (double v = v0; v > 150; v -= dv)
+            {
+                double e1 = Math.Min(0.999, v * v / (g * r)), e0 = Math.Min(0.999, (v - dv) * (v - dv) / (g * r));
+                s += LdTable(v - dv / 2) * r / 2 * (Math.Log(1 / (1 - e1)) - Math.Log(1 / (1 - e0)));
+            }
+            return s;
+        }
+
+        private double bankCmd, rollSign = 1, ldF = 0.36, calStart = -1, calHdg0, calBank, nextGLog;
         private bool calDone;
         public string EntryInfo = "";
         private static Type farApi; private static bool farLooked;
@@ -1267,7 +1292,7 @@ namespace RSSBalancer
 
             double cl = FarCall("ActiveVesselLiftCoeff"), cd = FarCall("ActiveVesselDragCoeff");
             if (!double.IsNaN(cl) && !double.IsNaN(cd) && cd > 1e-4 && v.dynamicPressurekPa > 0.3)
-                ldF += (Math.Max(0.2, Math.Min(6, cl / cd)) - ldF) * 0.05;
+            { ldF += (Math.Max(0.2, Math.Min(6, cl / cd)) - ldF) * 0.05; ldSeen = true; }
             else if (double.IsNaN(cl) && v.dynamicPressurekPa > 0.3)
             {
                 // bez FAR: L/D z przyspieszenia aerodynamicznego (przyspieszenie − grawitacja), rozłożonego na oś prędkości
@@ -1275,12 +1300,16 @@ namespace RSSBalancer
                 Vector3d vn = vel / V;
                 double drag = -Vector3d.Dot(aAero, vn);
                 double lift = (aAero + vn * drag).magnitude;
-                if (drag > 0.5) ldF += (Math.Max(0.2, Math.Min(6, lift / drag)) - ldF) * 0.02;
+                if (drag > 0.5) { ldF += (Math.Max(0.2, Math.Min(6, lift / drag)) - ldF) * 0.02; ldSeen = true; }
             }
             double r = pos.magnitude, g = b.gravParameter / (r * r);
             double e = Math.Min(0.999, V * V / (g * r));
             double kR = r / 2 * Math.Log(1 / (1 - e));                              // zasięg przy L/D = 1, σ = 0
-            double rMax = ldF * kR;
+            // Doskonałość zmienia się z prędkością (program α(M)): ~0,35 przy 39°, ~1,3 przy 18°, ~1,7 przy 10°
+            // (pomiar z lotu 2026-11-19 20:05). Zamiast stałej L/D całkujemy zasięg po prędkości z tablicą,
+            // przeskalowaną bieżącym pomiarem (ldF / tablica przy obecnej prędkości).
+            double calib = ldSeen ? Math.Max(0.5, Math.Min(2.0, ldF / LdTable(V))) : 1.0;
+            double rMax = RangeIntegral(V, r, g) * calib;
             double cosS = rMax > 1 ? rgo / rMax : 1;
 
             double mag;
