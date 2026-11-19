@@ -128,6 +128,50 @@ namespace RSSBalancer
         private float nextGroups;
 
         private void Awake() { Instance = this; }
+        // ---- duży licznik odległości od lotniska (na górze ekranu, gdy program albo podejście działa)
+        private double hudRMax = double.NaN, hudDpsi = double.NaN;
+        private GUIStyle hudBig, hudSmall, hudShadowBig, hudShadowSmall;
+        private static void HudText(Rect r, string t, GUIStyle st, GUIStyle sh, Color c)
+        {
+            GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), t, sh);
+            st.normal.textColor = c; GUI.Label(r, t, st);
+        }
+        private void OnGUI()
+        {
+            if (!HighLogic.LoadedSceneIsFlight || vessel == null || vessel != FlightGlobals.ActiveVessel || !siteSet) return;
+            if (!Active && !approachOn) return;
+            if (hudBig == null)
+            {
+                hudBig = new GUIStyle(GUI.skin.label) { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                hudSmall = new GUIStyle(GUI.skin.label) { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                hudShadowBig = new GUIStyle(hudBig); hudShadowBig.normal.textColor = Color.black;
+                hudShadowSmall = new GUIStyle(hudSmall); hudShadowSmall.normal.textColor = Color.black;
+            }
+            double brg;
+            double km = GreatCircle(vessel.latitude, vessel.longitude, siteLat, siteLon, out brg) * vessel.mainBody.Radius / 1000;
+            string big; Color col = Color.white;
+            if (approachOn && rwySet && !vessel.Landed)
+                big = "DO PROGU " + (RunwayDistance() / 1000).ToString(RunwayDistance() < 100000 ? "F1" : "F0", Inv) + " km";
+            else if (vessel.Landed && LandingVerdict.Length > 0)
+            { big = LandingVerdict.StartsWith("NA PASIE") ? "NA PASIE" : "POZA PASEM"; col = LandingVerdict.StartsWith("NA PASIE") ? Color.green : Color.red; }
+            else big = "DO LOTNISKA " + km.ToString(km < 100 ? "F1" : "F0", Inv) + " km";
+            string small = "wys. " + (vessel.altitude / 1000).ToString("F1", Inv) + " km · " + vessel.srfSpeed.ToString("F0", Inv) + " m/s";
+            bool inEntry = entryGuide && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth;
+            if (inEntry && !double.IsNaN(hudRMax) && km > 1)
+            {
+                double ratio = hudRMax / 1000 / km;
+                small += " · zasięg ~" + (hudRMax / 1000).ToString("F0", Inv) + " km (" + (ratio >= 1.1 ? "zapas" : ratio >= 0.95 ? "na styk" : "ZA MAŁO") + ")";
+                if (!approachOn) col = ratio >= 1.1 ? Color.green : ratio >= 0.95 ? Color.yellow : Color.red;
+                if (!double.IsNaN(hudDpsi)) small += " · lotnisko " + Math.Abs(hudDpsi).ToString("F0", Inv) + "° w " + (hudDpsi >= 0 ? "prawo" : "lewo");
+            }
+            else if (!double.IsNaN(planUT) && planUT > Planetarium.GetUniversalTime())
+                small += " · impuls za " + KSPUtil.PrintTimeCompact(planUT - Planetarium.GetUniversalTime(), false);
+            if (StallLevel > 0 && !vessel.Landed) { small += StallLevel == 2 ? " · PRZECIĄGNIĘCIE" : " · blisko przeciągnięcia"; }
+            float w = 900, x = (Screen.width - w) / 2, y = Screen.height * 0.11f;
+            HudText(new Rect(x, y, w, 50), big, hudBig, hudShadowBig, col);
+            HudText(new Rect(x, y + 46, w, 26), small, hudSmall, hudShadowSmall, Color.white);
+        }
+
         private void OnDestroy() { if (Instance == this) Instance = null; RestoreWarpLimits(); ReleaseAttitude(); if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw; }
 
         public bool Active { get { return Running != null && Current >= 0 && Current < Running.steps.Count; } }
@@ -151,6 +195,9 @@ namespace RSSBalancer
             siteLead = p.node != null ? Num(p.node.GetValue("siteLead"), 3900) : 3900;
             planAngle = p.node != null ? Num(p.node.GetValue("deorbitAngle"), 185) : 185;
             planMaxXr = p.node != null ? Num(p.node.GetValue("maxCrossRange"), 1000) : 1000;
+            entryRangeKm = p.node != null ? Num(p.node.GetValue("entryRange"), 0) : 0;
+            deorbitPeriKm = p.node != null ? Num(p.node.GetValue("deorbitPeri"), 30) : 30;
+            entryAltKm = p.node != null ? Num(p.node.GetValue("entryAlt"), 120) : 120;
             if (p.node != null && p.node.HasValue("daylight")) RequireDaylight = p.node.GetValue("daylight").Trim().ToLowerInvariant() == "true";
             planUT = double.NaN; nextPlan = 0; PlanInfo = "";
             approachOn = false; rwySet = false;
@@ -352,7 +399,7 @@ namespace RSSBalancer
 
         private void FixedUpdate()
         {
-            if (Active) LowerWarpLimits(); else if (warpLimBody != null) RestoreWarpLimits();
+            if (warpLimBody != null) RestoreWarpLimits();   // 1.29 obniżał limity warpa – przy wyjściu z szybkiego warpa tuż nad atmosferą KSP „przesuwał” orbitę (lot 22:11: 155×155 → 173×136 km bez paliwa)
             PhysWarpUpdate();
             if (patternOn && vessel != null && vessel == FlightGlobals.ActiveVessel) Pattern();
             if (approachOn && vessel != null && vessel == FlightGlobals.ActiveVessel && !Active) Approach();
@@ -485,9 +532,9 @@ namespace RSSBalancer
         // sekund i okno 14° po prostu się przeskakuje) liczymy z orbity Keplera chwilę impulsu z góry.
 
         private double planUT = double.NaN, planXr = double.NaN, nextPlan, planSun;
-        private double planAngle = 185, planMaxXr = 1000;
+        private double planAngle = 185, planMaxXr = 1000, planApA = double.NaN, planPeA = double.NaN;
         public bool RequireDaylight;
-        public void Replan() { planUT = double.NaN; nextPlan = 0; PlanInfo = "przeliczam…"; }
+        public void Replan() { planUT = double.NaN; nextPlan = 0; planApA = double.NaN; PlanInfo = "przeliczam…"; }
 
         /// <summary>Wysokość Słońca nad horyzontem w miejscu lądowania w chwili ut (stopnie).</summary>
         private double SunElevationAtSite(CelestialBody b, double ut)
@@ -516,10 +563,14 @@ namespace RSSBalancer
             double now = Planetarium.GetUniversalTime();
             // plan „zamrażamy” na ostatnie 10 min przed impulsem i do 10 min po nim (żeby warunek „<= 0” był stabilny)
             bool locked = !double.IsNaN(planUT) && now > planUT - 600 && now < planUT + 600;
-            if (!locked && Time.realtimeSinceStartup > nextPlan)
+            // plan fizyczny jest kosztowny – liczymy go raz, a ponownie tylko gdy orbita się zmieni albo plan minął
+            bool orbitChanged = vessel != null && vessel.orbit != null && (double.IsNaN(planApA) || Math.Abs(vessel.orbit.ApA - planApA) > 500 || Math.Abs(vessel.orbit.PeA - planPeA) > 500);
+            bool need = entryRangeKm > 0 ? (double.IsNaN(planUT) || orbitChanged || planUT < now - 600) && Time.realtimeSinceStartup > nextPlan : Time.realtimeSinceStartup > nextPlan;
+            if (!locked && need)
             {
-                nextPlan = Time.realtimeSinceStartup + 5f;
+                nextPlan = Time.realtimeSinceStartup + (entryRangeKm > 0 ? 20f : 5f);
                 PlanDeorbit();
+                if (vessel != null && vessel.orbit != null) { planApA = vessel.orbit.ApA; planPeA = vessel.orbit.PeA; }
             }
             return double.IsNaN(planUT) ? double.NaN : planUT - now;
         }
@@ -533,8 +584,102 @@ namespace RSSBalancer
             return SiteGeometry(b, r, h, ut + siteLead, xr);
         }
 
+        // ---- planowanie impulsu fizycznie (od wersji 1.30): dla każdej chwili impulsu liczymy orbitę po impulsie
+        // (Δv wstecz do perygeum deorbitPeri), punkt wejścia (entryAlt) z obrotem Ziemi i odległość od niego do
+        // lotniska po powierzchni. Impuls wtedy, gdy ta odległość = entryRange. Dawniej był stały kąt „deorbitAngle”,
+        // dobierany na oko do jednej orbity – przy innej wysokości orbity trafiał gdzie indziej.
+        private double entryRangeKm, deorbitPeriKm = 30, entryAltKm = 120, planDv = double.NaN, planDist = double.NaN, planEntryUT = double.NaN;
+
+        private void GroundLL(Orbit n, CelestialBody b, double ut, out double lat, out double lon)
+        {
+            Vector3d w = n.getPositionAtUT(ut);
+            lat = b.GetLatitude(w); lon = b.GetLongitude(w);
+            if (b.rotates && b.rotationPeriod > 0) lon -= 360.0 * (ut - Planetarium.GetUniversalTime()) / b.rotationPeriod;
+        }
+
+        private readonly Orbit predOrbit = new Orbit();
+        private bool PredictEntry(Orbit o, CelestialBody b, double tb, out double distKm, out double xrKm, out double tI, out double dv)
+        {
+            distKm = xrKm = tI = dv = double.NaN;
+            Vector3d p = o.getRelativePositionAtUT(tb), v = o.getOrbitalVelocityAtUT(tb), vn = v.normalized;
+            double targetPe = b.Radius + deorbitPeriKm * 1000;
+            Orbit n = predOrbit;
+            n.UpdateFromStateVectors(p, v, b, tb);
+            double lo = 0, hi = 800;
+            if (n.PeR <= targetPe) hi = 0;
+            else for (int i = 0; i < 18; i++) { double m = 0.5 * (lo + hi); n.UpdateFromStateVectors(p, v - vn * m, b, tb); if (n.PeR > targetPe) lo = m; else hi = m; }
+            dv = hi;
+            n.UpdateFromStateVectors(p, v - vn * dv, b, tb);
+            tI = NextDescentToRadius(n, tb, b.Radius + entryAltKm * 1000);
+            if (double.IsNaN(tI)) return false;
+            double lat1, lon1, lat2, lon2, trk, brg;
+            GroundLL(n, b, tI, out lat1, out lon1); GroundLL(n, b, tI + 10, out lat2, out lon2);
+            GreatCircle(lat1, lon1, lat2, lon2, out trk);
+            double ang = GreatCircle(lat1, lon1, siteLat, siteLon, out brg);
+            double rel = ((brg - trk + 540) % 360) - 180;
+            xrKm = Math.Abs(Math.Asin(Math.Max(-1, Math.Min(1, Math.Sin(ang) * Math.Sin(rel * Math.PI / 180))))) * b.Radius / 1000;
+            distKm = ang * b.Radius / 1000;
+            if (Math.Abs(rel) > 90) distKm = -distKm;          // lotnisko za plecami
+            return true;
+        }
+
+        private double EngineThrustKN()
+        {
+            double t = 0;
+            foreach (Part pp in vessel.parts)
+                foreach (ModuleEngines e in pp.FindModulesImplementing<ModuleEngines>())
+                    if (e.EngineIgnited && !e.flameout) t += e.maxThrust;
+            return t;
+        }
+
+        private void PlanDeorbitPhysical()
+        {
+            planUT = double.NaN; planXr = double.NaN;
+            Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
+            if (o.eccentricity >= 1 || o.PeA < (b.atmosphere ? b.atmosphereDepth : 0)) { PlanInfo = "orbita nie jest zamknięta nad atmosferą"; return; }
+            double now = Planetarium.GetUniversalTime(), step = 30, horizon = 6 * 86400;
+            double bestXr = double.MaxValue; int nightSkips = 0;
+            double tPrev = double.NaN, dPrev = double.NaN;
+            for (double t = now + 120; t < now + horizon; t += step)
+            {
+                double a = AngleAt(o, b, t, false);
+                if (a < 30 || a > 270) { tPrev = double.NaN; continue; }   // lotnisko daleko – szybki odsiew
+                double d, xr, tI, dv;
+                if (!PredictEntry(o, b, t, out d, out xr, out tI, out dv)) { tPrev = double.NaN; continue; }
+                if (!double.IsNaN(tPrev) && dPrev > entryRangeKm && d <= entryRangeKm && d > 0)
+                {
+                    double lo = tPrev, hi = t;
+                    for (int i = 0; i < 12; i++) { double m = 0.5 * (lo + hi), dm, xm, tm, vm; if (PredictEntry(o, b, m, out dm, out xm, out tm, out vm) && dm > entryRangeKm) lo = m; else hi = m; }
+                    PredictEntry(o, b, hi, out d, out xr, out tI, out dv);
+                    if (xr < bestXr) bestXr = xr;
+                    if (xr <= planMaxXr)
+                    {
+                        double tLand = tI + 1900;
+                        double sunEl = SunElevationAtSite(b, tLand);
+                        if (!RequireDaylight || sunEl >= 10)
+                        {
+                            double thr = EngineThrustKN();
+                            double half = thr > 1 ? 0.5 * dv * vessel.totalMass / thr : 0;
+                            planUT = hi - half; planXr = xr; planSun = sunEl; planDv = dv; planDist = d; planEntryUT = tI;
+                            break;
+                        }
+                        nightSkips++;
+                    }
+                }
+                tPrev = t; dPrev = d;
+            }
+            if (double.IsNaN(planUT))
+                PlanInfo = "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")" +
+                           (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych" : "");
+            else
+                PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", Δv " + planDv.ToString("F0") + " m/s, wejście (" + entryAltKm.ToString("F0") + " km) " +
+                           planDist.ToString("F0") + " km od lotniska, odejście boczne " + planXr.ToString("F0") + " km, Słońce przy lądowaniu " + planSun.ToString("F0") + "° (" +
+                           (planSun >= 10 ? "dzień" : planSun > -6 ? "zmierzch/świt" : "noc") + ")" + (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych przelotów" : "");
+        }
+
         private void PlanDeorbit()
         {
+            if (entryRangeKm > 0 && siteSet && vessel != null && vessel.orbit != null) { PlanDeorbitPhysical(); return; }
             planUT = double.NaN; planXr = double.NaN;
             if (!siteSet || vessel == null || vessel.orbit == null) { PlanInfo = "brak miejsca lądowania w programie"; return; }
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
@@ -707,11 +852,20 @@ namespace RSSBalancer
                         // warpto = deorbit <ile sekund przed impulsem>
                         string[] w = val.ToLowerInvariant().Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
                         double lead = w.Length > 1 ? Num(w[1], 300) : 300;
-                        double tin = DeorbitIn();
-                        if (double.IsNaN(tin)) throw new Exception("brak planu zejścia: " + PlanInfo);
-                        if (tin > lead + 5) TimeWarp.fetch.WarpTo(planUT - lead);
-                        LastMessage += "\nPlan: " + PlanInfo;
-                        FlightLogger.Event("Program lotu: plan zejścia – " + PlanInfo);
+                        if (w.Length > 0 && (w[0] == "ap" || w[0] == "pe"))
+                        {
+                            // warpto = ap <s przed apogeum> / pe <s przed perygeum>
+                            double tt = w[0] == "ap" ? vessel.orbit.timeToAp : vessel.orbit.timeToPe;
+                            if (tt > lead + 5) TimeWarp.fetch.WarpTo(Planetarium.GetUniversalTime() + tt - lead);
+                        }
+                        else
+                        {
+                            double tin = DeorbitIn();
+                            if (double.IsNaN(tin)) throw new Exception("brak planu zejścia: " + PlanInfo);
+                            if (tin > lead + 5) TimeWarp.fetch.WarpTo(planUT - lead);
+                            LastMessage += "\nPlan: " + PlanInfo;
+                            FlightLogger.Event("Program lotu: plan zejścia – " + PlanInfo);
+                        }
                     }
                     else if (key == "sas") vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, val == "on");
                     else if (key == "rcs") vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, val == "on");
@@ -1411,7 +1565,7 @@ namespace RSSBalancer
 
             double mag;
             string note = "";
-            if (v.dynamicPressurekPa < 0.5) { mag = 0; note = "za rzadkie powietrze"; }
+            if (v.dynamicPressurekPa < 0.05) { mag = 0; note = "za rzadkie powietrze"; }
             else if (cosS >= 1) { mag = 0; note = "ZA MAŁO ENERGII – lecę bez przechylenia"; }
             else mag = Math.Acos(Math.Max(0, cosS)) * 180 / Math.PI;
             mag = Math.Min(mag, 80);
@@ -1425,7 +1579,7 @@ namespace RSSBalancer
             // Wyrównanie kursu: gdy lotnisko ucieka w bok (duży błąd kursu przy małej odległości), kurs ma pierwszeństwo
             // przed zasięgiem – inaczej Buran przelatuje obok lotniska z wystarczającą energią, ale w złą stronę.
             double headLimit = V < 3000 ? 20 : V < 5000 ? 30 : 45;
-            if (v.dynamicPressurekPa >= 0.5 && (Math.Abs(dpsi) > headLimit || V < 1500))
+            if (v.dynamicPressurekPa >= 0.05 && (Math.Abs(dpsi) > headLimit || V < 1500))
             {
                 mag = Math.Max(mag, Math.Min(V < 1500 ? 45 : 60, Math.Abs(dpsi) * 1.5));
                 side = dpsi >= 0 ? 1 : -1;
@@ -1433,16 +1587,16 @@ namespace RSSBalancer
             }
             // Za mało energii przy dużej prędkości: zmniejsz kąt natarcia (większa doskonałość) – do 12° mniej, min. 22°.
             aoaBias = 0;
-            if (cosS > 1 && V > 1500 && v.dynamicPressurekPa >= 0.5)
+            if (cosS > 1 && V > 1500 && v.dynamicPressurekPa >= 0.05)
                 aoaBias = (float)Math.Min(18, (cosS - 1) * 40);
             // Duży nadmiar energii (lot 2026-11-19 18:25: Buran przeleciał nad lotniskiem z prędkością naddźwiękową
             // mimo przechylenia 70°): większy kąt natarcia = większy opór, do +8° (maks. 45°).
-            else if (cosS < 0.6 && V > 1500 && v.dynamicPressurekPa >= 0.5)
+            else if (cosS < 0.6 && V > 1500 && v.dynamicPressurekPa >= 0.05)
                 aoaBias = -(float)Math.Min(8, (0.6 - cosS) * 25);
             // Mała prędkość równoważna nisko: przechylenie zabiera nośność – ograniczamy je, żeby nie przeciągnąć
             double easG = Math.Sqrt(2 * v.dynamicPressurekPa * 1000 / 1.225);
             double vStG = 70 * Math.Sqrt(Math.Max(10, v.totalMass) / 75.0);
-            gEas = easG; gVst = vStG;
+            gEas = easG; gVst = vStG; hudRMax = rMax; hudDpsi = dpsi;
             if (V < 2000 && easG < 1.7 * vStG)
             {
                 mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : 20);
