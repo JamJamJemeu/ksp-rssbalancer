@@ -415,10 +415,19 @@ namespace RSSBalancer
             if (!approachOn && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth) { double e1, v1, a1; StallLevel = StallCheck(out e1, out v1, out a1); }
             if (approachOn) Approach();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
-            if (!double.IsNaN(planUT) && !burnOn && TimeWarp.CurrentRateIndex > 0)
+            // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
+            // – przy warpie ×100 000 to wypadało godziny przed impulsem, a nagłe zrzucenie warpa z takiej prędkości
+            // (powtarzane, bo warp znów ruszał) psuło orbitę: lot 22:11 155×155 → 173×136 km, lot 23:14 251×263 → 484×42 km.
+            // Teraz: przy dużym warpie oddajemy hamowanie stockowemu WarpTo (zwalnia stopniowo), a natychmiast stop dopiero < 20 s.
+            if (!double.IsNaN(planUT) && !burnOn && TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
             {
                 double tin = planUT - Planetarium.GetUniversalTime();
-                if (tin > 0 && tin < 20 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime) { TimeWarp.SetRate(0, true); LastMessage += "\nZatrzymano przyspieszenie przed impulsem."; }
+                if (tin > 0 && tin < 20) { TimeWarp.SetRate(0, false); LastMessage += "\nZatrzymano przyspieszenie przed impulsem."; }
+                else if (tin > 0 && tin < 60 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime && Planetarium.GetUniversalTime() > warpGuardUT)
+                {
+                    warpGuardUT = planUT;                       // raz na plan
+                    TimeWarp.fetch.WarpTo(planUT - 30);
+                }
             }
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
@@ -532,6 +541,7 @@ namespace RSSBalancer
         // sekund i okno 14° po prostu się przeskakuje) liczymy z orbity Keplera chwilę impulsu z góry.
 
         private double planUT = double.NaN, planXr = double.NaN, nextPlan, planSun;
+        private double warpGuardUT = double.NegativeInfinity;
         private double planAngle = 185, planMaxXr = 1000, planApA = double.NaN, planPeA = double.NaN;
         public bool RequireDaylight;
         public void Replan() { planUT = double.NaN; nextPlan = 0; planApA = double.NaN; PlanInfo = "przeliczam…"; }
@@ -637,6 +647,14 @@ namespace RSSBalancer
             planUT = double.NaN; planXr = double.NaN;
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
             if (o.eccentricity >= 1 || o.PeA < (b.atmosphere ? b.atmosphereDepth : 0)) { PlanInfo = "orbita nie jest zamknięta nad atmosferą"; return; }
+            double incl = o.inclination > 90 ? 180 - o.inclination : o.inclination;
+            double reachDeg = incl + planMaxXr / (b.Radius / 1000) * 180 / Math.PI;
+            if (reachDeg < Math.Abs(siteLat))
+            {
+                PlanInfo = "nachylenie orbity " + o.inclination.ToString("F1") + "° – orbita nigdy nie przechodzi bliżej niż " + ((Math.Abs(siteLat) - incl) * b.Radius / 1000 * Math.PI / 180).ToString("F0") +
+                           " km od lotniska (szer. " + siteLat.ToString("F1") + "°); potrzeba nachylenia ≥ " + (Math.Abs(siteLat) - planMaxXr / (b.Radius / 1000) * 180 / Math.PI).ToString("F1") + "° (1K1: 51,6°)";
+                return;
+            }
             double now = Planetarium.GetUniversalTime(), step = 30, horizon = 6 * 86400;
             double bestXr = double.MaxValue; int nightSkips = 0;
             double tPrev = double.NaN, dPrev = double.NaN;
@@ -845,7 +863,7 @@ namespace RSSBalancer
                     }
                     else if (key == "warp")
                     {
-                        if (val == "stop" && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+                        if (val == "stop" && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, false);
                     }
                     else if (key == "warpto")
                     {
