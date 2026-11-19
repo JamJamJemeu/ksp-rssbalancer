@@ -858,35 +858,60 @@ namespace RSSBalancer
                 return;
             }
 
-            // kurs: punkt na osi pasa przed nami (marchewka)
-            double L = Math.Max(1500, Math.Min(8000, Math.Max(d, 0) * 0.4));
-            Vector3d carrot = thrPos + rwyDir * (-(Math.Max(d, 0) - L));
-            Vector3d to = carrot - pos;
-            to -= up * Vector3d.Dot(to, up);
+            Vector3d relH = rel - up * Vector3d.Dot(rel, up);
+            double dThr = relH.magnitude;                                         // do progu po ziemi (prosto)
             Vector3d north = Vector3d.Exclude(up, b.transform.up).normalized;
             Vector3d east = Vector3d.Cross(up, north).normalized;
-            double hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
-            SetF(ap, "HeadingTarget", hdg);
+            double vs, hdg;
+            bool farAway = dThr > 30000 || Math.Abs(y) > 8000 || d < 3000;
 
-            // prędkość pionowa: ścieżki schodzenia
-            double vs;
-            if (hr < 20) { vs = -1.0; approachPhase = "przyziemienie"; }
-            else if (h < 550)
+            if (farAway && hr >= 20)
             {
-                double ht = (d + 600) * Math.Tan(1.5 * Math.PI / 180);
-                vs = -vh * Math.Tan(1.5 * Math.PI / 180) + 0.15 * (ht - h);
-                vs = Math.Max(vs, -25); approachPhase = "wyrównanie (1,5°)";
+                // DOLOT: lecimy na punkt 12 km przed progiem na osi pasa (jak wejście w okrąg HAC w Buranie/Shuttle),
+                // kąt schodzenia z energii – tak, żeby dolecieć, nie wytracając prędkości (wcześniej Buran 150 km
+                // obok pasa „wyrównywał” na 500 m nad stepem, aż przeciągnął).
+                Vector3d aim = thrPos - rwyDir * 12000;
+                Vector3d to = aim - pos; to -= up * Vector3d.Dot(to, up);
+                hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
+                double togo = to.magnitude + 12000;
+                double gamma = Math.Atan2(Math.Max(h, 0), togo) * 180 / Math.PI;
+                gamma = Math.Max(4, Math.Min(14, gamma));
+                vs = -vh * Math.Tan(gamma * Math.PI / 180);
+                approachPhase = "dolot do pasa " + (togo / 1000).ToString("F0", Inv) + " km, schodzenie " + gamma.ToString("F0", Inv) + "°" +
+                                (Math.Atan2(Math.Max(h, 0), togo) * 180 / Math.PI < 4 ? " (za mało wysokości – nie doleci)" : "");
             }
             else
             {
-                double ht = (d - 2000) * Math.Tan(18 * Math.PI / 180);
-                vs = -vh * Math.Tan(18 * Math.PI / 180) + 0.08 * (ht - h);
-                approachPhase = "ścieżka 18°";
-                // Poniżej ścieżki NIE wznosimy się (to wytraca prędkość i kończy się przeciągnięciem) –
-                // najwyżej lot ślizgowy ~10° (doskonałość Burana poddźwiękowo ≈ 5–6).
-                double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
-                if (vs > vsMin) { vs = vsMin; approachPhase = "PONIŻEJ ścieżki – najlepszy lot ślizgowy"; }
-                if (vessel.srfSpeed < 120) { vs = Math.Min(vs, -vh * Math.Tan(14 * Math.PI / 180)); approachPhase += " (za wolno – oddaję nos w dół)"; }
+                // kurs: punkt na osi pasa przed nami (marchewka)
+                double L = Math.Max(1500, Math.Min(8000, Math.Max(d, 0) * 0.4));
+                Vector3d carrot = thrPos + rwyDir * (-(Math.Max(d, 0) - L));
+                Vector3d to = carrot - pos;
+                to -= up * Vector3d.Dot(to, up);
+                hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
+
+                if (hr < 20) { vs = -1.0; approachPhase = "przyziemienie"; }
+                else if (h < 550 && d < 6000)
+                {
+                    double ht = (d + 600) * Math.Tan(1.5 * Math.PI / 180);
+                    vs = -vh * Math.Tan(1.5 * Math.PI / 180) + 0.15 * (ht - h);
+                    vs = Math.Max(vs, -25); approachPhase = "wyrównanie (1,5°)";
+                }
+                else
+                {
+                    double ht = (d - 2000) * Math.Tan(18 * Math.PI / 180);
+                    vs = -vh * Math.Tan(18 * Math.PI / 180) + 0.08 * (ht - h);
+                    approachPhase = "ścieżka 18°";
+                    double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
+                    if (vs > vsMin) { vs = vsMin; approachPhase = "PONIŻEJ ścieżki – najlepszy lot ślizgowy"; }
+                }
+            }
+            SetF(ap, "HeadingTarget", hdg);
+
+            // ochrona przed przeciągnięciem: Buran ląduje ~75 m/s (1K1: 263 km/h); poniżej 110 m/s nie trzymamy wysokości
+            if (hr >= 20 && vessel.srfSpeed < 110)
+            {
+                vs = Math.Min(vs, -vh * Math.Tan(12 * Math.PI / 180));
+                approachPhase += " (za wolno – oddaję nos w dół)";
             }
             vs = Math.Max(-150, Math.Min(0, vs));
             SetF(ap, "VertSpeedTarget", vs);
@@ -898,7 +923,7 @@ namespace RSSBalancer
                 FlightLogger.Event("Podwozie wypuszczone");
             }
             if (Planetarium.GetUniversalTime() > nextALog) { nextALog = Planetarium.GetUniversalTime() + 10; FlightLogger.Event("Podejście: " + approachPhase + " d=" + (d / 1000).ToString("F1", Inv) + " km h=" + h.ToString("F0", Inv) + " m v=" + vessel.srfSpeed.ToString("F0", Inv)); }
-            approachPhase += "  d=" + (d / 1000).ToString("F1", Inv) + " km  h=" + h.ToString("F0", Inv) + " m  boczna=" + y.ToString("F0", Inv) + " m";
+            approachPhase += "  do progu " + (dThr / 1000).ToString("F1", Inv) + " km, d=" + (d / 1000).ToString("F1", Inv) + " km  h=" + h.ToString("F0", Inv) + " m  boczna=" + y.ToString("F0", Inv) + " m";
         }
 
         // ------------------------------------------------------------------ naprowadzanie przy wejściu w atmosferę
@@ -908,7 +933,7 @@ namespace RSSBalancer
         // z przerzutami (S-zakręty), gdy błąd kursu przekroczy próg. L/D na żywo z FAR.
 
         private bool entryGuide;
-        private float gAoa, gYaw, gAoaCmd;
+        private float gAoa, gYaw, gAoaCmd, aoaBias;
         private double bankCmd, rollSign = 1, ldF = 1.0, calStart = -1, calHdg0, calBank, nextGLog;
         private bool calDone;
         public string EntryInfo = "";
@@ -996,6 +1021,10 @@ namespace RSSBalancer
                 side = dpsi >= 0 ? 1 : -1;
                 note = note.StartsWith("ZA MAŁO") ? note + ", wyrównuję kurs" : "wyrównuję kurs";
             }
+            // Za mało energii przy dużej prędkości: zmniejsz kąt natarcia (większa doskonałość) – do 12° mniej, min. 22°.
+            aoaBias = 0;
+            if (cosS > 1 && V > 1500 && v.dynamicPressurekPa >= 0.5)
+                aoaBias = (float)Math.Min(12, (cosS - 1) * 40);
             double target = side * mag;
             double dt = TimeWarp.fixedDeltaTime;
             bankCmd += Math.Max(-8 * dt, Math.Min(8 * dt, target - bankCmd));     // max 8°/s – przerzut trwa kilkanaście s
@@ -1023,7 +1052,7 @@ namespace RSSBalancer
                 else calStart = -1;
             }
 
-            EntryInfo = "do lotniska " + (rgo / 1000).ToString("F0", Inv) + " km, zasięg bez przechylenia " + (rMax / 1000).ToString("F0", Inv) +
+            EntryInfo = (aoaBias > 0.5f ? "kąt natarcia −" + aoaBias.ToString("F0", Inv) + "° (oszczędzam energię), " : "") + "do lotniska " + (rgo / 1000).ToString("F0", Inv) + " km, zasięg bez przechylenia " + (rMax / 1000).ToString("F0", Inv) +
                         " km, L/D " + ldF.ToString("F2", Inv) + ", przechylenie " + bankCmd.ToString("F0", Inv) + "°, błąd kursu " + dpsi.ToString("F0", Inv) + "°" +
                         (note.Length > 0 ? " – " + note : "");
             if (Planetarium.GetUniversalTime() > nextGLog)
@@ -1040,7 +1069,8 @@ namespace RSSBalancer
                 try { EntryGuidance(); } catch (Exception e) { EntryInfo = "błąd naprowadzania: " + e.Message; }
                 // zmiana kąta natarcia płynnie, 1°/s (skok 35°→25° przy dużym ciśnieniu dynamicznym wytrącał Burana)
                 float step = 1.0f * TimeWarp.fixedDeltaTime;
-                gAoaCmd += Mathf.Clamp(gAoa - gAoaCmd, -step, step);
+                float aoaTarget = gAoa > 22 ? Mathf.Max(22f, gAoa - aoaBias) : gAoa;
+                gAoaCmd += Mathf.Clamp(aoaTarget - gAoaCmd, -step, step);
                 holdRot = Quaternion.AngleAxis(-(float)(bankCmd * rollSign), Vector3.forward) * Quaternion.AngleAxis(-gAoaCmd, Vector3.right) * Quaternion.AngleAxis(gYaw, Vector3.up);
             }
             object core = Core();
