@@ -121,6 +121,7 @@ namespace RSSBalancer
         private Vector3d thrPos, rwyDir;     // próg pasa (świat, względem ciała) i kierunek lądowania (jednostkowy)
         private double rwyHeading;
         private string approachPhase = "";
+        public string LandingVerdict = "";
         public string ApproachInfo { get { return approachOn ? approachPhase : patternOn ? patternPhase : ""; } }
         private List<EngineGroup> groups;
         private SoyuzTemplate.Result id;
@@ -842,7 +843,7 @@ namespace RSSBalancer
             SetF(ap, "VertSpeedTarget", vessel.verticalSpeed);
             Call(ap, "EnableHeadingHold");
             Call(ap, "EnableVertSpeedHold");
-            approachOn = true; gearDone = false; landedDone = false;
+            approachOn = true; gearDone = false; landedDone = false; LandingVerdict = "";
             FlightLogger.Event("Podejście: pas kurs " + rwyHeading.ToString("F0", Inv) + "°, odległość " + (RunwayDistance() / 1000).ToString("F1", Inv) + " km");
         }
 
@@ -1085,7 +1086,19 @@ namespace RSSBalancer
                     foreach (Part p in vessel.parts)
                         foreach (ModuleParachute c in p.FindModulesImplementing<ModuleParachute>())
                             if (c.deploymentState == ModuleParachute.deploymentStates.STOWED) c.Deploy();
-                    FlightLogger.Event("Przyziemienie: " + (vessel.srfSpeed * 3.6).ToString("F0", Inv) + " km/h, odchyłka " + y.ToString("F0", Inv) + " m");
+                    // na pasie czy obok? (d – odległość przed progiem; za progiem ujemna)
+                    double len = (Surf(rwyLatB, rwyLonB, rwyAlt) - Surf(rwyLatA, rwyLonA, rwyAlt)).magnitude;
+                    double past = -d;                                              // metry za progiem
+                    bool onRwy = past >= -50 && past <= len + 50 && Math.Abs(y) <= 60;
+                    double vsTd = Math.Abs(vessel.verticalSpeed);
+                    string verdict = onRwy
+                        ? "NA PASIE – " + past.ToString("F0", Inv) + " m za progiem, " + Math.Abs(y).ToString("F0", Inv) + " m od osi"
+                        : "POZA PASEM – " + (Math.Sqrt(Math.Max(0, Math.Max(-past, past - len)) * Math.Max(0, Math.Max(-past, past - len)) + y * y) / 1000).ToString("F1", Inv) +
+                          " km od pasa (" + (past < 0 ? (-past / 1000).ToString("F1", Inv) + " km przed progiem" : past > len ? ((past - len) / 1000).ToString("F1", Inv) + " km za końcem" : "na wysokości pasa") +
+                          ", " + (Math.Abs(y) / 1000).ToString("F1", Inv) + " km w bok)";
+                    LandingVerdict = verdict;
+                    FlightLogger.Event("Przyziemienie " + verdict + ", " + (vessel.srfSpeed * 3.6).ToString("F0", Inv) + " km/h, opadanie " + vsTd.ToString("F1", Inv) + " m/s");
+                    ScreenMessages.PostScreenMessage("Przyziemienie " + verdict, 8f, ScreenMessageStyle.UPPER_CENTER, onRwy ? Color.green : Color.red);
                     approachPhase = "dobieg";
                 }
                 HookSteer();

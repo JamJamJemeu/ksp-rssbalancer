@@ -856,6 +856,13 @@ namespace RSSBalancer
             if (run != null && !string.IsNullOrEmpty(run.PlanInfo)) GUILayout.Label("Zejście: " + run.PlanInfo);
             if (run != null && !string.IsNullOrEmpty(run.EntryInfo)) GUILayout.Label("Wejście: " + run.EntryInfo);
             if (run != null && !string.IsNullOrEmpty(run.ApproachInfo)) GUILayout.Label("Podejście: " + run.ApproachInfo);
+            if (run != null && !string.IsNullOrEmpty(run.LandingVerdict))
+            {
+                Color oc = GUI.color;
+                GUI.color = run.LandingVerdict.StartsWith("NA PASIE") ? Color.green : Color.red;
+                GUILayout.Label("Lądowanie: " + run.LandingVerdict);
+                GUI.color = oc;
+            }
             if (run != null && !string.IsNullOrEmpty(run.StallInfo))
             {
                 Color old = GUI.color;
