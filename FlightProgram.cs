@@ -1676,7 +1676,10 @@ namespace RSSBalancer
             Vector3d north = Vector3d.Exclude(up, b.transform.up).normalized;
             Vector3d east = Vector3d.Cross(up, north).normalized;
             double vs, hdg;
-            bool farAway = dThr > 30000 || Math.Abs(y) > 8000 || d < 3000;
+            // „za blisko / za progiem” tylko wysoko – lot 2026-11-20 16:19: Buran był idealnie na osi 3,6 km przed progiem
+            // na 950 m, a przy d < 3 km warunek „d < 3000” przełączył go na dolot do punktu 12 km przed pasem – odbił w bok
+            // i usiadł 4 km od pasa. Nisko na krótkiej prostej zostajemy na ścieżce.
+            bool farAway = dThr > 30000 || Math.Abs(y) > 8000 || (d < 3000 && h > 1500) || d < -1500;
 
             if (farAway && hr >= 20)
             {
