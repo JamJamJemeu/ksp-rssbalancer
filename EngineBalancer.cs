@@ -859,6 +859,10 @@ namespace RSSBalancer
             if (hud != FlightProgramRunner.BigHud) FlightProgramRunner.BigHud = hud;
             bool crt = GUILayout.Toggle(BuranCrt.Show, " Wyświetlacz Burana (CRT) – ekrany wejścia, podejścia i lądowania jak w kabinie");
             if (crt != BuranCrt.Show) BuranCrt.Show = crt;
+            if (GUILayout.Button("Pomiar terenu Bajkonuru (zapis do Logs)"))
+            {
+                try { status = TerrainSurvey.Run(); } catch (Exception e) { status = "Pomiar: błąd " + e.Message; Debug.LogException(e); }
+            }
             // lotnisko docelowe dla programów z „site = wybrane” (pasy z Lotniska.cfg i z Kerbal Konstructs)
             if (!airportsLoaded) { Airports.Refresh(); airportsLoaded = true; }
             GUILayout.BeginHorizontal();
