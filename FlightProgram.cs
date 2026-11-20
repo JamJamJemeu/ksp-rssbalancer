@@ -1348,7 +1348,7 @@ namespace RSSBalancer
             SetF(ap, "VertSpeedTarget", vessel.verticalSpeed);
             Call(ap, "EnableHeadingHold");
             Call(ap, "EnableVertSpeedHold");
-            approachOn = true; gearDone = false; landedDone = false; LandingVerdict = "";
+            approachOn = true; gearDone = false; landedDone = false; LandingVerdict = ""; rolloutNoseDown = false; chuteDone = false;
             FlightLogger.Event("Podejście: pas kurs " + rwyHeading.ToString("F0", Inv) + "°, odległość " + (RunwayDistance() / 1000).ToString("F1", Inv) + " km");
         }
 
@@ -1499,6 +1499,8 @@ namespace RSSBalancer
             double err = ((steerHdg - hdg + 540) % 360) - 180;
             double gain = Math.Min(1.0, 25.0 / Math.Max(1, vessel.srfSpeed));     // przy dużej prędkości mniejszy skręt kółka
             s.wheelSteer = Mathf.Clamp((float)(-err / 12.0 * gain), -1f, 1f);     // A (+1) = w lewo
+            // po przyziemieniu: elewony w dół – dociśnięcie przedniej goleni (jak w Buranie), żeby nie odbił się od pasa
+            if (rolloutNoseDown && vessel.srfSpeed > 15) s.pitch = -0.5f;
         }
 
         /// <summary>Kurs na punkt na osi pasa ~400 m przed nosem (koryguje też zjechanie w bok).</summary>
@@ -1515,7 +1517,7 @@ namespace RSSBalancer
         private void StopApproach()
         {
             if (!approachOn) return;
-            approachOn = false;
+            approachOn = false; rolloutNoseDown = false;
             if (recovering) { recovering = false; ReleaseAttitude(); }
             object ap = Airplane();
             if (ap == null) return;
@@ -1531,7 +1533,7 @@ namespace RSSBalancer
         /// podwozie poniżej 300 m, po przyziemieniu hamulce i spadochron.
         /// </summary>
         private double nextALog;
-        private bool excessTurn, brakesOut, lowEnergy;
+        private bool excessTurn, brakesOut, lowEnergy, rolloutNoseDown, chuteDone;
 
         // ------------------------------------------------------------------ wyprowadzanie z korkociągu
         // Lot 2026-11-19 21:20: przy przeciągnięciu autopilot samolotowy MechJeba (kurs + prędkość pionowa) tylko
@@ -1647,9 +1649,7 @@ namespace RSSBalancer
                     landedDone = true;
                     Call(ap, "DisableVertSpeedHold");
                     vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, false); brakesOut = false;   // hamulce kół dopiero poniżej ~250 km/h (lot 17:54: hamowanie przy 427 km/h → obrót na pasie)
-                    foreach (Part p in vessel.parts)
-                        foreach (ModuleParachute c in p.FindModulesImplementing<ModuleParachute>())
-                            if (c.deploymentState == ModuleParachute.deploymentStates.STOWED) c.Deploy();
+                    rolloutNoseDown = true;
                     // na pasie czy obok? (d – odległość przed progiem; za progiem ujemna)
                     double len = (Surf(rwyLatB, rwyLonB, rwyAlt) - Surf(rwyLatA, rwyLonA, rwyAlt)).magnitude;
                     double past = -d;                                              // metry za progiem
@@ -1668,6 +1668,15 @@ namespace RSSBalancer
                 HookSteer();
                 bool wb = vessel.srfSpeed < 70;
                 if (wb != brakesOut) { brakesOut = wb; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wb); }
+                // Spadochrony hamujące dopiero poniżej ~250 km/h (lot 18:57: spadochron na ogonie, nad środkiem masy,
+                // przy 330 km/h zadarł nos i Buran znów wzleciał na ~30 m – „kangur”). W Buranie: po opuszczeniu przedniej goleni.
+                if (wb && !chuteDone)
+                {
+                    chuteDone = true;
+                    foreach (Part p in vessel.parts)
+                        foreach (ModuleParachute c in p.FindModulesImplementing<ModuleParachute>())
+                            if (c.deploymentState == ModuleParachute.deploymentStates.STOWED) c.Deploy();
+                }
                 steerHdg = CenterlineHeading(pos, up);
                 SetF(ap, "HeadingTarget", steerHdg);
                 if (vessel.srfSpeed < 3) { steerHdg = double.NaN; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, true); StopApproach(); approachPhase = "stop"; }
@@ -1724,7 +1733,7 @@ namespace RSSBalancer
                 // wstępne na łagodną ścieżkę 1,5° z przyziemieniem ~600 m za progiem, poniżej 30 m końcowe wyrównanie.
                 // Lot 17:54: ścieżka celowała 900 m przed progiem, wyrównanie od 550 m nie zdążyło zejść – próg na 130 m
                 // przy 545 km/h, przyziemienie 2,5 km za progiem przy 427 km/h.
-                if (hr < 30 && Math.Abs(y) < 1500 && d < 2000) { vs = -Math.Max(0.8, hr * 0.08); approachPhase = "wyrównanie końcowe"; }
+                if (hr < 30 && Math.Abs(y) < 1500 && d < 2000) { vs = -Math.Max(1.5, hr * 0.1); approachPhase = "wyrównanie końcowe"; }   // 0,8 m/s dawało ~1,8 km „pływania” nad pasem
                 else if (hr < 20) { vs = -1.0; approachPhase = "przyziemienie"; }
                 else if (h < 450 && d < 8000 && d > -3000 && Math.Abs(y) < 1500)
                 {
