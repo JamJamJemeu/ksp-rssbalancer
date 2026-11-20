@@ -1530,7 +1530,7 @@ namespace RSSBalancer
         /// podwozie poniżej 300 m, po przyziemieniu hamulce i spadochron.
         /// </summary>
         private double nextALog;
-        private bool excessTurn, brakesOut;
+        private bool excessTurn, brakesOut, lowEnergy;
 
         // ------------------------------------------------------------------ wyprowadzanie z korkociągu
         // Lot 2026-11-19 21:20: przy przeciągnięciu autopilot samolotowy MechJeba (kurs + prędkość pionowa) tylko
@@ -1692,9 +1692,12 @@ namespace RSSBalancer
                 vs = -vh * Math.Tan(gamma * Math.PI / 180);
                 approachPhase = "dolot do pasa " + (togo / 1000).ToString("F0", Inv) + " km, schodzenie " + gamma.ToString("F0", Inv) + "°" +
                                 (gNeed < 4 ? " (za mało wysokości – nie doleci)" : "");
+                lowEnergy = gNeed < 8;
                 // NADMIAR ENERGII (jest wyżej, niż trzeba): krąży wokół punktu dolotu jak Buran/Shuttle na okręgu HAC,
                 // aż kąt potrzebny do dolotu spadnie; do tego hamulec aerodynamiczny (ster kierunku), gdy za szybko.
-                if (gNeed > 14 || (excessTurn && gNeed > 10))
+                // wejście w krążenie przy > 20°, wyjście przy < 16° (lot 2026-11-20 12:29: wyjście dopiero przy 10° zostawiło
+                // za mało energii – Buran usiadł 6 km przed progiem); resztę nadmiaru zjada stroma ścieżka i hamulec
+                if (gNeed > 20 || (excessTurn && gNeed > 16))
                 {
                     excessTurn = true;
                     hdg = (hdg + 75) % 360;
@@ -1725,8 +1728,16 @@ namespace RSSBalancer
                     vs = -vh * Math.Tan(19 * Math.PI / 180) + 0.08 * (ht - h);
                     approachPhase = "stroma ścieżka 19°";
                     double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
-                    if (vs > vsMin) { vs = vsMin; approachPhase = "PONIŻEJ ścieżki – najlepszy lot ślizgowy"; }
+                    lowEnergy = false;
+                    if (vs > vsMin) { vs = vsMin; approachPhase = "PONIŻEJ ścieżki – najlepszy lot ślizgowy"; lowEnergy = true; }
                 }
+            }
+            // Wyrównanie nad terenem zawsze poniżej ~550 m nad gruntem – także gdy Buran nie jest nad samym pasem
+            // (lot 12:29: usiadł 6 km przed progiem bez wyrównania, 385 km/h i 8 m/s opadania – wyrównanie było tylko „przy pasie”).
+            if (hr >= 20 && hr < 550 && !approachPhase.StartsWith("wyrównanie"))
+            {
+                vs = Math.Max(-25, -Math.Max(1.5, hr * 0.08));
+                approachPhase = "wyrównanie nad terenem";
             }
             SetF(ap, "HeadingTarget", hdg);
 
@@ -1740,7 +1751,9 @@ namespace RSSBalancer
             {
                 bool flare = approachPhase.StartsWith("wyrównanie");
                 // Buran: szybowanie przed lądowaniem 450–540 km/h (≈125–150 m/s), przyziemienie 300–320 km/h (≈86 m/s)
-                double easT = flare ? 1.15 * vSt : farAway ? Math.Max(150, 1.8 * vSt) : Math.Max(140, 1.6 * vSt);
+                // przy braku energii – prędkość najlepszego szybowania (~1,4× przeciągnięcia), nie nurkowanie po 140 m/s EAS
+                // (lot 12:29: trzymanie 140 m/s dawało opadanie 25–30 m/s i Buran zjadł zapas wysokości)
+                double easT = flare ? 1.15 * vSt : lowEnergy ? 1.4 * vSt : farAway ? Math.Max(150, 1.8 * vSt) : Math.Max(140, 1.6 * vSt);
                 if (easNow < easT)
                 {
                     vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - easNow));
