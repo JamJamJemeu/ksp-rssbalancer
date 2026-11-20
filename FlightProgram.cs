@@ -448,6 +448,26 @@ namespace RSSBalancer
             if (dv.magnitude > 0.1) { holdDir = dv.normalized; holdMode = Hold.Inertial; holdAttitude = true; }
         }
 
+        /// <summary>„askProgram = nazwa” – okno: kontynuować lot programem „nazwa” czy zostać na orbicie.</summary>
+        private void AskProgram(string name)
+        {
+            string msg = "Buran jest na orbicie roboczej " + (vessel.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (vessel.orbit.ApA / 1000).ToString("F0", Inv) +
+                         " km, nachylenie " + vessel.orbit.inclination.ToString("F1", Inv) + "°.\n\nKontynuować lot jak 1K1 („" + name + "”: impuls hamujący i lądowanie), czy zostać na orbicie?\n" +
+                         "(Powrót można też uruchomić później w zakładce Program.)";
+            FlightLogger.Event("Program lotu: pytanie – kontynuować „" + name + "” czy zostać na orbicie");
+            PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog("RSSBalancerAskProgram", msg, "Orbita robocza", HighLogic.UISkin,
+                    new DialogGUIButton("Kontynuuj 1K1 – powrót", () =>
+                    {
+                        FlightPrograms.Program np = FlightPrograms.Programs.Find(x => x.name == name);
+                        if (np == null) { LastMessage = "Brak programu „" + name + "”."; return; }
+                        FlightLogger.Event("Program lotu: wybrano kontynuację – „" + name + "”");
+                        Begin(np);
+                    }),
+                    new DialogGUIButton("Zostań na orbicie", () => { FlightLogger.Event("Program lotu: wybrano pozostanie na orbicie"); })),
+                false, HighLogic.UISkin);
+        }
+
         // ---- wybór lotniska: czy obecna orbita przelatuje nad nim? jeśli nie – pytanie o zmianę orbity
         public string SiteName = "";
 
@@ -1290,6 +1310,7 @@ namespace RSSBalancer
                         }
                     }
                     else if (key == "program") pendingProgram = val.Trim();
+                    else if (key == "askProgram" || key == "askprogram") AskProgram(val.Trim());
                     else if (key == "orbittarget")
                     {
                         // orbittarget = <perygeum km> <apogeum km> <nachylenie °>
