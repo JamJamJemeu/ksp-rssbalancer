@@ -857,6 +857,8 @@ namespace RSSBalancer
             }
             bool hud = GUILayout.Toggle(FlightProgramRunner.BigHud, " Duży licznik na ekranie (odległość, zasięg, manewr)");
             if (hud != FlightProgramRunner.BigHud) FlightProgramRunner.BigHud = hud;
+            bool crt = GUILayout.Toggle(BuranCrt.Show, " Wyświetlacz Burana (CRT) – ekrany wejścia, podejścia i lądowania jak w kabinie");
+            if (crt != BuranCrt.Show) BuranCrt.Show = crt;
             // lotnisko docelowe dla programów z „site = wybrane” (pasy z Lotniska.cfg i z Kerbal Konstructs)
             if (!airportsLoaded) { Airports.Refresh(); airportsLoaded = true; }
             GUILayout.BeginHorizontal();

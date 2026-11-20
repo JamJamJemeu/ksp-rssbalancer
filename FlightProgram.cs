@@ -512,6 +512,48 @@ namespace RSSBalancer
             return "Lotnisko: " + a.name + " – poza zasięgiem obecnej orbity (pytanie o zmianę orbity).";
         }
 
+        // ---- dane dla wyświetlacza Burana (BuranCrt.cs)
+        public bool SiteKnown { get { return siteSet; } }
+        public double SiteLatD { get { return siteLat; } }
+        public double SiteLonD { get { return siteLon; } }
+        public bool RunwayKnown { get { return rwySet; } }
+        public double RunwayAlt { get { return rwyAlt; } }
+        public bool ApproachActive { get { return approachOn; } }
+        public string ApproachPhase { get { return approachPhase; } }
+        public bool EntryActive { get { return entryGuide && vessel != null && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth; } }
+        public double EntryRangeM { get { return hudRMax; } }
+        public double EntryCos { get { return hudCos; } }
+        public double AoaCommand { get { return entryGuide ? gAoaCmd : double.NaN; } }
+        public double BankCommand { get { return entryGuide ? bankCmd : double.NaN; } }
+        public double StallEas { get { return vessel != null ? 70 * Math.Sqrt(Math.Max(10, vessel.totalMass) / 75.0) : 70; } }
+
+        /// <summary>Położenie względem pasa: d – odległość do progu wzdłuż osi (dodatnia przed progiem), y – w bok (dodatnia w prawo),
+        /// h – wysokość nad pasem, len – długość pasa, vAlong/vCross – prędkość wzdłuż osi / w bok.</summary>
+        public bool RunwayFrame(out double d, out double y, out double h, out double len, out double vAlong, out double vCross)
+        {
+            d = y = h = len = vAlong = vCross = double.NaN;
+            if (!rwySet || vessel == null) return false;
+            Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt), b = Surf(rwyLatB, rwyLonB, rwyAlt);
+            Vector3d ab = (b - a); len = ab.magnitude; ab /= Math.Max(1, len);
+            Vector3d pos = vessel.CoMD - vessel.mainBody.position, up = pos.normalized;
+            Vector3d thr, dir;
+            if (approachOn) { thr = thrPos; dir = rwyDir; }
+            else
+            {
+                Vector3d vh = Vector3d.Exclude(up, (Vector3d)vessel.srf_velocity);
+                if (vh.magnitude < 1) vh = Vector3d.Exclude(up, (Vector3d)vessel.transform.up);
+                if (Vector3d.Dot(vh, ab) >= 0) { thr = a; dir = ab; } else { thr = b; dir = -ab; }
+            }
+            dir = Vector3d.Exclude(up, dir).normalized;
+            Vector3d right = Vector3d.Cross(up, dir).normalized;
+            Vector3d rel = pos - thr;
+            d = -Vector3d.Dot(rel, dir); y = Vector3d.Dot(rel, right);
+            h = vessel.altitude - rwyAlt;
+            Vector3d v = vessel.srf_velocity;
+            vAlong = Vector3d.Dot(v, dir); vCross = Vector3d.Dot(v, right);
+            return true;
+        }
+
         // ---- duży licznik odległości od lotniska (na górze ekranu, gdy program albo podejście działa)
         private double hudRMax = double.NaN, hudDpsi = double.NaN, hudCos = double.NaN;
         private GUIStyle hudBig, hudSmall, hudShadowBig, hudShadowSmall;
