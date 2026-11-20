@@ -415,7 +415,7 @@ namespace RSSBalancer
         }
 
         // ---- duży licznik odległości od lotniska (na górze ekranu, gdy program albo podejście działa)
-        private double hudRMax = double.NaN, hudDpsi = double.NaN;
+        private double hudRMax = double.NaN, hudDpsi = double.NaN, hudCos = double.NaN;
         private GUIStyle hudBig, hudSmall, hudShadowBig, hudShadowSmall;
         private static void HudText(Rect r, string t, GUIStyle st, GUIStyle sh, Color c)
         {
@@ -458,8 +458,8 @@ namespace RSSBalancer
             bool inEntry = entryGuide && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth;
             if (inEntry && !double.IsNaN(hudRMax) && km > 1)
             {
-                double ratio = hudRMax / 1000 / km;
-                small += " · zasięg ~" + (hudRMax / 1000).ToString("F0", Inv) + " km (" + (ratio >= 1.1 ? "zapas" : ratio >= 0.95 ? "na styk" : "ZA MAŁO") + ")";
+                double ratio = hudCos > 1e-3 ? 1 / hudCos : 99;
+                small += " · zasięg do TAEM (M 2,5, 100 km przed) ~" + (hudRMax / 1000).ToString("F0", Inv) + " km (" + (ratio >= 1.1 ? "zapas" : ratio >= 0.95 ? "na styk" : "ZA MAŁO") + ")";
                 if (!approachOn) col = ratio >= 1.1 ? Color.green : ratio >= 0.95 ? Color.yellow : Color.red;
                 if (!double.IsNaN(hudDpsi)) small += " · lotnisko " + Math.Abs(hudDpsi).ToString("F0", Inv) + "° w " + (hudDpsi >= 0 ? "prawo" : "lewo");
             }
@@ -1812,10 +1812,15 @@ namespace RSSBalancer
         }
 
         /// <summary>Zasięg lotu ślizgowego w równowadze z L/D zależną od prędkości: ∫ L/D(v) · r/2 · d ln(1/(1 − v²/gr)).</summary>
+        // Koniec fazy wejścia jak w Buranie/Shuttle (TAEM): ~800 m/s (M 2,5), ~100 km przed lotniskiem, ~25–30 km wysokości.
+        // Lot 2026-11-20 10:11: prowadzenie celowało „dolecieć nad lotnisko z prędkością → 0” w modelu, który zaniża
+        // zasięg przy małych prędkościach (poddźwiękowo L/D ~5, a do tego wysokość) – Buran był nad lotniskiem na 46 km
+        // z M 4,5 i przeleciał 190 km dalej. Teraz energia jest wytracana do punktu TAEM, resztę robi podejście (krążenie).
+        private const double TaemV = 800, TaemDist = 100000;
         private static double RangeIntegral(double v0, double r, double g)
         {
             double s = 0, dv = 20;
-            for (double v = v0; v > 150; v -= dv)
+            for (double v = v0; v > TaemV; v -= dv)
             {
                 double e1 = Math.Min(0.999, v * v / (g * r)), e0 = Math.Min(0.999, (v - dv) * (v - dv) / (g * r));
                 s += LdTable(v - dv / 2) * r / 2 * (Math.Log(1 / (1 - e1)) - Math.Log(1 / (1 - e0)));
@@ -1890,11 +1895,13 @@ namespace RSSBalancer
             // przeskalowaną bieżącym pomiarem (ldF / tablica przy obecnej prędkości).
             double calib = ldSeen ? Math.Max(0.3, Math.Min(2.5, ldF / LdTable(V))) : 1.0;
             double rMax = RangeIntegral(V, r, g) * calib;
-            double cosS = rMax > 1 ? rgo / rMax : 1;
+            double rgoEff = Math.Max(0, rgo - TaemDist);
+            double cosS = rMax > 1 ? rgoEff / rMax : (rgoEff > 0 ? 2 : 0);
 
             double mag;
             string note = "";
             if (v.dynamicPressurekPa < 0.05) { mag = 0; note = "za rzadkie powietrze"; }
+            else if (V <= TaemV) { mag = 0; note = "TAEM – kurs na lotnisko"; cosS = 1; }
             else if (cosS >= 1) { mag = 0; note = "ZA MAŁO ENERGII – lecę bez przechylenia"; }
             else mag = Math.Acos(Math.Max(0, cosS)) * 180 / Math.PI;
             mag = Math.Min(mag, 80);
@@ -1925,8 +1932,10 @@ namespace RSSBalancer
             // Mała prędkość równoważna nisko: przechylenie zabiera nośność – ograniczamy je, żeby nie przeciągnąć
             double easG = Math.Sqrt(2 * v.dynamicPressurekPa * 1000 / 1.225);
             double vStG = 70 * Math.Sqrt(Math.Max(10, v.totalMass) / 75.0);
-            gEas = easG; gVst = vStG; hudRMax = rMax; hudDpsi = dpsi;
-            if (V < 2000 && easG < 1.7 * vStG)
+            gEas = easG; gVst = vStG; hudRMax = rMax; hudDpsi = dpsi; hudCos = cosS;
+            // tylko przy małym Machu (< ~2,5) – wyżej kąt natarcia trzyma sterowanie, a przechylenie jest potrzebne do
+            // wytracania energii i skrętu (lot 10:11: na 46 km przy M 4,5 EAS 53 m/s wyłączył przechylenie nad lotniskiem)
+            if (V < 800 && easG < 1.7 * vStG)
             {
                 mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : 20);
                 note += (note.Length > 0 ? ", " : "") + "mała prędkość – ograniczam przechylenie";
@@ -1980,7 +1989,7 @@ namespace RSSBalancer
                 // Ochrona prędkości nisko (lot 2026-11-19 21:20: przy M 2→1 na 27→21 km Buran trzymał α 10°, prędkość
                 // równoważna spadła do prędkości przeciągnięcia i wpadł w korkociąg). Poniżej 1,8× prędkości przeciągnięcia
                 // zmniejszamy kąt natarcia (do 3°) – nos idzie w dół, Buran schodzi stromiej i nabiera prędkości.
-                if (vessel.srfSpeed < 1500 && gEas > 0 && gEas < 1.8 * gVst)
+                if (vessel.srfSpeed < 800 && gEas > 0 && gEas < 1.8 * gVst)
                 {
                     float cut = (float)Math.Min(1.0, (1.8 * gVst - gEas) / (0.5 * gVst));
                     aoaTarget = Mathf.Max(3f, aoaTarget - cut * 9f);
