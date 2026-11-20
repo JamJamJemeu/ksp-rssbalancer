@@ -1649,8 +1649,9 @@ namespace RSSBalancer
             double err = ((steerHdg - hdg + 540) % 360) - 180;
             double gain = Math.Min(1.0, 25.0 / Math.Max(1, vessel.srfSpeed));     // przy dużej prędkości mniejszy skręt kółka
             s.wheelSteer = Mathf.Clamp((float)(-err / 12.0 * gain), -1f, 1f);     // A (+1) = w lewo
-            // po przyziemieniu: elewony w dół – dociśnięcie przedniej goleni (jak w Buranie), żeby nie odbił się od pasa
-            if (rolloutNoseDown && vessel.srfSpeed > 15) s.pitch = -0.5f;
+            // po przyziemieniu: elewony lekko w dół dopiero po opuszczeniu nosa (< ~290 km/h). Lot 23:23: −0,5 od razu przy
+            // 400 km/h mocno docisnął przednie koło („taczka”) – przy 330 km/h Buranem zarzuciło o 95° w lewo.
+            if (rolloutNoseDown && vessel.srfSpeed > 15 && vessel.srfSpeed < 80) s.pitch = -0.15f;
         }
 
         /// <summary>Kurs na punkt na osi pasa ~400 m przed nosem (koryguje też zjechanie w bok).</summary>
