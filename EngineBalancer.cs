@@ -855,6 +855,8 @@ namespace RSSBalancer
                 bool day = GUILayout.Toggle(run.RequireDaylight, " ☀ Lądowanie w dzień (Słońce ≥ 10° nad lotniskiem)");
                 if (day != run.RequireDaylight) { run.RequireDaylight = day; run.Replan(); status = day ? "Szukam przelotu z lądowaniem w dzień…" : "Najbliższy przelot, bez względu na porę dnia."; }
             }
+            bool hud = GUILayout.Toggle(FlightProgramRunner.BigHud, " Duży licznik na ekranie (odległość, zasięg, manewr)");
+            if (hud != FlightProgramRunner.BigHud) FlightProgramRunner.BigHud = hud;
             // lotnisko docelowe dla programów z „site = wybrane” (pasy z Lotniska.cfg i z Kerbal Konstructs)
             if (!airportsLoaded) { Airports.Refresh(); airportsLoaded = true; }
             GUILayout.BeginHorizontal();

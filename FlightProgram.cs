@@ -520,9 +520,27 @@ namespace RSSBalancer
             GUI.Label(new Rect(r.x + 2, r.y + 2, r.width, r.height), t, sh);
             st.normal.textColor = c; GUI.Label(r, t, st);
         }
+        // włącznik dużego licznika (zakładka Program); zapamiętywany w PluginData/hud.cfg
+        private static bool bigHud = true, bigHudLoaded;
+        private static string HudFile { get { return Path.Combine(Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), "RSSBalancer"), Path.Combine("PluginData", "hud.cfg")); } }
+        public static bool BigHud
+        {
+            get
+            {
+                if (!bigHudLoaded) { bigHudLoaded = true; try { if (File.Exists(HudFile)) bigHud = ConfigNode.Load(HudFile).GetValue("bigHud") != "False"; } catch { } }
+                return bigHud;
+            }
+            set
+            {
+                bigHud = value; bigHudLoaded = true;
+                try { ConfigNode n = new ConfigNode(); n.AddValue("bigHud", value ? "True" : "False"); n.Save(HudFile); } catch { }
+            }
+        }
+
         private void OnGUI()
         {
             if (!HighLogic.LoadedSceneIsFlight || vessel == null || vessel != FlightGlobals.ActiveVessel) return;
+            if (!BigHud) return;
             if (!Active && !approachOn) return;
             if (hudBig == null)
             {
