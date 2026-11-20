@@ -802,6 +802,9 @@ namespace RSSBalancer
         }
 
         // ================================================================== zakładka: Program lotu
+        private bool airportsLoaded, airportsOpen;
+        private Vector2 airportScroll;
+
         private void DrawProgramTab()
         {
             if (!progLoaded) { FlightPrograms.Reload(); progLoaded = true; }
@@ -851,6 +854,32 @@ namespace RSSBalancer
             {
                 bool day = GUILayout.Toggle(run.RequireDaylight, " ☀ Lądowanie w dzień (Słońce ≥ 10° nad lotniskiem)");
                 if (day != run.RequireDaylight) { run.RequireDaylight = day; run.Replan(); status = day ? "Szukam przelotu z lądowaniem w dzień…" : "Najbliższy przelot, bez względu na porę dnia."; }
+            }
+            // lotnisko docelowe dla programów z „site = wybrane” (pasy z Lotniska.cfg i z Kerbal Konstructs)
+            if (!airportsLoaded) { Airports.Refresh(); airportsLoaded = true; }
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Lotnisko docelowe: " + (Airports.Selected != null ? Airports.Selected.name : "—"));
+            if (GUILayout.Button(airportsOpen ? "▲ Zwiń" : "▼ Zmień", GUILayout.Width(90f))) airportsOpen = !airportsOpen;
+            GUILayout.EndHorizontal();
+            if (airportsOpen)
+            {
+                if (GUILayout.Button("Odśwież listę lotnisk", GUILayout.Width(180f))) { Airports.Refresh(); status = Airports.LastScan; }
+                Vessel av = FlightGlobals.ActiveVessel;
+                airportScroll = GUILayout.BeginScrollView(airportScroll, GUILayout.Height(160f));
+                foreach (Airports.Airport a in Airports.List)
+                {
+                    string dist = av != null ? " · " + (Airports.GreatCircleM(av.latitude, av.longitude, a.Lat, a.Lon) / 1000).ToString("F0") + " km" : "";
+                    string label = (a == Airports.Selected ? "● " : "○ ") + a.name + "  (" + a.Lat.ToString("F2") + "°, " + a.Lon.ToString("F2") + "°, pas " +
+                                   (a.length / 1000).ToString("F1") + " km, kurs " + a.Heading.ToString("F0") + "°" + (a.approxHeading ? "?" : "") + ")" + dist;
+                    if (GUILayout.Button(label, GUI.skin.label))
+                    {
+                        Airports.Select(a); airportsOpen = false;
+                        status = run != null ? run.AirportChosen(a) : "Lotnisko: " + a.name;
+                        if (run != null && run.Active) run.Replan();
+                    }
+                }
+                GUILayout.EndScrollView();
+                GUILayout.Label(Airports.LastScan + ". „?” przy kursie – kierunek pasa przybliżony (lepiej dopisać pas do Lotniska.cfg).");
             }
             if (run != null && !string.IsNullOrEmpty(run.SiteInfo)) GUILayout.Label(run.SiteInfo);
             if (run != null && !string.IsNullOrEmpty(run.PlanInfo)) GUILayout.Label("Zejście: " + run.PlanInfo);

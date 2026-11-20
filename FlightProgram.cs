@@ -414,6 +414,50 @@ namespace RSSBalancer
             if (dv.magnitude > 0.1) { holdDir = dv.normalized; holdMode = Hold.Inertial; holdAttitude = true; }
         }
 
+        // ---- wybór lotniska: czy obecna orbita przelatuje nad nim? jeśli nie – pytanie o zmianę orbity
+        public string SiteName = "";
+
+        /// <summary>Orbita pod lotnisko: zostaje perygeum/apogeum (albo 251×263, gdy niższe niż 200 km), nachylenie co najmniej szerokość lotniska + 1°.</summary>
+        public bool OrbitForAirport(Airports.Airport a, out double pe, out double apo, out double inc)
+        {
+            pe = 251; apo = 263; inc = 51.6;
+            if (a == null) return false;
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v != null && v.orbit != null && v.orbit.PeA > 200000 && v.orbit.eccentricity < 0.05) { pe = v.orbit.PeA / 1000; apo = v.orbit.ApA / 1000; }
+            double cur = v != null && v.orbit != null ? v.orbit.inclination : 51.6;
+            inc = Math.Max(cur, Math.Abs(a.Lat) + 1.0);
+            return true;
+        }
+
+        /// <summary>Wołane po wyborze lotniska w zakładce Program. Zwraca opis; przy niedostępnym lotnisku pokazuje okno z pytaniem.</summary>
+        public string AirportChosen(Airports.Airport a)
+        {
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (a == null) return "";
+            if (v == null || v.orbit == null || v.situation != Vessel.Situations.ORBITING) return "Lotnisko: " + a.name + " (" + a.Lat.ToString("F2") + "°, " + a.Lon.ToString("F2") + "°).";
+            double R = v.mainBody.Radius / 1000, xr = 200;
+            double inc = v.orbit.inclination > 90 ? 180 - v.orbit.inclination : v.orbit.inclination;
+            double reach = inc + xr / R * 180 / Math.PI;
+            if (reach >= Math.Abs(a.Lat)) return "Lotnisko: " + a.name + " – obecna orbita (nachylenie " + v.orbit.inclination.ToString("F1") + "°) przelatuje w zasięgu. Uruchom „Buran – powrót na wybrane lotnisko”.";
+            double pe, apo, ti;
+            OrbitForAirport(a, out pe, out apo, out ti);
+            double dv = 2 * v.orbit.orbitalSpeed * Math.Sin(Math.Abs(ti - v.orbit.inclination) * Math.PI / 360);
+            string msg = "Lotnisko „" + a.name + "” leży na szerokości " + Math.Abs(a.Lat).ToString("F1") + "°, a orbita ma nachylenie " + v.orbit.inclination.ToString("F1") +
+                         "° – nigdy nie przeleci w jego zasięgu.\n\nUstawić orbitę " + pe.ToString("F0") + " × " + apo.ToString("F0") + " km, nachylenie " + ti.ToString("F1") +
+                         "°?\n(zmiana nachylenia ≈ " + dv.ToString("F0") + " m/s" + (dv > 700 ? " – więcej niż paliwa w Buranie; program sam wybierze tańszy wariant, ale zwykle potrzebny cheat paliwa" : "") + ")";
+            PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog("RSSBalancerOrbitForAirport", msg, "Orbita pod lotnisko", HighLogic.UISkin,
+                    new DialogGUIButton("Tak – ustaw orbitę", () =>
+                    {
+                        FlightPrograms.Program op = FlightPrograms.Programs.Find(x => x.node != null && x.node.HasValue("orbitForAirport"));
+                        if (op == null) { LastMessage = "Brak programu „Buran – orbita pod wybrane lotnisko” w folderze Programs."; return; }
+                        Begin(op);
+                    }),
+                    new DialogGUIButton("Nie", () => { })),
+                false, HighLogic.UISkin);
+            return "Lotnisko: " + a.name + " – poza zasięgiem obecnej orbity (pytanie o zmianę orbity).";
+        }
+
         // ---- duży licznik odległości od lotniska (na górze ekranu, gdy program albo podejście działa)
         private double hudRMax = double.NaN, hudDpsi = double.NaN, hudCos = double.NaN;
         private GUIStyle hudBig, hudSmall, hudShadowBig, hudShadowSmall;
@@ -453,7 +497,7 @@ namespace RSSBalancer
                 big = "DO PROGU " + (RunwayDistance() / 1000).ToString(RunwayDistance() < 100000 ? "F1" : "F0", Inv) + " km";
             else if (vessel.Landed && LandingVerdict.Length > 0)
             { big = LandingVerdict.StartsWith("NA PASIE") ? "NA PASIE" : "POZA PASEM"; col = LandingVerdict.StartsWith("NA PASIE") ? Color.green : Color.red; }
-            else big = "DO LOTNISKA " + km.ToString(km < 100 ? "F1" : "F0", Inv) + " km";
+            else big = (SiteName.Length > 0 ? SiteName.ToUpperInvariant() + ": " : "DO LOTNISKA ") + km.ToString(km < 100 ? "F1" : "F0", Inv) + " km";
             string small = "wys. " + (vessel.altitude / 1000).ToString("F1", Inv) + " km · " + vessel.srfSpeed.ToString("F0", Inv) + " m/s";
             bool inEntry = entryGuide && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth;
             if (inEntry && !double.IsNaN(hudRMax) && km > 1)
@@ -486,6 +530,19 @@ namespace RSSBalancer
             burnOn = false;
             siteSet = false;
             string site = p.node != null ? p.node.GetValue("site") : null;
+            string rwyCfg = p.node != null ? p.node.GetValue("runway") : null;
+            bool chosen = (site != null && site.Trim().ToLowerInvariant() == "wybrane") || (rwyCfg != null && rwyCfg.Trim().ToLowerInvariant() == "wybrane");
+            if (chosen)
+            {
+                if (Airports.List.Count == 0) Airports.Refresh();
+                Airports.Airport ap = Airports.Selected;
+                if (ap == null) { Running = null; LastMessage = "Nie wybrano lotniska (zakładka Program → Lotnisko docelowe)."; return; }
+                site = ap.Lat.ToString("F5", CultureInfo.InvariantCulture) + " " + ap.Lon.ToString("F5", CultureInfo.InvariantCulture);
+                rwyCfg = ap.latA.ToString("F5", CultureInfo.InvariantCulture) + " " + ap.lonA.ToString("F5", CultureInfo.InvariantCulture) + " " +
+                         ap.latB.ToString("F5", CultureInfo.InvariantCulture) + " " + ap.lonB.ToString("F5", CultureInfo.InvariantCulture) + " " + ap.alt.ToString("F1", CultureInfo.InvariantCulture);
+                SiteName = ap.name;
+            }
+            else SiteName = "";
             if (site != null)
             {
                 string[] ll = site.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -500,7 +557,7 @@ namespace RSSBalancer
             if (p.node != null && p.node.HasValue("daylight")) RequireDaylight = p.node.GetValue("daylight").Trim().ToLowerInvariant() == "true";
             planUT = double.NaN; nextPlan = 0; PlanInfo = "";
             approachOn = false; rwySet = false;
-            string rwy = p.node != null ? p.node.GetValue("runway") : null;
+            string rwy = rwyCfg;
             if (rwy != null)
             {
                 string[] r = rwy.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1192,8 +1249,17 @@ namespace RSSBalancer
                     {
                         // orbittarget = <perygeum km> <apogeum km> <nachylenie °>
                         string[] w = val.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (w.Length < 3) throw new Exception("orbittarget = perygeum apogeum nachylenie");
-                        StartManeuver(Num(w[0], 251), Num(w[1], 263), Num(w[2], 51.6));
+                        if (w.Length == 1 && w[0].ToLowerInvariant() == "auto")
+                        {
+                            double pe, apo, inc;
+                            if (!OrbitForAirport(Airports.Selected, out pe, out apo, out inc)) throw new Exception("nie wybrano lotniska");
+                            StartManeuver(pe, apo, inc);
+                        }
+                        else
+                        {
+                            if (w.Length < 3) throw new Exception("orbittarget = perygeum apogeum nachylenie | auto");
+                            StartManeuver(Num(w[0], 251), Num(w[1], 263), Num(w[2], 51.6));
+                        }
                         LastMessage += "\nManewr: " + ManeuverInfo;
                     }
                     else if (key == "sas") vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, val == "on");
