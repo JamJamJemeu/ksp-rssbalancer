@@ -138,8 +138,9 @@ namespace RSSBalancer
         //     nachylenia (np. 0° → 51,6°) wyraźnie taniej, ale trwa dłużej (R dobierane tak, by całość < 3 doby).
         // Impulsy wektorowe w pętli zamkniętej: co klatkę liczymy prędkość docelową w bieżącym punkcie, nos na Δv,
         // przepustnica maleje przy końcówce, koniec przy |Δv| < 0,3 m/s. Bez cheatu sprawdzamy, czy starczy paliwa.
-        private enum MPh { None, WaitNodePlane, BurnPlane, WaitPeA, BurnA, WaitApP, BurnP, WaitNodeRaise, BurnRaise, WaitApoCombo, BurnCombo, WaitPeLower, BurnLower, Done }
+        private enum MPh { None, WaitNodePlane, BurnPlane, WaitPeA, BurnA, WaitApP, BurnP, WaitNodeRaise, BurnRaise, WaitApoCombo, BurnCombo, WaitPeLower, BurnLower, WaitApRaiseAp, BurnApRaiseAp, Done }
         private MPh mph = MPh.None;
+        private string pendingProgram;
         private readonly List<MPh> mplan = new List<MPh>();
         private int mIdx;
         private double mComboRa, mPe, mAp, mInc, mRhi, mBurnUT = double.NaN, mLastDv = double.MaxValue, mWarpedFor = double.NaN;
@@ -184,6 +185,19 @@ namespace RSSBalancer
             mRhi = bestR;
             double need = mBi ? dvB : dvA;
             mplan.Clear();
+            // Tor suborbitalny (perygeum w atmosferze, np. po Energii −11 × 154 km): jak w 1K1 – ОДУ-1 w apogeum
+            // podnosi drugą stronę orbity do apogeum docelowego, ОДУ-2 w nowym apogeum podnosi perygeum.
+            double atmTop = b.atmosphere ? b.atmosphereDepth : 0;
+            if (o.PeA < atmTop && o.ApA > atmTop)
+            {
+                mBi = false;
+                if (Math.Abs(di) > 0.05) mplan.Add(MPh.WaitNodePlane);
+                mplan.Add(MPh.WaitApRaiseAp); mplan.Add(MPh.WaitApP); mplan.Add(MPh.Done);
+                mIdx = 0; mph = mplan[0]; mBurnUT = double.NaN; mWarpedFor = double.NaN;
+                ManeuverInfo = "z toru suborbitalnego: ОДУ-1 w apogeum (apogeum → " + apKm.ToString("F0", Inv) + " km), ОДУ-2 w nowym apogeum (perygeum → " + peKm.ToString("F0", Inv) + " km)";
+                FlightLogger.Event("Manewr orbitalny: cel " + peKm.ToString("F0", Inv) + "×" + apKm.ToString("F0", Inv) + " km – " + ManeuverInfo);
+                return;
+            }
             if (mBi) { mplan.Add(MPh.WaitNodeRaise); mplan.Add(MPh.WaitApoCombo); mplan.Add(MPh.WaitPeLower); }
             else
             {
@@ -378,6 +392,26 @@ namespace RSSBalancer
                     if (AxisBurn(curV, tgt, holdDir == Vector3d.forward)) NextManeuverPhase();
                     break;
                 }
+                case MPh.WaitApRaiseAp:
+                {
+                    double tgt = R + mAp * 1000;
+                    if (double.IsNaN(mBurnUT))
+                    {
+                        double ra = o.ApR;
+                        double dv = Math.Sqrt(Mu * (2 / ra - 2 / (ra + tgt))) - Math.Sqrt(Mu * (2 / ra - 1 / o.semiMajorAxis));
+                        mBurnUT = now + o.timeToAp - 0.5 * dv / a;
+                        if (mBurnUT < now + 5) mBurnUT = now + 5;
+                        ManeuverInfo = "ОДУ-1 w apogeum: apogeum do " + mAp.ToString("F0", Inv) + " km, Δv " + dv.ToString("F0", Inv) + " m/s";
+                    }
+                    holdDir = Vector3d.forward; holdMode = Hold.Orbit; holdAttitude = true;
+                    ManeuverWarp(mBurnUT);
+                    if (now >= mBurnUT) { mph = MPh.BurnApRaiseAp; FlightLogger.Event("Manewr orbitalny: start – " + ManeuverInfo); }
+                    break;
+                }
+                case MPh.BurnApRaiseAp:
+                    // ApR rośnie monotonicznie (najpierw = punkt impulsu, po przejściu przez orbitę kołową – druga strona)
+                    if (AxisBurn(o.ApR, R + mAp * 1000, true)) NextManeuverPhase();
+                    break;
                 case MPh.WaitApoCombo:
                 {
                     // w apogeum (wysoko, wolno): płaszczyzna + perygeum razem
@@ -480,7 +514,7 @@ namespace RSSBalancer
             if (mph != MPh.None && mph != MPh.Done)
             {
                 double tb = !double.IsNaN(mBurnUT) ? mBurnUT - Planetarium.GetUniversalTime() : double.NaN;
-                bool burning = mph == MPh.BurnPlane || mph == MPh.BurnRaise || mph == MPh.BurnA || mph == MPh.BurnP || mph == MPh.BurnCombo || mph == MPh.BurnLower;
+                bool burning = mph == MPh.BurnApRaiseAp || mph == MPh.BurnPlane || mph == MPh.BurnRaise || mph == MPh.BurnA || mph == MPh.BurnP || mph == MPh.BurnCombo || mph == MPh.BurnLower;
                 string bigM = burning ? "IMPULS" : !double.IsNaN(tb) && tb > 0 ? "IMPULS ZA " + KSPUtil.PrintTimeCompact(tb, false) : "MANEWR";
                 string smallM = ManeuverInfo + " · orbita " + (vessel.orbit.PeA / 1000).ToString("F0", Inv) + "×" + (vessel.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + vessel.orbit.inclination.ToString("F1", Inv) + "° → cel " +
                                 mPe.ToString("F0", Inv) + "×" + mAp.ToString("F0", Inv) + " km, " + mInc.ToString("F1", Inv) + "°";
@@ -801,6 +835,16 @@ namespace RSSBalancer
                 s.activatedAt = vessel.missionTime;
                 lastActivation = Planetarium.GetUniversalTime();
                 Current++;
+                if (pendingProgram != null)
+                {
+                    // „program = nazwa” – przejście do kolejnego programu (np. po wynoszeniu od razu powrót)
+                    string pn = pendingProgram; pendingProgram = null;
+                    FlightPrograms.Program np = FlightPrograms.Programs.Find(x => x.name == pn);
+                    if (np == null) { LastMessage += "\nBrak programu „" + pn + "”."; FlightLogger.Event("Program lotu: brak programu „" + pn + "”"); return; }
+                    Finish();
+                    Begin(np);
+                    return;
+                }
             }
             if (!Active) Finish();
         }
@@ -1245,6 +1289,7 @@ namespace RSSBalancer
                             FlightLogger.Event("Program lotu: plan zejścia – " + PlanInfo);
                         }
                     }
+                    else if (key == "program") pendingProgram = val.Trim();
                     else if (key == "orbittarget")
                     {
                         // orbittarget = <perygeum km> <apogeum km> <nachylenie °>
