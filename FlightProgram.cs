@@ -1497,7 +1497,8 @@ namespace RSSBalancer
             Vector3d fwd = (Vector3d)vessel.ReferenceTransform.up;
             double hdg = HeadingOf(fwd, up, north, east);
             double err = ((steerHdg - hdg + 540) % 360) - 180;
-            s.wheelSteer = Mathf.Clamp((float)(-err / 12.0), -1f, 1f);     // A (+1) = w lewo
+            double gain = Math.Min(1.0, 25.0 / Math.Max(1, vessel.srfSpeed));     // przy dużej prędkości mniejszy skręt kółka
+            s.wheelSteer = Mathf.Clamp((float)(-err / 12.0 * gain), -1f, 1f);     // A (+1) = w lewo
         }
 
         /// <summary>Kurs na punkt na osi pasa ~400 m przed nosem (koryguje też zjechanie w bok).</summary>
@@ -1505,7 +1506,7 @@ namespace RSSBalancer
         {
             Vector3d rel = pos - thrPos;
             double along = Vector3d.Dot(rel, rwyDir);
-            Vector3d aim = thrPos + rwyDir * (along + 400);
+            Vector3d aim = thrPos + rwyDir * (along + Math.Max(400, 8 * vessel.srfSpeed));   // szybko – dalszy punkt, łagodniej
             Vector3d to = aim - pos; to -= up * Vector3d.Dot(to, up);
             Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
             return HeadingOf(to, up, north, east);
@@ -1645,7 +1646,7 @@ namespace RSSBalancer
                 {
                     landedDone = true;
                     Call(ap, "DisableVertSpeedHold");
-                    vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, true);
+                    vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, false); brakesOut = false;   // hamulce kół dopiero poniżej ~250 km/h (lot 17:54: hamowanie przy 427 km/h → obrót na pasie)
                     foreach (Part p in vessel.parts)
                         foreach (ModuleParachute c in p.FindModulesImplementing<ModuleParachute>())
                             if (c.deploymentState == ModuleParachute.deploymentStates.STOWED) c.Deploy();
@@ -1665,9 +1666,11 @@ namespace RSSBalancer
                     approachPhase = "dobieg";
                 }
                 HookSteer();
+                bool wb = vessel.srfSpeed < 70;
+                if (wb != brakesOut) { brakesOut = wb; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wb); }
                 steerHdg = CenterlineHeading(pos, up);
                 SetF(ap, "HeadingTarget", steerHdg);
-                if (vessel.srfSpeed < 3) { steerHdg = double.NaN; StopApproach(); approachPhase = "stop"; }
+                if (vessel.srfSpeed < 3) { steerHdg = double.NaN; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, true); StopApproach(); approachPhase = "stop"; }
                 return;
             }
 
@@ -1712,22 +1715,27 @@ namespace RSSBalancer
             {
                 // kurs: punkt na osi pasa przed nami (marchewka)
                 double L = Math.Max(1500, Math.Min(8000, Math.Max(d, 0) * 0.4));
-                Vector3d carrot = thrPos + rwyDir * (-(Math.Max(d, 0) - L));
+                Vector3d carrot = thrPos + rwyDir * (L - d);     // L przed Buranem na osi (także za progiem – lot 17:54: punkt stał 1,5 km za progiem i po jego minięciu kurs uciekł o 20°)
                 Vector3d to = carrot - pos;
                 to -= up * Vector3d.Dot(to, up);
                 hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
 
-                if (hr < 20) { vs = -1.0; approachPhase = "przyziemienie"; }
-                else if (h < 550 && d < 6000)
+                // Końcówka jak w Buranie/Shuttle: stroma ścieżka 19° celuje ~2,5 km przed progiem, na ~450 m wyrównanie
+                // wstępne na łagodną ścieżkę 1,5° z przyziemieniem ~600 m za progiem, poniżej 30 m końcowe wyrównanie.
+                // Lot 17:54: ścieżka celowała 900 m przed progiem, wyrównanie od 550 m nie zdążyło zejść – próg na 130 m
+                // przy 545 km/h, przyziemienie 2,5 km za progiem przy 427 km/h.
+                if (hr < 30 && Math.Abs(y) < 1500 && d < 2000) { vs = -Math.Max(0.8, hr * 0.08); approachPhase = "wyrównanie końcowe"; }
+                else if (hr < 20) { vs = -1.0; approachPhase = "przyziemienie"; }
+                else if (h < 450 && d < 8000 && d > -3000 && Math.Abs(y) < 1500)
                 {
                     double ht = (d + 600) * Math.Tan(1.5 * Math.PI / 180);
                     vs = -vh * Math.Tan(1.5 * Math.PI / 180) + 0.15 * (ht - h);
-                    vs = Math.Max(vs, -25); approachPhase = "wyrównanie (1,5°)";
+                    vs = Math.Max(vs, -30); approachPhase = "wyrównanie (1,5°)";
                 }
                 else
                 {
                     // stroma ścieżka jak w Buranie: 17–22° (tu 19°), punkt kluczowy ~12,5 km przed pasem na ~4 km
-                    double ht = (d - 900) * Math.Tan(19 * Math.PI / 180);
+                    double ht = (d - 2500) * Math.Tan(19 * Math.PI / 180);
                     vs = -vh * Math.Tan(19 * Math.PI / 180) + 0.08 * (ht - h);
                     approachPhase = "stroma ścieżka 19°";
                     double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
@@ -1737,7 +1745,7 @@ namespace RSSBalancer
             }
             // Wyrównanie nad terenem zawsze poniżej ~550 m nad gruntem – także gdy Buran nie jest nad samym pasem
             // (lot 12:29: usiadł 6 km przed progiem bez wyrównania, 385 km/h i 8 m/s opadania – wyrównanie było tylko „przy pasie”).
-            if (hr >= 20 && hr < 550 && !approachPhase.StartsWith("wyrównanie"))
+            if (hr >= 20 && hr < 450 && !approachPhase.StartsWith("wyrównanie"))
             {
                 vs = Math.Max(-25, -Math.Max(1.5, hr * 0.08));
                 approachPhase = "wyrównanie nad terenem";
@@ -1777,7 +1785,7 @@ namespace RSSBalancer
                 SetF(ap, "RollLimit", rollLim);
                 // hamulec aerodynamiczny przy nadmiarze prędkości
                 // hamulec (rozchylony ster kierunku w Buranie) trzyma prędkość na stromej ścieżce
-                bool wantBrakes = easNow > (farAway ? 200 : 155) || (excessTurn && easNow > 170);
+                bool wantBrakes = easNow > (farAway ? 200 : 155) || (excessTurn && easNow > 170) || (flare && easNow > 1.25 * vSt && hr > 15);
                 if (wantBrakes != brakesOut) { brakesOut = wantBrakes; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wantBrakes); }
             }
             vs = Math.Max(-250, Math.Min(0, vs));
