@@ -1794,7 +1794,7 @@ namespace RSSBalancer
             patWps.Add(new Vector2d(len + 9000, -6000));    // 1. i 2. zakręt – przecięcie, potem z wiatrem
             patWps.Add(new Vector2d(-14000, -6000));        // koniec odcinka z wiatrem
             patWps.Add(new Vector2d(-16000, 0));            // 3. i 4. zakręt – baza, wyjście na prostą
-            patWp = 0; patAirborne = false; patGearUp = false;
+            patWp = 0; patAirborne = false; patGearUp = false; airUT = -1; rotTarget = double.NaN; lastPitch = double.NaN;
             foreach (Part p in vessel.parts)
                 foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
                     if (!e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Activate();
@@ -1841,14 +1841,21 @@ namespace RSSBalancer
 
             if (!patAirborne)
             {
-                double vr = 1.45 * vSt;                     // prędkość oderwania (lot 2026-11-21 15:49: 1,35× – za mało zapasu)
+                // Lot 2026-11-21 20:06: OK-GLI (93 t, 4× AL-31) sam unosi się z pasa przy ~80 m/s EAS przy nosie na 0,5°.
+                // Przy oderwaniu 1,45× (113 m/s) trzymanie nosa „w dół” dociskało go do pasa → podskoki, uderzenie nosem,
+                // przewrotka. Teraz obrót od ~0,95× przeciągnięcia (wg wzoru), łagodnie do 7°, a po pierwszym oderwaniu
+                // nasz FBW trzyma kąt (z tłumieniem) aż do 30 m – bez pchania nosa w dół przy ziemi.
+                double vr = 0.95 * vSt;
                 HookSteer();
                 steerHdg = CenterlineHeading(pos, up);
                 SetF(ap, "HeadingTarget", steerHdg);
-                SetF(ap, "VertSpeedTarget", easNow > vr ? 4.0 : 0.0);
-                takeoffRoll = true; takeoffRotate = easNow > vr;
-                patternPhase = "rozbieg  EAS " + easNow.ToString("F0", Inv) + " / oderwanie " + vr.ToString("F0", Inv) + " m/s";
-                if (!vessel.Landed && h > 30) { patAirborne = true; steerHdg = double.NaN; takeoffRoll = false; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
+                double nowUT = Planetarium.GetUniversalTime();
+                if (!vessel.Landed && airUT < 0) { airUT = nowUT; FlightLogger.Event("Krąg: koła w powietrzu, EAS " + easNow.ToString("F0", Inv) + " m/s, h " + h.ToString("F0", Inv) + " m"); }
+                takeoffRoll = true; takeoffRotate = easNow > vr || airUT >= 0;
+                SetF(ap, "VertSpeedTarget", takeoffRotate ? 2.0 : 0.0);
+                patternPhase = (airUT >= 0 ? "oderwanie – trzymam 7°, h " + h.ToString("F0", Inv) + " m" : "rozbieg") + "  EAS " + easNow.ToString("F0", Inv) + " / obrót " + vr.ToString("F0", Inv) + " m/s";
+                if (!vessel.Landed && (h > 30 || (h > 10 && nowUT - airUT > 4)))
+                { patAirborne = true; steerHdg = double.NaN; takeoffRoll = false; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s, h " + h.ToString("F0", Inv) + " m"); }
                 return;
             }
             if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
@@ -1906,6 +1913,7 @@ namespace RSSBalancer
         // główne prawie bez nacisku nie trzymały kierunku i Buran zjechał w prawo z pasa). Na rozbiegu sami trzymamy
         // pochylenie: nos poziomo (+0,5°), od prędkości oderwania – podniesienie nosa do 8°.
         private bool takeoffRoll, takeoffRotate;
+        private double airUT = -1, rotTarget = double.NaN, lastPitch = double.NaN;
 
         private void HookSteer()
         {
@@ -1960,8 +1968,22 @@ namespace RSSBalancer
             if (takeoffRoll && patternOn)
             {
                 double pitchDeg = Math.Asin(Math.Max(-1, Math.Min(1, Vector3d.Dot(fwd, up)))) * 180 / Math.PI;
-                double target = takeoffRotate ? 8.0 : 0.5;
-                s.pitch = Mathf.Clamp((float)((target - pitchDeg) * (takeoffRotate ? 0.08 : 0.25)), -0.3f, 0.5f);
+                double dt = Math.Max(0.005, TimeWarp.fixedDeltaTime);
+                double rate = double.IsNaN(lastPitch) ? 0 : (pitchDeg - lastPitch) / dt;   // °/s, + = nos w górę
+                lastPitch = pitchDeg;
+                if (!takeoffRotate)
+                {
+                    rotTarget = double.NaN;
+                    s.pitch = Mathf.Clamp((float)((0.5 - pitchDeg) * 0.25 - rate * 0.05), -0.15f, 0.5f);
+                }
+                else
+                {
+                    // cel rośnie od bieżącego kąta o 1,5°/s do 7°; PD z tłumieniem prędkości kątowej, przy ziemi nos najwyżej lekko w dół
+                    if (double.IsNaN(rotTarget)) rotTarget = Math.Max(0.5, pitchDeg);
+                    rotTarget = Math.Min(7.0, rotTarget + 1.5 * dt);
+                    float lo = vessel.Landed || vessel.radarAltitude < 15 ? -0.08f : -0.25f;
+                    s.pitch = Mathf.Clamp((float)((rotTarget - pitchDeg) * 0.06 - rate * 0.10), lo, 0.4f);
+                }
             }
         }
 
