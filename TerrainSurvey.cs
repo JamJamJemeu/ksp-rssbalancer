@@ -37,6 +37,153 @@ namespace RSSBalancer
             return b.pqsController.GetSurfaceHeight(rad) - b.Radius;
         }
 
+        private static string V(Vector3 v) { return v.x.ToString("F4", Inv) + "," + v.y.ToString("F4", Inv) + "," + v.z.ToString("F4", Inv); }
+
+        // h = c0 + c1·a + c2·c + c3·r²  (najmniejsze kwadraty, równania normalne 4×4)
+        private static double[] Fit(List<double[]> pts, bool quad)
+        {
+            int n = quad ? 4 : 3; double[,] M = new double[n, n + 1];
+            foreach (double[] p in pts)
+            {
+                double[] f = quad ? new[] { 1, p[0], p[1], p[0] * p[0] + p[1] * p[1] } : new[] { 1, p[0], p[1] };
+                for (int i = 0; i < n; i++) { for (int j = 0; j < n; j++) M[i, j] += f[i] * f[j]; M[i, n] += f[i] * p[2]; }
+            }
+            for (int i = 0; i < n; i++)
+            {
+                int piv = i; for (int r = i + 1; r < n; r++) if (Math.Abs(M[r, i]) > Math.Abs(M[piv, i])) piv = r;
+                for (int k = 0; k <= n; k++) { double t = M[i, k]; M[i, k] = M[piv, k]; M[piv, k] = t; }
+                for (int r = 0; r < n; r++) if (r != i) { double q = M[r, i] / M[i, i]; for (int k = 0; k <= n; k++) M[r, k] -= q * M[i, k]; }
+            }
+            double[] c = new double[4]; for (int i = 0; i < n; i++) c[i] = M[i, n] / M[i, i];
+            return c;
+        }
+
+        private static double Eval(double[] c, double a, double cc) { return c[0] + c[1] * a + c[2] * cc + c[3] * (a * a + cc * cc); }
+
+        private static void Leveling(StringBuilder sb, CelestialBody b, List<object> mapInst, List<object> inst, Func<double, double, double> MapAlt)
+        {
+            if (mapInst.Count == 0) return;
+            GameObject go = F(mapInst[0], "gameObject") as GameObject;
+            if (go == null) return;
+            Transform t = go.transform;
+            Vector3d piv = t.position;
+            Vector3d up = (piv - b.position).normalized;
+            Vector3d north = Vector3d.Exclude(up, b.transform.up).normalized;
+            Vector3d east = Vector3d.Cross(up, north).normalized; // kierunek nieistotny dla dopasowania – tylko spójny
+            double pLat = b.GetLatitude(piv), pLon = b.GetLongitude(piv);
+
+            sb.AppendLine();
+            sb.AppendLine("== POZIOMOWANIE MAPY");
+            sb.AppendLine("transform mapy: rodzic " + (t.parent != null ? t.parent.name : "(brak)") + ", localEuler " + V(t.localEulerAngles) + ", localPos " + V(t.localPosition) +
+                          ", skala " + V(t.localScale) + ", Orientation(KK) " + Convert.ToString(F(mapInst[0], "Orientation"), Inv));
+            sb.AppendLine("środek mapy: szer " + pLat.ToString("F5", Inv) + " dł " + pLon.ToString("F5", Inv) + " wys " + b.GetAltitude(piv).ToString("F2", Inv));
+
+            // gęsta siatka 1 km wokół środka, wysokości mapy i terenu
+            List<double[]> pts = new List<double[]>();
+            List<double[]> ter = new List<double[]>();
+            for (int i = -26; i <= 26; i++)
+                for (int j = -26; j <= 26; j++)
+                {
+                    Vector3d hp = piv + east * (i * 1000.0) + north * (j * 1000.0);
+                    double lat = b.GetLatitude(hp), lon = b.GetLongitude(hp);
+                    double m = MapAlt(lat, lon), tr = Terrain(b, lat, lon);
+                    ter.Add(new[] { i * 1000.0, j * 1000.0, tr });
+                    if (!double.IsNaN(m)) pts.Add(new[] { i * 1000.0, j * 1000.0, m, tr });
+                }
+            // dopasowanie odporne: odrzucamy krawędzie/wykopy (reszta > 2,5σ), kilka przebiegów
+            List<double[]> use = new List<double[]>(pts);
+            double[] c = null; double rms = 0;
+            for (int it = 0; it < 6; it++)
+            {
+                c = Fit(use, true);
+                double s = 0; foreach (double[] p in use) { double d = p[2] - Eval(c, p[0], p[1]); s += d * d; }
+                rms = Math.Sqrt(s / Math.Max(1, use.Count));
+                double lim = Math.Max(1.0, 2.5 * rms);
+                List<double[]> nu = new List<double[]>();
+                foreach (double[] p in pts) if (Math.Abs(p[2] - Eval(c, p[0], p[1])) < lim) nu.Add(p);
+                if (nu.Count == use.Count) break; use = nu;
+            }
+            sb.AppendLine("punktów mapy " + pts.Count + ", w dopasowaniu " + use.Count + ", rms " + rms.ToString("F2", Inv) + " m");
+            sb.AppendLine("h = " + c[0].ToString("F2", Inv) + " + " + c[1].ToString("E4", Inv) + "·E + " + c[2].ToString("E4", Inv) + "·N + " + c[3].ToString("E4", Inv) + "·r²   (krzywizna kuli dałaby " + (1.0 / (2 * b.Radius)).ToString("E4", Inv) + ")");
+            double slope = Math.Sqrt(c[1] * c[1] + c[2] * c[2]);
+            sb.AppendLine("pochylenie " + (slope * 180 / Math.PI).ToString("F4", Inv) + "°, w dół w kierunku " + ((Math.Atan2(-c[1], -c[2]) * 180 / Math.PI + 360) % 360).ToString("F1", Inv) + "° (azymut)");
+            double minA = 1e9, maxA = -1e9, minC = 1e9, maxC = -1e9;
+            foreach (double[] p in use) { minA = Math.Min(minA, p[0]); maxA = Math.Max(maxA, p[0]); minC = Math.Min(minC, p[1]); maxC = Math.Max(maxC, p[1]); }
+            sb.AppendLine("zasięg płaskiej części mapy: E " + minA + "…" + maxA + " m, N " + minC + "…" + maxC + " m");
+
+            // reszty w funkcji odległości od środka (czy mapa jest zakrzywiona)
+            sb.AppendLine("reszty mapy wzgl. samej płaszczyzny (bez r²) wg odległości [km: średnia]:");
+            double[] lc = Fit(use, false);
+            StringBuilder rr = new StringBuilder();
+            for (int k = 0; k < 26; k += 2)
+            {
+                double s = 0; int n = 0;
+                foreach (double[] p in use) { double r = Math.Sqrt(p[0] * p[0] + p[1] * p[1]) / 1000; if (r >= k && r < k + 2) { s += p[2] - Eval(lc, p[0], p[1]); n++; } }
+                if (n > 0) rr.Append(k + "-" + (k + 2) + ": " + (s / n).ToString("+0.0;-0.0", Inv) + " (" + n + ")  ");
+            }
+            sb.AppendLine(rr.ToString());
+
+            // teren pod mapą
+            double ts = 0, tmin = 1e9, tmax = -1e9; int tn = 0;
+            foreach (double[] p in use) { ts += p[3]; tn++; tmin = Math.Min(tmin, p[3]); tmax = Math.Max(tmax, p[3]); }
+            sb.AppendLine("teren gry pod płaską częścią mapy: średnio " + (ts / tn).ToString("F1", Inv) + " m, min " + tmin.ToString("F1", Inv) + ", max " + tmax.ToString("F1", Inv));
+
+            // obrót poziomujący: normalna mapy (po liniowej części) → pion
+            Vector3d grad = east * lc[1] + north * lc[2];
+            Vector3d nrm = (up - grad).normalized;
+            Quaternion corr = Quaternion.FromToRotation((Vector3)nrm, (Vector3)up);
+            Quaternion newWorld = corr * t.rotation;
+            Quaternion parentRot = t.parent != null ? t.parent.rotation : Quaternion.identity;
+            Vector3 newLocal = (Quaternion.Inverse(parentRot) * newWorld).eulerAngles;
+            sb.AppendLine("NOWA Orientation mapy (lokalnie względem rodzica): " + V(newLocal) + "   obecnie " + V(t.localEulerAngles));
+            sb.AppendLine("wysokość płaszczyzny mapy w środku: " + lc[0].ToString("F2", Inv) + " m");
+
+            // obiekty: o ile zmieni się mapa pod nimi po wypoziomowaniu (żeby zachować ich położenie względem mapy)
+            sb.AppendLine("obiekty – zmiana wysokości mapy pod nimi po wypoziomowaniu (UUID; model; E; N; Δ [m]; teren gry; obiekt):");
+            foreach (object si in inst)
+            {
+                GameObject og = F(si, "gameObject") as GameObject; if (og == null) continue;
+                Vector3d v = (Vector3d)og.transform.position - piv;
+                double a = Vector3d.Dot(v, east), cc = Vector3d.Dot(v, north);
+                double d = -(lc[1] * a + lc[2] * cc);
+                sb.AppendLine(Convert.ToString(F(si, "UUID")) + "; " + Convert.ToString(F(F(si, "model"), "name")) + "; " + a.ToString("F0", Inv) + "; " + cc.ToString("F0", Inv) + "; " +
+                              d.ToString("+0.00;-0.00", Inv) + "; " + Terrain(b, b.GetLatitude(og.transform.position), b.GetLongitude(og.transform.position)).ToString("F2", Inv) + "; " + b.GetAltitude(og.transform.position).ToString("F2", Inv) +
+                              "; grupa " + Convert.ToString(F(si, "Group")) + "; RelPos " + Convert.ToString(F(si, "RelativePosition"), Inv) + "; lokalnie " + V(og.transform.localPosition) + "; rodzic " + (og.transform.parent != null ? og.transform.parent.name : "-"));
+            }
+            // siatka terenu do ewentualnej nakładki (co 2 km)
+            sb.AppendLine("teren gry wokół środka mapy co 2 km (E,N → wys):");
+            StringBuilder tg = new StringBuilder();
+            foreach (double[] p in ter) if (((int)(p[0] / 1000)) % 2 == 0 && ((int)(p[1] / 1000)) % 2 == 0) tg.Append(((int)(p[0] / 1000)) + "," + ((int)(p[1] / 1000)) + ":" + p[2].ToString("F0", Inv) + " ");
+            sb.AppendLine(tg.ToString());
+        }
+
+        private static void Decals(StringBuilder sb, CelestialBody b)
+        {
+            sb.AppendLine();
+            sb.AppendLine("== NAKŁADKI TERENU (MapDecal) na " + b.bodyName + " (nazwa wewn. " + b.name + ")");
+            if (b.pqsController == null) return;
+            foreach (PQSMod m in b.pqsController.GetComponentsInChildren<PQSMod>(true))
+            {
+                if (!(m.GetType().Name.Contains("Decal"))) continue;
+                StringBuilder s = new StringBuilder(m.GetType().Name + " '" + m.name + "' aktywny " + m.modEnabled + " order " + m.order);
+                foreach (string fn in new[] { "position", "radius", "angle", "absolute", "absoluteOffset", "heightMapDeformity", "smoothHeight", "smoothColour", "cullBlack", "removeScatter", "heightMap", "colorMap" })
+                {
+                    object val = F(m, fn); if (val == null) continue;
+                    if (val is Vector3) val = V((Vector3)val);
+                    if (val is UnityEngine.Object) val = ((UnityEngine.Object)val).name;
+                    s.Append(", " + fn + "=" + Convert.ToString(val, Inv));
+                }
+                object pos = F(m, "position");
+                if (pos is Vector3)
+                {
+                    Vector3d dir = ((Vector3d)(Vector3)pos).normalized;
+                    double lat = Math.Asin(dir.y) * 180 / Math.PI, lon = Math.Atan2(dir.z, dir.x) * 180 / Math.PI;
+                    s.Append("  (kierunek ~ szer " + lat.ToString("F3", Inv) + ")");
+                }
+                sb.AppendLine(s.ToString());
+            }
+        }
+
         public static string Run()
         {
             Vessel v = FlightGlobals.ActiveVessel;
@@ -171,6 +318,9 @@ namespace RSSBalancer
                         }
                 sb.AppendLine("punktów na mapie " + hitsCount + (hitsCount > 0 ? ", mapa − teren: średnio " + (sum / hitsCount).ToString("F1", Inv) + " m, min " + mn.ToString("F1", Inv) + ", max " + mx.ToString("F1", Inv) : ""));
             }
+
+            try { Leveling(sb, b, mapInst, inst, MapAlt); } catch (Exception ex) { sb.AppendLine("Poziomowanie: błąd " + ex); }
+            try { Decals(sb, b); } catch (Exception ex) { sb.AppendLine("Nakładki terenu: błąd " + ex.Message); }
 
             foreach (MeshCollider mc in tmp) if (mc != null) UnityEngine.Object.Destroy(mc);
 
