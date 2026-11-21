@@ -30,7 +30,7 @@ namespace RSSBalancer
     ///           mechjebPreset = nazwa            // preset z zakładki MechJeb
     ///           mechjebAscent = on / off         // włącz / wyłącz Ascent Guidance MechJeba
     ///           autoOrbit = auto auto [dopasuj]  // dowolna rakieta na orbitę: analiza stopni, PVG MechJeba, domknięcie orbity
-    ///                                            // (wys. km / nachylenie °, „auto” = niska orbita / szerokość startu; „dopasuj” = popraw ISP/ciąg)
+    ///                                            // (wys. km / nachylenie °, „auto” = niska orbita / szerokość startu; „dopasuj” – ignorowane, program nie zmienia rakiety)
     ///           attitude = 90 85 / off           // kurs i pochylenie [°] przez MechJeba (powierzchniowo), off = zwolnij
     ///           orient = retrograde | prograde | normal | antinormal | radialout | radialin | srfvel <AoA> <odchylenie> <przechylenie> | off
     ///           burn = on / off                  // pełny ciąg, gdy statek jest ustawiony (błąd < 5°)
@@ -1477,8 +1477,7 @@ namespace RSSBalancer
 
         // ------------------------------------------------------------------ „autoOrbit” – dowolna rakieta na orbitę
         // 1) analiza: potrzebna Δv (ToOrbit z nachyleniem, straty grawitacyjne i oporu), Δv i TWR każdego stopnia (stock),
-        //    słabe ogniwa do dziennika; z „dopasuj” – ISP wszystkich silników tak, by było +8 % zapasu, a ciąg pierwszego
-        //    stopnia tak, by TWR na starcie ≥ 1,3 (te same mnożniki co w balancerze, zakres 0,1–5×);
+        //    słabe ogniwa do dziennika (tylko raport – program lotu nie zmienia rakiety);
         // 2) MechJeb Ascent Guidance (PVG) na orbitę kołową o zadanej wysokości i nachyleniu, autostaging, ≤ 4 g,
         //    początek zakrętu zależny od TWR; MechJeb sam odpala pierwszy stopień i zwalnia klamry;
         // 3) gdy MechJeb skończy (albo zabraknie mu paliwa, orbita suborbitalna/krzywa) – nasz „orbittarget” domyka orbitę.
@@ -1528,31 +1527,9 @@ namespace RSSBalancer
             if (shortDv) rep.Add("BRAKUJE ok. " + (need - vac).ToString("F0", Inv) + " m/s Δv");
             if (weak.Length > 0) rep.Add("Słabe ogniwa: " + weak);
 
-            // --- dopasowanie (opcjonalne)
-            if (fit && vac > 0)
-            {
-                float kIsp = (float)(need * 1.08 / vac);
-                List<ModuleEngineBalancer> mods = new List<ModuleEngineBalancer>();
-                foreach (Part p in vessel.parts) mods.AddRange(p.FindModulesImplementing<ModuleEngineBalancer>());
-                if (kIsp > 1.0f && mods.Count > 0)
-                {
-                    foreach (ModuleEngineBalancer m in mods) { m.ispMultiplier = Mathf.Clamp(m.ispMultiplier * kIsp, ModuleEngineBalancer.MinIspMult, ModuleEngineBalancer.MaxIspMult); m.ApplyMultipliers(); }
-                    rep.Add("Dopasowanie: ISP wszystkich silników ×" + kIsp.ToString("F2", Inv) + " (cel " + (need * 1.08).ToString("F0", Inv) + " m/s)");
-                }
-                if (twr > 0 && twr < 1.3 && mods.Count > 0)
-                {
-                    int firstStage = -1;
-                    foreach (Part p in vessel.parts) if (p.FindModuleImplementing<ModuleEngines>() != null) firstStage = Math.Max(firstStage, p.inverseStage);
-                    float kT = (float)(1.3 / twr);
-                    foreach (Part p in vessel.parts)
-                        if (p.inverseStage == firstStage)
-                            foreach (ModuleEngineBalancer m in p.FindModulesImplementing<ModuleEngineBalancer>())
-                            { m.thrustMultiplier = Mathf.Clamp(m.thrustMultiplier * kT, ModuleEngineBalancer.MinThrustMult, ModuleEngineBalancer.MaxThrustMult); m.ApplyMultipliers(); }
-                    rep.Add("Dopasowanie: ciąg pierwszego stopnia ×" + kT.ToString("F2", Inv) + " (TWR na starcie → 1,3)");
-                    twr = 1.3;
-                }
-            }
-            else if (shortDv || weak.Length > 0) rep.Add("Bez dopasowania – może nie dolecieć (program „… z dopasowaniem” albo zakładka Balans).");
+            // Program lotu NIGDY nie zmienia rakiety (ISP, ciąg, masy) – rakieta ma być jedna, tylko program lotu się zmienia.
+            if (fit) rep.Add("Słowo „dopasuj” jest ignorowane – program lotu nie zmienia parametrów rakiety.");
+            if (shortDv || weak.Length > 0) rep.Add("Rakieta może nie dolecieć na tę orbitę – popraw rakietę w VAB (części/paliwo), nie program.");
             foreach (string r in rep) FlightLogger.Event("Start na orbitę: " + r);
 
             // --- MechJeb
