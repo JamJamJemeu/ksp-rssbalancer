@@ -1749,6 +1749,7 @@ namespace RSSBalancer
             if (ap == null) { LastMessage += "\nMechJeb: brak Aircraft Autopilot."; return; }
             ReleaseAttitude();
             ChooseRunwayEnd();
+            jetsAvail = HasJets(); jetAssist = false;
             object pool = Users(ap);
             if (pool != null) PoolCall(pool, "Add");
             SetF(ap, "PitchDownLimit", 35.0);
@@ -1769,6 +1770,7 @@ namespace RSSBalancer
         // i lądowania. Tu: start z pasa, wznoszenie na 4 km, krąg z czterema zakrętami (lewy), na prostej do lądowania
         // silniki na jałowy bieg i dalej zwykłe podejście Burana (stroma ścieżka 19°, wyrównanie, przyziemienie).
         private bool patternOn, patAirborne, patGearUp;
+        private bool jetsAvail, jetAssist;
         private string patternPhase = "";
         private readonly List<Vector2d> patWps = new List<Vector2d>();
         private int patWp;
@@ -1794,7 +1796,7 @@ namespace RSSBalancer
             patWps.Add(new Vector2d(len + 9000, -6000));    // 1. i 2. zakręt – przecięcie, potem z wiatrem
             patWps.Add(new Vector2d(-14000, -6000));        // koniec odcinka z wiatrem
             patWps.Add(new Vector2d(-16000, 0));            // 3. i 4. zakręt – baza, wyjście na prostą
-            patWp = 0; patAirborne = false; patGearUp = false; airUT = -1; rotTarget = double.NaN; lastPitch = double.NaN;
+            patWp = 0; patAirborne = false; patGearUp = false; patFinal = false; airUT = -1; rotTarget = double.NaN; lastPitch = double.NaN;
             foreach (Part p in vessel.parts)
                 foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
                     if (!e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Activate();
@@ -1859,6 +1861,7 @@ namespace RSSBalancer
                 return;
             }
             if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
+            if (patFinal) { PatternFinal(ap, pos, up, x, h, easNow, vSt); return; }
 
             Vector2d wp = patWps[patWp];
             Vector3d target = thrPos + rwyDir * wp.x + right * wp.y;
@@ -1886,20 +1889,58 @@ namespace RSSBalancer
             if (dist < 1500)
             {
                 patWp++;
-                if (patWp >= patWps.Count)
-                {
-                    // na prostej: silniki na jałowy bieg – dalej jak Buran, bez napędu
-                    Call(ap, "DisableSpeedHold");
-                    FlightInputHandler.state.mainThrottle = 0f;
-                    foreach (Part p in vessel.parts)
-                        foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
-                            if (e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Shutdown();
-                    patternOn = false;
-                    FlightLogger.Event("Krąg: na prostej, silniki wyłączone – podejście jak Buran");
-                    StartApproach();
-                }
+                if (patWp >= patWps.Count) { patWp = patWps.Count - 1; patFinal = true; FlightLogger.Event("Krąg: na prostej z silnikami – lot poziomy do przechwycenia ścieżki 19°"); }
                 else FlightLogger.Event("Krąg: punkt " + patWp + " – " + names[Math.Min(patWp, names.Length - 1)]);
             }
+        }
+
+        // Prosta z napędem: lot poziomy na wysokości kręgu po osi pasa, aż Buran znajdzie się NA stromej ścieżce 19°
+        // (cel 2,5 km przed progiem – ta sama ścieżka co w podejściu z orbity). Dopiero wtedy silniki wyłączone.
+        // Lot 2026-11-21 20:48: silniki wyłączone 17,4 km przed pasem na 3,9 km – ścieżka była na 5,1 km, Buran „poniżej
+        // ścieżki” szybował na najlepszej doskonałości, zgubił prędkość i trzy razy wpadał w przeciągnięcie.
+        // Orbitalny Buran (lot 2026-11-20 23:23, udany) wchodził na ścieżkę ~10 km przed progiem na ~4,8 km – nad nią.
+        private bool patFinal;
+        private void PatternFinal(object ap, Vector3d pos, Vector3d up, double x, double h, double easNow, double vSt)
+        {
+            double d = -x;
+            double ht = (d - 2500) * Math.Tan(19 * Math.PI / 180);
+            steerHdg = double.NaN;
+            SetF(ap, "HeadingTarget", CenterlineHeading(pos, up));
+            SetF(ap, "VertSpeedTarget", Math.Max(-10, Math.Min(10, 0.05 * (PatAlt - h))));
+            SetF(ap, "RollLimit", 20.0);
+            patternPhase = "prosta z silnikami: d " + (d / 1000).ToString("F1", Inv) + " km, h " + h.ToString("F0", Inv) + " m, ścieżka 19° na " + Math.Max(0, ht).ToString("F0", Inv) + " m, EAS " + easNow.ToString("F0", Inv) + " m/s";
+            if (Planetarium.GetUniversalTime() > nextALog) { nextALog = Planetarium.GetUniversalTime() + 5; FlightLogger.Event("Krąg: " + patternPhase); }
+            if (h < ht - 30 && d > 2500) return;
+            // na ścieżce: silniki wyłączone – dalej jak Buran, bez napędu
+            Call(ap, "DisableSpeedHold");
+            JetsOff();
+            patternOn = false; patFinal = false;
+            FlightLogger.Event("Krąg: na ścieżce 19° (d " + (d / 1000).ToString("F1", Inv) + " km, h " + h.ToString("F0", Inv) + " m) – silniki wyłączone, podejście jak Buran");
+            StartApproach();
+        }
+
+        private bool HasJets()
+        {
+            foreach (Part p in vessel.parts)
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                    if (e.propellants.Exists(pr => pr.name == "IntakeAir")) return true;
+            return false;
+        }
+
+        private void JetsOff()
+        {
+            FlightInputHandler.state.mainThrottle = 0f;
+            foreach (Part p in vessel.parts)
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                    if (e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Shutdown();
+        }
+
+        private void JetsOn()
+        {
+            foreach (Part p in vessel.parts)
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                    if (!e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Activate();
+            FlightInputHandler.state.mainThrottle = 1f;
         }
 
 
@@ -2266,6 +2307,16 @@ namespace RSSBalancer
                 // Przechylenie zabiera nośność – przy małej prędkości ostrożne zakręty (lot 18:25: zakręt 45° na 17 km
                 // przy EAS ~85 m/s skończył się korkociągiem).
                 double rollLim = easNow < 1.3 * vSt ? 10 : easNow < 1.6 * vSt ? 20 : easNow < 2.0 * vSt ? 30 : 45;
+                // Wspomaganie silnikami (OK-GLI ma AL-31): za mało energii albo blisko przeciągnięcia wysoko nad ziemią –
+                // pełny ciąg; po odzyskaniu prędkości i powrocie na ścieżkę – znów szybowanie jak Buran.
+                if (jetsAvail && !flare)
+                {
+                    bool need = hr > 150 && (lowEnergy || easNow < 1.3 * vSt || StallLevel >= 1);
+                    if (need && !jetAssist) { jetAssist = true; JetsOn(); FlightLogger.Event("Podejście: wspomaganie silnikami – " + (lowEnergy ? "poniżej ścieżki" : "mała prędkość") + ", EAS " + easNow.ToString("F0", Inv) + " m/s, h " + h.ToString("F0", Inv) + " m"); }
+                    else if (jetAssist && !lowEnergy && easNow > 1.55 * vSt && StallLevel == 0) { jetAssist = false; JetsOff(); FlightLogger.Event("Podejście: silniki wyłączone – z powrotem na ścieżce, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
+                    if (jetAssist) { FlightInputHandler.state.mainThrottle = 1f; approachPhase += " + silniki"; }
+                }
+                else if (jetAssist) { jetAssist = false; JetsOff(); FlightLogger.Event("Podejście: silniki wyłączone przed wyrównaniem"); }
                 if (SpinRecovery(ap, easNow, vSt, aoaNow, hr, d, h)) return;
                 if (StallLevel == 2)
                 {
