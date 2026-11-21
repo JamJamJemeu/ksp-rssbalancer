@@ -1627,8 +1627,9 @@ namespace RSSBalancer
                 steerHdg = CenterlineHeading(pos, up);
                 SetF(ap, "HeadingTarget", steerHdg);
                 SetF(ap, "VertSpeedTarget", easNow > vr ? 4.0 : 0.0);
+                takeoffRoll = true; takeoffRotate = easNow > vr;
                 patternPhase = "rozbieg  EAS " + easNow.ToString("F0", Inv) + " / oderwanie " + vr.ToString("F0", Inv) + " m/s";
-                if (!vessel.Landed && h > 30) { patAirborne = true; steerHdg = double.NaN; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
+                if (!vessel.Landed && h > 30) { patAirborne = true; steerHdg = double.NaN; takeoffRoll = false; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
                 return;
             }
             if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
@@ -1681,6 +1682,11 @@ namespace RSSBalancer
         // prędkości ster nic nie daje, a koła nie skręcają (lot próbny 19:22: Buran zjechał z pasa w lewo).
         private Vessel steerVessel;
         private double steerHdg = double.NaN;
+        // Rozbieg: silniki OK-GLI są wysoko nad środkiem masy – ciąg dociska nos i odciąża koła główne (lot 2026-11-21
+        // 16:42: pochylenie −2,5°, a MechJeb, trzymając prędkość pionową 0, dodawał jeszcze sterem „nos w dół”; koła
+        // główne prawie bez nacisku nie trzymały kierunku i Buran zjechał w prawo z pasa). Na rozbiegu sami trzymamy
+        // pochylenie: nos poziomo (+0,5°), od prędkości oderwania – podniesienie nosa do 8°.
+        private bool takeoffRoll, takeoffRotate;
 
         private void HookSteer()
         {
@@ -1703,6 +1709,12 @@ namespace RSSBalancer
             // po przyziemieniu: elewony lekko w dół dopiero po opuszczeniu nosa (< ~290 km/h). Lot 23:23: −0,5 od razu przy
             // 400 km/h mocno docisnął przednie koło („taczka”) – przy 330 km/h Buranem zarzuciło o 95° w lewo.
             if (rolloutNoseDown && vessel.srfSpeed > 15 && vessel.srfSpeed < 80) s.pitch = -0.15f;
+            if (takeoffRoll && patternOn)
+            {
+                double pitchDeg = Math.Asin(Math.Max(-1, Math.Min(1, Vector3d.Dot(fwd, up)))) * 180 / Math.PI;
+                double target = takeoffRotate ? 8.0 : 0.5;
+                s.pitch = Mathf.Clamp((float)((target - pitchDeg) * (takeoffRotate ? 0.12 : 0.25)), -0.3f, 1f);
+            }
         }
 
         /// <summary>Kurs na punkt na osi pasa ~400 m przed nosem (koryguje też zjechanie w bok).</summary>
