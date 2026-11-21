@@ -101,6 +101,15 @@ namespace RSSBalancer
             return Math.Max(0.0, v - rot + loss);
         }
 
+        /// <summary>Start na orbitę eliptyczną perygeum × apogeum: start na kołową na wysokości perygeum + dopalenie w perygeum do apogeum.</summary>
+        public static double ToOrbit(CelestialBody b, double peAlt, double apAlt, double latDeg)
+        {
+            if (apAlt <= peAlt) return ToOrbit(b, peAlt, latDeg);
+            double rp = b.Radius + peAlt, ra = b.Radius + apAlt, mu = b.gravParameter;
+            double vEll = Math.Sqrt(mu * (2.0 / rp - 2.0 / (rp + ra)));
+            return ToOrbit(b, peAlt, latDeg) + (vEll - Circ(mu, rp));
+        }
+
         private static double SurfaceToLowOrbitVacuum(CelestialBody b, double lowAlt)
         {
             return Circ(b.gravParameter, b.Radius + lowAlt) * 1.15; // + ok. 15% na straty i manewry

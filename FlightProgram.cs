@@ -62,6 +62,43 @@ namespace RSSBalancer
 
         public static readonly List<Program> Programs = new List<Program>();
 
+        /// <summary>Orbita wpisana w zakładce Program („pe-ap nachylenie”, puste = jak w pliku) – zastępuje wartość „autoOrbit” z pliku.</summary>
+        public static string AutoOrbitOverride = "";
+
+        public static bool HasAutoOrbit(Program p)
+        {
+            if (p == null) return false;
+            foreach (Step s in p.steps) if (s.node.HasValue("autoOrbit") || s.node.HasValue("autoorbit")) return true;
+            return false;
+        }
+
+        public static string AutoOrbitFromFile(Program p)
+        {
+            if (p == null) return "";
+            foreach (Step s in p.steps) { string v = s.node.GetValue("autoOrbit") ?? s.node.GetValue("autoorbit"); if (v != null) return v; }
+            return "";
+        }
+
+        /// <summary>Rozbiór „autoOrbit”: „pe[-ap|xap] [nachylenie]”, „auto” = niska orbita / szerokość startu.
+        /// Zwraca perygeum i apogeum [km] (ap ≥ pe) i nachylenie [°] (NaN = auto).</summary>
+        public static void ParseAutoOrbit(string val, CelestialBody b, out double peKm, out double apKm, out double inc)
+        {
+            CultureInfo inv = CultureInfo.InvariantCulture;
+            string[] w = (val ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            peKm = 0; apKm = 0; inc = double.NaN;
+            if (w.Length > 0 && w[0].ToLowerInvariant() != "auto")
+            {
+                string[] pa = w[0].Split(new[] { '-', 'x', 'X', '×', '/' }, StringSplitOptions.RemoveEmptyEntries);
+                double v;
+                if (pa.Length > 0 && double.TryParse(pa[0], NumberStyles.Float, inv, out v)) peKm = v;
+                if (pa.Length > 1 && double.TryParse(pa[1], NumberStyles.Float, inv, out v)) apKm = v;
+            }
+            if (peKm <= 0) peKm = b.atmosphere ? Math.Max(b.atmosphereDepth / 1000 + 60, Math.Round(b.atmosphereDepth / 1000 * 1.4)) : DeltaVPlanner.LowOrbitAlt(b) / 1000;
+            if (apKm < peKm) { if (apKm > 0) { double t = apKm; apKm = peKm; peKm = t; } else apKm = peKm; }
+            double iv;
+            if (w.Length > 1 && w[1].ToLowerInvariant() != "auto" && double.TryParse(w[1], NumberStyles.Float, inv, out iv)) inc = iv;
+        }
+
         public static string Folder
         {
             get { return Path.Combine(Path.Combine(Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), "RSSBalancer"), "PluginData"), "Programs"); }
@@ -1483,28 +1520,31 @@ namespace RSSBalancer
         // 3) gdy MechJeb skończy (albo zabraknie mu paliwa, orbita suborbitalna/krzywa) – nasz „orbittarget” domyka orbitę.
         private enum AO { None, Ascent, Finish, Done, Failed }
         private AO aoPhase = AO.None;
-        private double aoAlt, aoInc, aoStartUT, nextAoLog;
+        private double aoAlt, aoAp, aoInc, aoStartUT, nextAoLog;
         public string AutoOrbitInfo = "";
 
         private string StartAutoOrbit(string val)
         {
             CelestialBody b = vessel.mainBody;
+            bool fromUi = !string.IsNullOrEmpty(FlightPrograms.AutoOrbitOverride);
+            if (fromUi) val = FlightPrograms.AutoOrbitOverride;
             string[] w = (val ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
             bool fit = Array.Exists(w, x => x.ToLowerInvariant() == "dopasuj" || x.ToLowerInvariant() == "fit");
             double lat = Math.Abs(vessel.latitude);
-            double altKm = w.Length > 0 && w[0].ToLowerInvariant() != "auto" ? Num(w[0], 0) : 0;
-            if (altKm <= 0) altKm = b.atmosphere ? Math.Max(b.atmosphereDepth / 1000 + 60, Math.Round(b.atmosphereDepth / 1000 * 1.4)) : DeltaVPlanner.LowOrbitAlt(b) / 1000;
-            double inc = w.Length > 1 && w[1].ToLowerInvariant() != "auto" ? Num(w[1], lat) : Math.Ceiling(lat * 10) / 10;
+            double peKm, apKm, inc;
+            FlightPrograms.ParseAutoOrbit(val, b, out peKm, out apKm, out inc);
+            if (double.IsNaN(inc)) inc = Math.Ceiling(lat * 10) / 10;
+            double altKm = peKm;
             string incNote = "";
             if (inc < lat) { incNote = " (" + inc.ToString("F1", Inv) + "° niemożliwe ze startu na " + lat.ToString("F1", Inv) + "° – biorę " + Math.Ceiling(lat * 10) / 10 + "°)"; inc = Math.Ceiling(lat * 10) / 10; }
-            aoAlt = altKm; aoInc = inc;
+            aoAlt = peKm; aoAp = apKm; aoInc = inc;
 
             // --- analiza
-            double need = DeltaVPlanner.ToOrbit(b, altKm * 1000, inc);
+            double need = DeltaVPlanner.ToOrbit(b, peKm * 1000, apKm * 1000, inc);
             double vac; StockDeltaV.TotalVac(out vac);
             double twr = StockDeltaV.LiftoffTwr();
             List<string> rep = new List<string>();
-            rep.Add("Cel: orbita " + altKm.ToString("F0", Inv) + " km, nachylenie " + inc.ToString("F1", Inv) + "°" + incNote + "; potrzeba ≈ " + need.ToString("F0", Inv) + " m/s");
+            rep.Add("Cel: orbita " + OrbitLabel(peKm, apKm) + (fromUi ? " (wpisana w zakładce)" : "") + ", nachylenie " + inc.ToString("F1", Inv) + "°" + incNote + "; potrzeba ≈ " + need.ToString("F0", Inv) + " m/s");
             rep.Add("Rakieta: Δv (próżnia) " + vac.ToString("F0", Inv) + " m/s, TWR na starcie " + twr.ToString("F2", Inv));
             VesselDeltaV vdv = StockDeltaV.Current();
             string weak = "";
@@ -1539,7 +1579,7 @@ namespace RSSBalancer
             double pitchStart = Math.Max(25, Math.Min(70, 55 / Math.Max(0.8, twr)));
             string[][] asc = {
                 new[] { "AscentTypeInteger", "1" }, new[] { "DesiredOrbitAltitude", (altKm * 1000).ToString("F0", Inv) },
-                new[] { "DesiredApoapsis", (altKm * 1000).ToString("F0", Inv) }, new[] { "AttachAltFlag", "False" },
+                new[] { "DesiredApoapsis", (apKm * 1000).ToString("F0", Inv) }, new[] { "AttachAltFlag", "False" },
                 new[] { "DesiredInclination", inc.ToString("F2", Inv) }, new[] { "LastStage", "0" }, new[] { "OptimizeStageFlag", "False" },
                 new[] { "CoastStageFlag", "False" }, new[] { "UnguidedStagesFlag", "False" }, new[] { "SkipCircularization", "False" },
                 new[] { "PitchStartVelocity", pitchStart.ToString("F0", Inv) }, new[] { "PitchRate", "0.75" },
@@ -1558,9 +1598,34 @@ namespace RSSBalancer
             string mj = MechJebAscent(true);
             aoPhase = AO.Ascent; aoStartUT = Planetarium.GetUniversalTime(); nextAoLog = 0;
             vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
-            AutoOrbitInfo = "wznoszenie (MechJeb PVG) na " + altKm.ToString("F0", Inv) + " km / " + inc.ToString("F1", Inv) + "°";
+            AutoOrbitInfo = "wznoszenie (MechJeb PVG) na " + OrbitLabel(peKm, apKm) + " / " + inc.ToString("F1", Inv) + "°";
             FlightLogger.Event("Start na orbitę: MechJeb PVG ustawiony (początek zakrętu " + pitchStart.ToString("F0", Inv) + " m/s" + (bad > 0 ? ", " + bad + " ustawień nie przyjęto" : "") + "), " + mj);
             return string.Join("\n", rep.ToArray()) + "\n" + mj;
+        }
+
+        public static string OrbitLabel(double peKm, double apKm)
+        {
+            return apKm > peKm + 0.5 ? peKm.ToString("F0", Inv) + " × " + apKm.ToString("F0", Inv) + " km" : peKm.ToString("F0", Inv) + " km (kołowa)";
+        }
+
+        /// <summary>Sprawdzenie dla zakładki: ile Δv trzeba na orbitę i ile ma rakieta (bez startu, bez zmian w rakiecie).</summary>
+        public static string CheckAutoOrbit(string val)
+        {
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return "Brak statku.";
+            CelestialBody b = v.mainBody;
+            double pe, ap, inc; FlightPrograms.ParseAutoOrbit(val, b, out pe, out ap, out inc);
+            double lat = Math.Abs(v.latitude);
+            if (double.IsNaN(inc) || inc < lat) inc = Math.Ceiling(lat * 10) / 10;
+            double need = DeltaVPlanner.ToOrbit(b, pe * 1000, ap * 1000, inc);
+            double vac; bool ok = StockDeltaV.TotalVac(out vac);
+            double twr = StockDeltaV.LiftoffTwr();
+            string r = "Cel " + OrbitLabel(pe, ap) + ", " + inc.ToString("F1", Inv) + "°: potrzeba ≈ " + need.ToString("F0", Inv) + " m/s";
+            if (!ok || vac <= 0) return r + ", rakieta: brak danych Δv.";
+            r += ", rakieta " + vac.ToString("F0", Inv) + " m/s (TWR " + twr.ToString("F2", Inv) + ") → ";
+            r += vac >= need ? "zapas " + (vac - need).ToString("F0", Inv) + " m/s" : "BRAKUJE " + (need - vac).ToString("F0", Inv) + " m/s";
+            if (twr > 0 && twr < 1.15) r += "; za mały ciąg na start";
+            return r + " (szacunek ±5 %).";
         }
 
         private object AscentAutopilot()
@@ -1594,7 +1659,7 @@ namespace RSSBalancer
                 bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;
                 if (!(mjOff || fuelOut || inOrbit)) return;
                 MechJebAscent(false);
-                bool good = o.PeA > atmTop + 5000 && Math.Abs(o.ApA / 1000 - aoAlt) < aoAlt * 0.1 + 10 && Math.Abs(o.PeA / 1000 - aoAlt) < aoAlt * 0.1 + 10 && Math.Abs(o.inclination - aoInc) < 1.0;
+                bool good = o.PeA > atmTop + 5000 && Math.Abs(o.ApA / 1000 - aoAp) < aoAp * 0.1 + 10 && Math.Abs(o.PeA / 1000 - aoAlt) < aoAlt * 0.1 + 10 && Math.Abs(o.inclination - aoInc) < 1.0;
                 if (good)
                 {
                     aoPhase = AO.Done; AutoOrbitInfo = "na orbicie " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km, " + o.inclination.ToString("F1", Inv) + "°";
@@ -1605,7 +1670,7 @@ namespace RSSBalancer
                 if (o.eccentricity >= 1 || vessel.altitude < atmTop * 0.6) { aoPhase = AO.Failed; AutoOrbitInfo = "wznoszenie przerwane nisko – rakieta nie dała rady"; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); return; }
                 FlightLogger.Event("Start na orbitę: MechJeb skończył przy " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km – domykam orbitę");
                 double incT = Math.Abs(o.inclination - aoInc) < 1.0 ? o.inclination : aoInc;
-                StartManeuver(aoAlt, aoAlt, incT);
+                StartManeuver(aoAlt, aoAp, incT);
                 aoPhase = AO.Finish;
                 return;
             }

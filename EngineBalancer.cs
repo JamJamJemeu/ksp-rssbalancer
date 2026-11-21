@@ -55,6 +55,8 @@ namespace RSSBalancer
         private bool progLoaded;
         private Vector2 progScroll;
         private int progSel;
+        private int aoFor = -1;
+        private string aoPe = "", aoAp = "", aoInc = "", aoCheck = "";
         private Preset pendingDelete;
 
         private string status;
@@ -805,6 +807,47 @@ namespace RSSBalancer
         private bool airportsLoaded, airportsOpen;
         private Vector2 airportScroll;
 
+        // Pola orbity dla programów z „autoOrbit”: puste = wartości z pliku programu.
+        private string AutoOrbitText()
+        {
+            string pe = aoPe.Trim().Replace(',', '.'), ap = aoAp.Trim().Replace(',', '.'), inc = aoInc.Trim().Replace(',', '.');
+            if (pe == "" && ap == "" && inc == "") return "";
+            string alt = pe == "" ? (ap == "" ? "auto" : ap) : (ap == "" ? pe : pe + "-" + ap);
+            return alt + " " + (inc == "" ? "auto" : inc);
+        }
+
+        private void DrawAutoOrbitFields(FlightPrograms.Program p)
+        {
+            if (aoFor != progSel)
+            {
+                aoFor = progSel; aoCheck = "";
+                string f = FlightPrograms.AutoOrbitFromFile(p);
+                string[] w = f.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                aoPe = aoAp = aoInc = "";
+                if (w.Length > 0 && w[0].ToLowerInvariant() != "auto")
+                {
+                    string[] pa = w[0].Split(new[] { '-', 'x', 'X', '×', '/' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (pa.Length > 0) aoPe = pa[0];
+                    if (pa.Length > 1) aoAp = pa[1];
+                }
+                if (w.Length > 1 && w[1].ToLowerInvariant() != "auto") aoInc = w[1];
+            }
+            GUILayout.Space(4f);
+            GUILayout.Label("Orbita docelowa (puste = auto: niska orbita nad atmosferą, nachylenie = szerokość startu; apogeum puste = orbita kołowa):");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Perygeum [km]", GUILayout.Width(95f)); aoPe = GUILayout.TextField(aoPe, GUILayout.Width(60f));
+            GUILayout.Label("  Apogeum [km]", GUILayout.Width(95f)); aoAp = GUILayout.TextField(aoAp, GUILayout.Width(60f));
+            GUILayout.Label("  Nachylenie [°]", GUILayout.Width(100f)); aoInc = GUILayout.TextField(aoInc, GUILayout.Width(50f));
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Sprawdź", GUILayout.Width(90f)))
+                aoCheck = HighLogic.LoadedSceneIsFlight ? FlightProgramRunner.CheckAutoOrbit(AutoOrbitText() == "" ? FlightPrograms.AutoOrbitFromFile(p) : AutoOrbitText()) : "Sprawdzenie działa w locie (rakieta na wyrzutni).";
+            if (GUILayout.Button("Jak w pliku", GUILayout.Width(100f))) aoFor = -1;
+            if (GUILayout.Button("Auto", GUILayout.Width(60f))) { aoPe = aoAp = aoInc = ""; aoCheck = ""; }
+            GUILayout.EndHorizontal();
+            if (aoCheck != "") GUILayout.Label(aoCheck);
+        }
+
         private void DrawProgramTab()
         {
             if (!progLoaded) { FlightPrograms.Reload(); progLoaded = true; }
@@ -837,11 +880,17 @@ namespace RSSBalancer
             }
             GUILayout.EndScrollView();
 
+            if (FlightPrograms.HasAutoOrbit(p) && !(run != null && run.Active)) DrawAutoOrbitFields(p);
+
             GUILayout.BeginHorizontal();
             if (run == null) GUILayout.Label("Program lotu działa tylko w locie.");
             else if (!run.Active)
             {
-                if (GUILayout.Button("Start programu")) { run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage; }
+                if (GUILayout.Button("Start programu"))
+                {
+                    FlightPrograms.AutoOrbitOverride = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]) ? AutoOrbitText() : "";
+                    run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage;
+                }
             }
             else
             {
