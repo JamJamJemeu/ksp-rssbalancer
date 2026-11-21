@@ -1696,8 +1696,37 @@ namespace RSSBalancer
             steerVessel = vessel;
         }
 
+        // Linia ciągu przez środek masy (przekłamanie): gondole AL-31 siedzą 2–4 m nad środkiem masy KSP, ~380 kN ciągu
+        // daje ~0,75 MN·m momentu „nos w dół”, którego elewony przy 110 m/s nie równoważą (lot 2026-11-21 17:38: zaraz po
+        // oderwaniu nos spadł z +10° do −22° w sekundę). W prawdziwym OK-GLI ciąg był wyważony konstrukcyjnie. Tu, gdy
+        // pracują silniki odrzutowe, dodajemy moment przeciwny do momentu ciągu względem środka masy – jakby ciąg szedł
+        // przez środek masy. Tylko w atmosferze i tylko silniki na IntakeAir.
+        private void ThrustLineFix()
+        {
+            Vessel v = vessel;
+            if (v == null || !v.mainBody.atmosphere || v.packed) return;
+            Vector3d com = v.CoMD, m = Vector3d.zero;
+            foreach (Part p in v.parts)
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                {
+                    if (!e.EngineIgnited || e.finalThrust <= 0 || !e.propellants.Exists(pr => pr.name == "IntakeAir")) continue;
+                    int n = e.thrustTransforms.Count; if (n == 0) continue;
+                    for (int i = 0; i < n; i++)
+                    {
+                        Transform t = e.thrustTransforms[i];
+                        float mult = e.thrustTransformMultipliers != null && e.thrustTransformMultipliers.Count == n ? e.thrustTransformMultipliers[i] : 1f / n;
+                        Vector3d f = -t.forward * e.finalThrust * mult;
+                        m += Vector3d.Cross((Vector3d)t.position - com, f);
+                    }
+                }
+            if (m.sqrMagnitude < 1) return;
+            Rigidbody rb = v.rootPart != null ? v.rootPart.Rigidbody : null;
+            if (rb != null) rb.AddTorque(-(Vector3)m, ForceMode.Force);
+        }
+
         private void SteerFbw(FlightCtrlState s)
         {
+            if (patternOn) ThrustLineFix();
             if (double.IsNaN(steerHdg) || vessel == null || !vessel.Landed) return;
             Vector3d up = (vessel.CoMD - vessel.mainBody.position).normalized;
             Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
@@ -1713,7 +1742,7 @@ namespace RSSBalancer
             {
                 double pitchDeg = Math.Asin(Math.Max(-1, Math.Min(1, Vector3d.Dot(fwd, up)))) * 180 / Math.PI;
                 double target = takeoffRotate ? 8.0 : 0.5;
-                s.pitch = Mathf.Clamp((float)((target - pitchDeg) * (takeoffRotate ? 0.12 : 0.25)), -0.3f, 1f);
+                s.pitch = Mathf.Clamp((float)((target - pitchDeg) * (takeoffRotate ? 0.08 : 0.25)), -0.3f, 0.5f);
             }
         }
 
