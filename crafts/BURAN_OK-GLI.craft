@@ -2,7 +2,7 @@ ship = BURAN_OK-GLI
 version = 1.12.5
 description = Analog Burana OK-GLI (BTS-002): 4× AL-31 – 2 bez dopalacza przy statecznku, 2× AL-31F z dopalaczem po bokach kadłuba (RSSBalancer)
 type = SPH
-size = 22.5187073,14.7164612,33.8662949
+size = 22.5187073,14.7520428,32.7273979
 steamPublishedFileId = 0
 persistentId = 3367110526
 rot = 0,0,0,0
@@ -12,16 +12,16 @@ OverrideDefault = False,False,False,False
 OverrideActionControl = 0,0,0,0
 OverrideAxisControl = 0,0,0,0
 OverrideGroupNames = ,,,
-_modVersions = Scale_Redist=3.3.1|ModuleManager=4.2.3|000_AT_Utils=1.10.1|001_AnisotropicPartResizer=1.5.0|002_MultiAnimators=1.2.1|0_00_AT_Utils_UI=1.0.0|CC.UI=1.0.0|ConfigurableContainers=2.6.2|SubmodelResizer=1.0.0|ClickThroughBlocker=2.1.10|FilterExtensions=3.2.9|0Harmony=2.2.1|HarmonyInstallChecker=2.2.1|Unity.Burst.Unsafe=1.0.0|Unity.Mathematics=1.0.0|Microsoft.Extensions.FileSystemGlobbing=6.0.21|System.IO.Compression=4.6.57|System.Runtime.CompilerServices.Unsafe=4.700.20|System.Runtime=4.0.0|Unity.Burst=1.7.4|System.IO.Compression.FileSystem=4.6.57|Unity.Collections=0.8.0|Unity.Jobs=0.2.9|KSPBurst=1.7.4|Kopernicus.Parser=1.0.0|ModularFlightIntegrator=1.2.10|SharpDX=4.2.0|SharpDX.DXGI=4.2.0|SharpDX.Direct3D11=4.2.0|KSPTextureLoader=1.0.35|Kopernicus=1.12.247|VertexMitchellNetravaliHeightMap=0.3.0|BlendshapeModelLoader=1.6.4|TexturesUnlimited=1.6.4|USITools=1.0.0|USIToolsUI=1.0.0|ToolbarControl=0.1.9|KSPe.Light.Recall=2.5.5|Attached=0.5.0|AttachedOnEditor=0.5.0|ChillingOut=0.5.0|Driftless=0.5.0|KSP-Recall=0.5.0|Refunding=0.5.0|Resourceful=0.5.0|BurstPQS=0.1.24|AdvancedPQSTools=1.6.1|AtmosphereAutopilot.UI=1.0.0|AtmosphereAutopilot=1.6.1|AAPartCategory=1.0.0|AviatorArsenal=1.0.0|B9PartSwitch=2.21.0|B9-PWings-Fork=0.46.1|BDAnimationModules=0.6.7|RNModules=1.2.1|WearableProps=1.0.0|BetterTimeWarpCont=2.3.14|BDB=1.14.0|CustomPreLaunchChecks=1.8.1|KerbalKonstructs=1.8.1|BurstPQS.KerbalKonstructs=0.1.24|BurstPQS.Kopernicus=0.1.24|ParallaxContinued=1.0.0|BurstPQS.ParallaxContinued=0.1.24|BurstPQS.VertexMitchellNetravaliHeightMap=0.1.24|CameraTools=1.37.1|CCK=5.1.0|CommunityTraitIcons=1.1.2|Shabby=0.4.2|ConformalDecals=0.4.2|Unity.TextMeshPro=2.1.6|KXAPI=1.0.0|CraftManager=1.0.7240|KatLib=1.0.7240|SimpleBoiloff=0.2.1|DeployableEngines=2.2.0|DMModuleScienceAnimateGeneric=0.23.0|DynamicBatteryStorage=1.0.0|Atmosphere=3.1.2|CelestialShadows=3.1.2|CityLights=3.1.2|EVEManager=3.1.2|PartFX=3.1.2|PQSManager=3.1.2|ShaderLoader=3.1.2|Terrain=3.1.2|TextureConfig=3.1.2|Utils=3.1.2|_BuildManager=3.1.2|FarFutureTechnologies=1.0.0|KSP_Log=1.2.0|ButtonManager=1.0.2|FillitUp=0.2.0|FireflyAPI=1.0.0|Firefly=1.0.5|FireflyInstallChecker=1.0.0|Firespitter=7.3.7660|FreeIva=0.2.20|HangerExtenderExtended=3.6.1|FullAutoStrut=3.0.1|HUDReplacer=1.3.3|JanitorsCloset=0.3.9|RasterPropMonitor=1.0.2|Kaboom=1.4.0|KAX=2.8.1|KSPe.Light.KAX=2.4.2|KerbalChangelog=1.4.2|KerbalEngineer.Unity=1.0.0|KerbalEngineer=1.1.9|KerbalJointReinforcement=3.8.6|VesselModuleSave=1.0.2|KerBalloons=0.6.0|Renamer=1.7.0|DeployableAeroSurfaces=1.0.0|HyperEdit=1.5.8|DDSLoader=1.0.0|KerwisShader=0.7.0|PartMusic=1.0.0|KronalUtils=1.0.0|KSCSwitcher=2.2.0|0_MultipleModuleInPartAPI=1.0.0|KSPCommunityFixes=1.41.1|KSPWheel=0.0.0|MiniAVC=1.0.3|LazyPainter=0.4.1|alglib=1.0.0|MechJeb2=2.15.1|MechJebLib=1.0.0|MechJebLibBindings=1.0.0|DockingPortAlignmentIndicator=6.12.0|DPAI_RPM=1.0.0|ModuleDockingNodeNamed=1.1.0|NearFutureElectrical=1.0.0|NearFutureExploration=0.4.0|NFPropUtils=1.0.0|NearFuturePropulsion=0.9.0|NearFutureSolar=0.4.0|NearFutureUtils=0.0.0|NeptuneCamera=1.0.0|PhysicsRangeExtender=1.21.0|PlanetShine=0.2.6|ROUtils=1.1.1|ProceduralFairings=6.7.0|ProceduralParts=2.8.0|Restock=1.0.0|RetractableLiftingSurface=0.2.1|Reviva=1.0.2|RSSLiveBalancer=1.0.0|scatterer=0.903.0|ShipManifest=6.0.8|SMInterface=6.0.3|CLSInterfaces=2.0.1|SimpleAdjustableFairings=1.12.0|BobCatUtils=1.0.0|LandingEngine=1.0.0|SpaceDust=0.5.4|KSP_ColorPicker=1.1.1|KSP_PartHighlighter=1.1.1|SpaceTuxUtility=1.0.2|KSPSteamCtrlr=0.0.1|SSTUTools=0.0.0|StagedAnimation=1.0.0|HabUtils=1.0.0|StockClamshellFairings=1.0.0|SXTContinued=0.3.31|SystemHeat=0.1.0|TargetInterceptPlanner=1.0.1|Targetron=1.7.0|TarsierSpaceTech=7.13.0|TextureReplacer=4.5.3|TCA.UI=1.0.0|ThrottleControlledAvionics=3.8.0|Trajectories=2.4.5|TransferWindowPlanner=1.9.1|TRPHire=0.6.11|TweakScaleSafetyNet=3.3.1|TUFX=1.1.1|Scale=3.3.1|Waterfall=0.10.2|TweakScale_Waterfall=3.3.1|Konstruction=0.0.0|KonstructionUI=1.0.0|KolonyTools=1.0.0|USI_WOLF=1.0.0|WOLFUI=1.0.0|VABOrganizer=0.0.0|VaporCones=1.0.0|KerbalActuators=1.0.0|Deferred=1.3.5
+_modVersions = Scale_Redist=3.3.1|ModuleManager=4.2.3|000_AT_Utils=1.10.1|001_AnisotropicPartResizer=1.5.0|002_MultiAnimators=1.2.1|0_00_AT_Utils_UI=1.0.0|CC.UI=1.0.0|ConfigurableContainers=2.6.2|SubmodelResizer=1.0.0|ClickThroughBlocker=2.1.10|FilterExtensions=3.2.9|0Harmony=2.2.1|HarmonyInstallChecker=2.2.1|Unity.Burst.Unsafe=1.0.0|Unity.Mathematics=1.0.0|Microsoft.Extensions.FileSystemGlobbing=6.0.21|System.IO.Compression=4.6.57|System.Runtime.CompilerServices.Unsafe=4.700.20|System.Runtime=4.0.0|Unity.Burst=1.7.4|System.IO.Compression.FileSystem=4.6.57|Unity.Collections=0.8.0|Unity.Jobs=0.2.9|KSPBurst=1.7.4|Kopernicus.Parser=1.0.0|ModularFlightIntegrator=1.2.10|SharpDX=4.2.0|SharpDX.DXGI=4.2.0|SharpDX.Direct3D11=4.2.0|KSPTextureLoader=1.0.35|Kopernicus=1.12.247|VertexMitchellNetravaliHeightMap=0.3.0|BlendshapeModelLoader=1.6.4|TexturesUnlimited=1.6.4|USITools=1.0.0|USIToolsUI=1.0.0|ToolbarControl=0.1.9|KSPe.Light.Recall=2.5.5|Attached=0.5.0|AttachedOnEditor=0.5.0|ChillingOut=0.5.0|Driftless=0.5.0|KSP-Recall=0.5.0|Refunding=0.5.0|Resourceful=0.5.0|BurstPQS=0.1.24|AdvancedPQSTools=1.6.1|AtmosphereAutopilot.UI=1.0.0|AtmosphereAutopilot=1.6.1|AAPartCategory=1.0.0|AviatorArsenal=1.0.0|B9PartSwitch=2.21.0|B9-PWings-Fork=0.46.1|BDAnimationModules=0.6.7|RNModules=1.2.1|WearableProps=1.0.0|BetterTimeWarpCont=2.3.14|BDB=1.14.0|CustomPreLaunchChecks=1.8.1|KerbalKonstructs=1.8.1|BurstPQS.KerbalKonstructs=0.1.24|BurstPQS.Kopernicus=0.1.24|ParallaxContinued=1.0.0|BurstPQS.ParallaxContinued=0.1.24|BurstPQS.VertexMitchellNetravaliHeightMap=0.1.24|CameraTools=1.37.1|CCK=5.1.0|CommunityTraitIcons=1.1.2|Shabby=0.4.2|ConformalDecals=0.4.2|Unity.TextMeshPro=2.1.6|KXAPI=1.0.0|CraftManager=1.0.7240|KatLib=1.0.7240|SimpleBoiloff=0.2.1|DeployableEngines=2.2.0|DMModuleScienceAnimateGeneric=0.23.0|DynamicBatteryStorage=1.0.0|Atmosphere=3.1.2|CelestialShadows=3.1.2|CityLights=3.1.2|EVEManager=3.1.2|PartFX=3.1.2|PQSManager=3.1.2|ShaderLoader=3.1.2|Terrain=3.1.2|TextureConfig=3.1.2|Utils=3.1.2|_BuildManager=3.1.2|FarFutureTechnologies=1.0.0|KSP_Log=1.2.0|ButtonManager=1.0.2|FillitUp=0.2.0|FireflyAPI=1.0.0|Firefly=1.0.5|FireflyInstallChecker=1.0.0|Firespitter=7.3.7660|FlightRecorder=1.0.0|FreeIva=0.2.20|HangerExtenderExtended=3.6.1|FullAutoStrut=3.0.1|HUDReplacer=1.3.3|JanitorsCloset=0.3.9|RasterPropMonitor=1.0.2|Kaboom=1.4.0|KAX=2.8.1|KSPe.Light.KAX=2.4.2|KerbalChangelog=1.4.2|KerbalEngineer.Unity=1.0.0|KerbalEngineer=1.1.9|KerbalJointReinforcement=3.8.6|VesselModuleSave=1.0.2|KerBalloons=0.6.0|Renamer=1.7.0|DeployableAeroSurfaces=1.0.0|HyperEdit=1.5.8|KerbetrotterTools=1.3.6|DDSLoader=1.0.0|KerwisShader=0.7.0|PartMusic=1.0.0|KronalUtils=1.0.0|KSCSwitcher=2.2.0|0_MultipleModuleInPartAPI=1.0.0|KSPCommunityFixes=1.41.1|KSPTethers=1.0.0|KSPWheel=0.0.0|MiniAVC=1.0.3|LazyPainter=0.4.1|alglib=1.0.0|MechJeb2=2.15.1|MechJebLib=1.0.0|MechJebLibBindings=1.0.0|DockingPortAlignmentIndicator=6.12.0|DPAI_RPM=1.0.0|ModuleDockingNodeNamed=1.1.0|NearFutureElectrical=1.0.0|NearFutureExploration=0.4.0|NFPropUtils=1.0.0|NearFuturePropulsion=0.9.0|NearFutureSolar=0.4.0|NearFutureUtils=0.0.0|NeptuneCamera=1.0.0|PhysicsRangeExtender=1.21.0|PlanetarySurfaceStructures=1.6.16|PlanetShine=0.2.6|ROUtils=1.1.1|ProceduralFairings=6.7.0|ProceduralParts=2.8.0|Restock=1.0.0|RetractableLiftingSurface=0.2.1|Reviva=1.0.2|RSSBalancer=1.36.3|scatterer=0.903.0|ShipManifest=6.0.8|SMInterface=6.0.3|CLSInterfaces=2.0.1|SimpleAdjustableFairings=1.12.0|BobCatUtils=1.0.0|LandingEngine=1.0.0|SpaceDust=0.5.4|KSP_ColorPicker=1.1.1|KSP_PartHighlighter=1.1.1|SpaceTuxUtility=1.0.2|OcclusionHeat=1.0.0|KSPSteamCtrlr=0.0.1|SSTUTools=0.0.0|StagedAnimation=1.0.0|HabUtils=1.0.0|StockClamshellFairings=1.0.0|SXTContinued=0.3.31|SystemHeat=0.1.0|TargetInterceptPlanner=1.0.1|Targetron=1.7.0|TarsierSpaceTech=7.13.0|TextureReplacer=4.5.3|TCA.UI=1.0.0|ThrottleControlledAvionics=3.8.0|Trajectories=2.4.5|TransferWindowPlanner=1.9.1|TRPHire=0.6.11|TweakScaleSafetyNet=3.3.1|TUFX=1.1.1|Scale=3.3.1|Waterfall=0.10.2|TweakScale_Waterfall=3.3.1|Konstruction=0.0.0|KonstructionUI=1.0.0|KolonyTools=1.0.0|USI_WOLF=1.0.0|WOLFUI=1.0.0|VABOrganizer=0.0.0|VaporCones=1.0.0|KerbalActuators=1.0.0|Deferred=1.3.5
 PART
 {
 	part = BURAN.CABINE_4294253340
 	partName = Part
 	persistentId = 2916403994
-	pos = 3.01244617,21.316658,7.51682758
+	pos = 1.50353885,7.11999369,-0.2489492
 	attPos = 0,0,0
-	attPos0 = 3.01244617,21.316658,7.51682758
-	rot = 0.707106829,0,0,0.707106829
+	attPos0 = 1.50353885,7.11999369,-0.2489492
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,0.999999881
 	attRot0 = 0.707106769,0,0,0.707106769
 	mir = 1,1,1
@@ -37,7 +37,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 100
-	modMass = 4.41250038
+	modMass = 2.48391247
 	modSize = 0,0,0
 	link = Buran.BASE.DOCKINGPORT_4294082760
 	link = BURAN.FUSELASE_4294165470
@@ -129,7 +129,6 @@ PART
 		}
 		UPGRADESAPPLIED
 		{
-			upgrade = GD_RT_advUnmanned
 		}
 	}
 	MODULE
@@ -161,6 +160,28 @@ PART
 			OpenKerbNetAction
 			{
 				actionGroup = None
+				wasActiveBeforePartWasAdjusted = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleDataTransmitter
+		isEnabled = True
+		xmitIncomplete = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			StartTransmissionAction
+			{
+				actionGroup = None
+				active = False
 				wasActiveBeforePartWasAdjusted = False
 			}
 		}
@@ -381,21 +402,6 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleLiftingSurface
-		isEnabled = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = ModuleAnimateGeneric
 		isEnabled = True
 		aniState = LOCKED
@@ -486,6 +492,312 @@ PART
 		isEnabled = True
 		active = True
 		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = USI_ModuleRecycleablePart
+		isEnabled = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleKaboom
+		isEnabled = True
+		delay = 0
+		isGlued = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			KaboomAction
+			{
+				actionGroup = None
+				wasActiveBeforePartWasAdjusted = False
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTCA
+		isEnabled = True
+		GID = 69c780d1c56b4a2eaa23b9136b2b283a
+		GroupMaster = True
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+			onActionUpdate
+			{
+				actionGroup = None
+				wasActiveBeforePartWasAdjusted = False
+			}
+			ToggleTCA
+			{
+				actionGroup = None
+				wasActiveBeforePartWasAdjusted = False
+			}
+		}
+		VSLCONFIG
+		{
+			Name = BURAN_OK-GLI
+			Enabled = False
+			GUIVisible = False
+			ActiveTab = 0
+			ActionGroup = None
+			WarpToNode = True
+			AltitudeAboveTerrain = False
+			DesiredAltitude = 0
+			VerticalCutoff = 10
+			BlockThrottle = False
+			ControlSensitivity = 0.00999999978
+			ControlTransform = 0
+			SteeringGain = 1
+			SteeringModifier = 1,1,1
+			PitchYawLinked = True
+			AutoTune = True
+			SASIsControlled = False
+			SASWasEnabled = False
+			MaxNavSpeed = 100
+			ShowPath = False
+			VTOLAssistON = True
+			AutoGear = True
+			AutoBrakes = True
+			StabilizeFlight = True
+			UseCPS = True
+			CorrectWithTranslation = True
+			RotateWithRCS = True
+			UseHorizontalThrust = True
+			MinHorizontalAccel = 0.5
+			ShowManualLimits = False
+			AutoStage = True
+			AutoParachutes = True
+			UseSmartEngines = False
+			Squad = 0
+			MacroIsActive = False
+			EnabledTCAParts
+			{
+			}
+			AT
+			{
+				State = None
+			}
+			VF
+			{
+				State = None
+			}
+			CTRL
+			{
+				State = None
+			}
+			HF
+			{
+				State = None
+			}
+			BR
+			{
+				State = None
+			}
+			Nav
+			{
+				State = None
+			}
+			Path
+			{
+				Name = 
+			}
+			AP1
+			{
+				State = None
+			}
+			AP2
+			{
+				State = None
+			}
+			Engines
+			{
+				p = 0.400000006
+				i = 0.200000003
+			}
+			EnginesProfiles
+			{
+				ENGINESPROF
+				{
+					Name = Default
+					Active = True
+					Activated = False
+					Default = True
+					NumManual = 0
+					OnPlanet = 2
+					Stage = -1
+					Level = False
+					SmartEngines = 0
+					Single
+					{
+						3991061468
+						{
+							Name = 17D12 (ОДУ Бурана) (RD58)
+							On = False
+							Limit = 0.500657856
+							role = MAIN
+							Mode = ALL
+						}
+						1883030767
+						{
+							Name = 17D12 (ОДУ Бурана) (RD58)
+							On = False
+							Limit = 0.500657856
+							role = MAIN
+							Mode = ALL
+						}
+						3045373983
+						{
+							Name = Buran AL-31 Turbojet - Right
+							On = False
+							Limit = 1
+							role = MAIN
+							Mode = ALL
+						}
+						4151360929
+						{
+							Name = Buran AL-31 Turbojet - Left
+							On = False
+							Limit = 1
+							role = MAIN
+							Mode = ALL
+						}
+						3066011139
+						{
+							Name = Buran AL-31 AL-31F z dopalaczem 122,6 k N (OK-GLI) - Right
+							On = False
+							Limit = 1
+							role = MAIN
+							Mode = ALL
+						}
+						2592275574
+						{
+							Name = Buran AL-31 AL-31F z dopalaczem 122,6 k N (OK-GLI) - Left
+							On = False
+							Limit = 1
+							role = MAIN
+							Mode = ALL
+						}
+					}
+					Groups
+					{
+					}
+				}
+			}
+			SmartEngines
+			{
+				State = None
+			}
+			Macros
+			{
+				type = ThrottleControlledAvionics.TCAMacroLibrary, ThrottleControlledAvionics
+				DB
+				{
+				}
+			}
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = TrajectoriesVesselSettings
+		isEnabled = True
+		Initialized = False
+		EntryAngle = 3.1415926535897931
+		EntryHorizon = False
+		HighAngle = 3.1415926535897931
+		HighHorizon = False
+		LowAngle = 3.1415926535897931
+		LowHorizon = False
+		GroundAngle = 3.1415926535897931
+		GroundHorizon = False
+		RetrogradeEntry = True
+		TargetBody = 
+		TargetPosition_x = 0
+		TargetPosition_y = 0
+		TargetPosition_z = 0
+		ManualTargetTxt = 
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = AttachedOnEditor
+		isEnabled = True
+		active = True
+		originalPos = (1.50353885, 7.11999369, -0.2489492)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
+		moduleVersion = 6
+		stagingEnabled = True
+		userReallyDeactivatedIt = False
+		originalAttachNodePos = (0.0, -2.1, 0.0)
+		originalAttachNodePos = (0.0, -2.4, 1.6)
+		originalAttachNodeSize = 2
+		originalAttachNodeSize = 2
+		originalAttachNodeOrientation = (0.0, 0.6, 0.0)
+		originalAttachNodeOrientation = (0.0, -0.6, 0.0)
+		originalAttachNodeOffset = (0.0, 0.0, 0.0)
+		originalAttachNodeOffset = (0.0, 0.0, 0.0)
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = TweakScale
+		isEnabled = True
+		currentScaleFactor = 1.5
+		defaultTransformScale = (1, 1, 1)
+		extraCost = 100
+		extraMass = 2.48391247
+		stagingEnabled = True
+		type = stack_square
+		defaultScale = 1.25
+		currentScale = 1.875
 		EVENTS
 		{
 		}
@@ -1191,316 +1503,9 @@ PART
 	}
 	MODULE
 	{
-		name = USI_ModuleRecycleablePart
-		isEnabled = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = ModuleKaboom
-		isEnabled = True
-		delay = 0
-		isGlued = False
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-			KaboomAction
-			{
-				actionGroup = None
-				wasActiveBeforePartWasAdjusted = False
-			}
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = ModuleTCA
-		isEnabled = True
-		GID = 69c780d1c56b4a2eaa23b9136b2b283a
-		GroupMaster = True
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-			onActionUpdate
-			{
-				actionGroup = None
-				wasActiveBeforePartWasAdjusted = False
-			}
-			ToggleTCA
-			{
-				actionGroup = None
-				wasActiveBeforePartWasAdjusted = False
-			}
-		}
-		VSLCONFIG
-		{
-			Name = BURAN_TEST
-			Enabled = False
-			GUIVisible = False
-			ActiveTab = 0
-			ActionGroup = None
-			WarpToNode = True
-			AltitudeAboveTerrain = False
-			DesiredAltitude = 0
-			VerticalCutoff = 10
-			BlockThrottle = False
-			ControlSensitivity = 0.00999999978
-			ControlTransform = 0
-			SteeringGain = 1
-			SteeringModifier = 1,1,1
-			PitchYawLinked = True
-			AutoTune = True
-			SASIsControlled = False
-			SASWasEnabled = False
-			MaxNavSpeed = 100
-			ShowPath = False
-			VTOLAssistON = True
-			AutoGear = True
-			AutoBrakes = True
-			StabilizeFlight = True
-			UseCPS = True
-			CorrectWithTranslation = True
-			RotateWithRCS = True
-			UseHorizontalThrust = True
-			MinHorizontalAccel = 0.5
-			ShowManualLimits = False
-			AutoStage = True
-			AutoParachutes = True
-			UseSmartEngines = False
-			Squad = 0
-			MacroIsActive = False
-			EnabledTCAParts
-			{
-			}
-			AT
-			{
-				State = None
-			}
-			VF
-			{
-				State = None
-			}
-			CTRL
-			{
-				State = None
-			}
-			HF
-			{
-				State = None
-			}
-			BR
-			{
-				State = None
-			}
-			Nav
-			{
-				State = None
-			}
-			Path
-			{
-				Name = 
-			}
-			AP1
-			{
-				State = None
-			}
-			AP2
-			{
-				State = None
-			}
-			Engines
-			{
-				p = 0.400000006
-				i = 0.200000003
-			}
-			EnginesProfiles
-			{
-				ENGINESPROF
-				{
-					Name = Default
-					Active = True
-					Activated = False
-					Default = True
-					NumManual = 0
-					OnPlanet = 2
-					Stage = -1
-					Level = False
-					SmartEngines = 0
-					Single
-					{
-						1459992206
-						{
-							Name = RD58 (RD58)
-							On = False
-							Limit = 0.500657856
-							role = MAIN
-							Mode = ALL
-						}
-						1604141691
-						{
-							Name = RD58 (RD58)
-							On = False
-							Limit = 0.500657856
-							role = MAIN
-							Mode = ALL
-						}
-						3045373983
-						{
-							Name = Buran AL-31 Turbojet - Right
-							On = False
-							Limit = 0.500657856
-							role = MAIN
-							Mode = ALL
-						}
-						4151360929
-						{
-							Name = Buran AL-31 Turbojet - Left
-							On = False
-							Limit = 0.500657856
-							role = MAIN
-							Mode = ALL
-						}
-					}
-					Groups
-					{
-					}
-				}
-			}
-			SmartEngines
-			{
-				State = None
-			}
-			Macros
-			{
-				type = ThrottleControlledAvionics.TCAMacroLibrary, ThrottleControlledAvionics
-				DB
-				{
-				}
-			}
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = TrajectoriesVesselSettings
-		isEnabled = True
-		Initialized = False
-		EntryAngle = 3.1415926535897931
-		EntryHorizon = False
-		HighAngle = 3.1415926535897931
-		HighHorizon = False
-		LowAngle = 3.1415926535897931
-		LowHorizon = False
-		GroundAngle = 3.1415926535897931
-		GroundHorizon = False
-		RetrogradeEntry = True
-		TargetBody = 
-		TargetPosition_x = 0
-		TargetPosition_y = 0
-		TargetPosition_z = 0
-		ManualTargetTxt = 
-		stagingEnabled = True
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = AttachedOnEditor
-		isEnabled = True
-		active = True
-		originalPos = (3.01244617, 21.316658, 7.51682758)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
-		moduleVersion = 6
-		stagingEnabled = True
-		userReallyDeactivatedIt = False
-		originalAttachNodePos = (0.0, -2.1, 0.0)
-		originalAttachNodePos = (0.0, -2.4, 1.6)
-		originalAttachNodeSize = 2
-		originalAttachNodeSize = 2
-		originalAttachNodeOrientation = (0.0, 0.6, 0.0)
-		originalAttachNodeOrientation = (0.0, -0.6, 0.0)
-		originalAttachNodeOffset = (0.0, 0.0, 0.0)
-		originalAttachNodeOffset = (0.0, 0.0, 0.0)
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
-		name = TweakScale
-		isEnabled = True
-		currentScaleFactor = 1.5
-		defaultTransformScale = (1, 1, 1)
-		extraCost = 100
-		extraMass = 4.41250038
-		stagingEnabled = True
-		type = stack_square
-		defaultScale = 1.25
-		currentScale = 1.875
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 47457.8984
+		packedVolume = 28712.0273
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -1551,10 +1556,10 @@ PART
 	part = BURAN.FUSELASE_4294165470
 	partName = Part
 	persistentId = 3263176049
-	pos = 3.01244593,21.316658,-2.9663887
+	pos = 1.50353861,7.11999178,-10.7321672
 	attPos = 0,0,0
 	attPos0 = -1.16618717,13.6800003,-1.73569393
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -1570,7 +1575,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 190
-	modMass = 39.9142494
+	modMass = 24.1481209
 	modSize = 0,0,0
 	link = BURAN.WING.R_4294523680
 	link = BURAN.WING.L_4294524110
@@ -2345,7 +2350,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 190
-		extraMass = 39.9142494
+		extraMass = 24.1481209
 		stagingEnabled = True
 		type = stack
 		defaultScale = 2.5
@@ -2454,28 +2459,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244593, 21.316658, -2.9663887)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50353861, 7.11999178, -10.7321672)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -2525,7 +2513,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 204192.906
+		packedVolume = 123536.703
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -2546,10 +2534,10 @@ PART
 	part = BURAN.WING.R_4294523680
 	partName = Part
 	persistentId = 3190626503
-	pos = 8.31928635,19.9922504,-9.33799839
+	pos = 6.81037903,5.79558229,-17.1037788
 	attPos = 0,0,0
 	attPos0 = 3.53786826,-4.24773216,0.88293761
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -2565,7 +2553,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 2137.5
-	modMass = 4.03750038
+	modMass = 2.44268751
 	modSize = 0,0,0
 	link = BURAN.ELEVON.R_4294523188
 	attN = top,BURAN.FUSELASE_4294165470_-2.73296261|3.60958052|-0.000230456542_0|0.639999986|0_-2.73296261|3.60958052|-0.000230456542_0|0.639999986|0
@@ -2749,7 +2737,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 2137.5
-		extraMass = 4.03750038
+		extraMass = 2.44268751
 		stagingEnabled = True
 		type = stack
 		defaultScale = 3.75
@@ -2858,28 +2846,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (8.31928635, 19.9922504, -9.33799839)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (6.81037903, 5.79558229, -17.1037788)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -2905,7 +2876,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 20655
+		packedVolume = 12496.2754
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -2926,10 +2897,10 @@ PART
 	part = BURAN.ELEVON.R_4294523188
 	partName = Part
 	persistentId = 3685813571
-	pos = 8.31927967,19.9922523,-9.33799839
+	pos = 6.81037235,5.7955842,-17.1037788
 	attPos = 0,0,0
 	attPos0 = 4.76837158E-07,0,0
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -2945,7 +2916,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 625
-	modMass = 0.25
+	modMass = 0.151250005
 	modSize = 0,0,0
 	attN = top,BURAN.WING.R_4294523680_1.46233833|-3.49152851|0.0828430653_0|0.639999986|0_1.46233833|-3.49152851|0.0828430653_0|0.639999986|0
 	EVENTS
@@ -3197,28 +3168,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (8.31927967, 19.9922523, -9.33799839)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (6.81037235, 5.7955842, -17.1037788)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -3243,7 +3197,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 625
-		extraMass = 0.25
+		extraMass = 0.151250005
 		stagingEnabled = True
 		type = free_square
 		defaultScale = 100
@@ -3262,7 +3216,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 2430
+		packedVolume = 1470.15002
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -3283,10 +3237,10 @@ PART
 	part = Buran.BASE.DOCKINGPORT_4294082760
 	partName = Part
 	persistentId = 259083942
-	pos = 3.01243925,23.6800308,3.79267669
+	pos = 1.50353193,9.48336601,-3.97310185
 	attPos = 0,0,0
 	attPos0 = 0,-2.48276329,-1.57557273
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -3302,7 +3256,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 1900
-	modMass = 1.50812507
+	modMass = 0.912415683
 	modSize = 0,0,0
 	link = Buran.DOCKING.PORT_4294523076
 	attN = bottom,BURAN.CABINE_4294253340_0|1.61828792|2.31370783_0|-0.629999995|0_0|1.61828792|2.31370783_0|-0.629999995|0
@@ -3476,28 +3430,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01243925, 23.6800308, 3.79267669)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50353193, 9.48336601, -3.97310185)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -3526,7 +3463,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (0.629999995, 0.629999995, 0.629999995)
 		extraCost = 1900
-		extraMass = 1.50812507
+		extraMass = 0.912415683
 		stagingEnabled = True
 		type = stack
 		defaultScale = 1.25
@@ -3545,7 +3482,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 7715.25
+		packedVolume = 4667.72656
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -3566,10 +3503,10 @@ PART
 	part = Buran.DOCKING.PORT_4294523076
 	partName = Part
 	persistentId = 1589142972
-	pos = 3.01244497,22.2773266,3.79267716
+	pos = 1.50353765,8.08066177,-3.97310114
 	attPos = 0,0,0
 	attPos0 = 0,0,0.935126662
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -4008,28 +3945,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244497, 22.2773266, 3.79267716)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50353765, 8.08066177, -3.97310114)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -4094,10 +4014,10 @@ PART
 	part = BURAN.WING.L_4294524110
 	partName = Part
 	persistentId = 178020164
-	pos = -2.29435086,19.9922485,-9.33799839
+	pos = -3.80325818,5.79558039,-17.1037788
 	attPos = 0,0,0
 	attPos0 = -3.53786802,-4.24773216,0.88293761
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -4113,7 +4033,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 2137.5
-	modMass = 4.03750038
+	modMass = 2.44268751
 	modSize = 0,0,0
 	link = BURAN.ELEVON.L_4294522172
 	attN = top,BURAN.FUSELASE_4294165470_2.73296261|3.60958052|-0.000230456542_0|0.639999986|0_2.73296261|3.60958052|-0.000230456542_0|0.639999986|0
@@ -4297,7 +4217,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 2137.5
-		extraMass = 4.03750038
+		extraMass = 2.44268751
 		stagingEnabled = True
 		type = stack
 		defaultScale = 3.75
@@ -4406,28 +4326,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (-2.29435086, 19.9922485, -9.33799839)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (-3.80325818, 5.79558039, -17.1037788)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -4453,7 +4356,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 20655
+		packedVolume = 12496.2754
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -4474,10 +4377,10 @@ PART
 	part = BURAN.ELEVON.L_4294522172
 	partName = Part
 	persistentId = 3429213717
-	pos = -2.29434228,19.9138203,-9.33702183
+	pos = -3.8032496,5.71715212,-17.1028023
 	attPos = 0,0,0
 	attPos0 = 2.38418579E-07,0,0
-	rot = 0.715002477,0,0,0.699122012
+	rot = 0.715002418,0,0,0.699121952
 	attRot = 0.0112291565,0,0,0.999936938
 	attRot0 = 0.0112291565,0,0,0.999936938
 	mir = 1,1,1
@@ -4493,7 +4396,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 625
-	modMass = 0.25
+	modMass = 0.151250005
 	modSize = 0,0,0
 	attN = top,BURAN.WING.L_4294524110_-1.46233833|-3.49152851|0.0828430653_0|0.639999986|0_-1.46233833|-3.49152851|0.0828430653_0|0.639999986|0
 	EVENTS
@@ -4745,28 +4648,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (-2.29434228, 19.9138203, -9.33702183)
-		originalRotation = (0.715002477, 0, 0, 0.699122012)
+		originalPos = (-3.8032496, 5.71715212, -17.1028023)
+		originalRotation = (0.715002418, 0, 0, 0.699121952)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -4791,7 +4677,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 625
-		extraMass = 0.25
+		extraMass = 0.151250005
 		stagingEnabled = True
 		type = free_square
 		defaultScale = 100
@@ -4810,7 +4696,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 2430
+		packedVolume = 1470.15002
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -4831,10 +4717,10 @@ PART
 	part = BURAN.ENGINE.MOUT_4294525186
 	partName = Part
 	persistentId = 1861670949
-	pos = 3.01244593,21.3166542,-13.9042311
+	pos = 1.50353861,7.11998606,-21.6700115
 	attPos = 0,0,0
 	attPos0 = 0,-10.9378338,1.90734863E-06
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -4850,7 +4736,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 165.354828
-	modMass = 6.85766983
+	modMass = 4.14889097
 	modSize = 0,0,0
 	link = Energia2.Parashute_4294524318
 	link = Buran17D12_4294522920
@@ -5095,8 +4981,8 @@ PART
 	{
 		name = FundsKeeper
 		isEnabled = True
-		OriginalCost = 1703.4833262811034
-		OriginalResourcesCost = 1458.1284762811034
+		OriginalCost = 1598.55485
+		OriginalResourcesCost = 1353.20
 		OriginalModulesCost = 165.35485
 		stagingEnabled = True
 		EVENTS
@@ -5183,7 +5069,7 @@ PART
 	{
 		name = ModuleCryoTank
 		isEnabled = True
-		LastUpdateTime = 154289853.72432622
+		LastUpdateTime = 157195539.41084492
 		CoolingAllowed = True
 		CoolingEnabled = False
 		BoiloffOccuring = False
@@ -5231,28 +5117,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244593, 21.3166542, -13.9042311)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50353861, 7.11998606, -21.6700115)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -5296,12 +5165,33 @@ PART
 	}
 	MODULE
 	{
+		name = ModuleTankBalancer
+		isEnabled = True
+		dryMassMultiplier = 1
+		fuelMultiplier = 1
+		appliedFuelMultiplier = 1
+		scaledCapacity = -1
+		baseCapacities = LiquidFuel=1461.0374755859375;Oxidizer=1785.7125244140625
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
 		name = TweakScale
 		isEnabled = True
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 140.454086
-		extraMass = 6.85766983
+		extraMass = 4.14889097
 		stagingEnabled = True
 		type = stack
 		defaultScale = 2.5
@@ -5320,7 +5210,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 47457.8984
+		packedVolume = 28712.0273
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -5382,10 +5272,10 @@ PART
 	part = Energia2.Parashute_4294524318
 	partName = Part
 	persistentId = 2440890746
-	pos = 3.01243711,24.4273014,-15.8059645
+	pos = 1.50352979,10.2306328,-23.5717449
 	attPos = 0,0,0
 	attPos0 = 0,-1.26782227,-2.07375741
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -5401,7 +5291,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 100
-	modMass = 0.037499994
+	modMass = 0.0226875003
 	modSize = 0,0,0
 	attN = top,BURAN.ENGINE.MOUT_4294525186_0|0|0_0|0.629999995|0_0|0|0_0|0.629999995|0
 	EVENTS
@@ -5609,28 +5499,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01243711, 24.4273014, -15.8059645)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50352979, 10.2306328, -23.5717449)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -5655,7 +5528,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 100
-		extraMass = 0.037499994
+		extraMass = 0.0226875003
 		stagingEnabled = True
 		type = stack_square
 		defaultScale = 0.625
@@ -5674,7 +5547,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 364.5
+		packedVolume = 220.522491
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -5695,10 +5568,10 @@ PART
 	part = Buran17D12_4294522920
 	partName = Part
 	persistentId = 381734086
-	pos = 4.02146816,21.2726402,-16.9442406
+	pos = 2.51256084,7.07597017,-24.7100258
 	attPos = 0,0,0
 	attPos0 = 0.672680259,-2.0266571,0.0293432642
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -6079,28 +5952,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (4.02146816, 21.2726402, -16.9442406)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (2.51256084, 7.07597017, -24.7100258)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -6116,6 +5972,25 @@ PART
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleEngineBalancer
+		isEnabled = True
+		ispMultiplier = 1
+		thrustMultiplier = 1
+		massMultiplier = 1
+		scaleWholePart = False
+		stagingEnabled = True
 		EVENTS
 		{
 		}
@@ -6151,10 +6026,10 @@ PART
 	part = Buran17D12_4294522566
 	partName = Part
 	persistentId = 1833989764
-	pos = 2.00342417,21.2726364,-16.9442406
+	pos = 0.49451685,7.07596636,-24.7100258
 	attPos = 0,0,0
 	attPos0 = -0.672680259,-2.0266571,0.0293432642
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -6535,28 +6410,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (2.00342417, 21.2726364, -16.9442406)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (0.49451685, 7.07596636, -24.7100258)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -6572,6 +6430,25 @@ PART
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleEngineBalancer
+		isEnabled = True
+		ispMultiplier = 1
+		thrustMultiplier = 1
+		massMultiplier = 1
+		scaleWholePart = False
+		stagingEnabled = True
 		EVENTS
 		{
 		}
@@ -6607,10 +6484,10 @@ PART
 	part = BURAN.BODY.FLAP_4294522212
 	partName = Part
 	persistentId = 4195408825
-	pos = 3.01244998,20.0586376,-15.8488455
+	pos = 1.50354266,5.86196947,-23.6146259
 	attPos = 0,0,0
 	attPos0 = 0,-1.29641056,0.838671327
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -6626,7 +6503,7 @@ PART
 	attm = 0
 	sameVesselCollision = False
 	modCost = 1125
-	modMass = 1.5
+	modMass = 0.907499969
 	modSize = 0,0,0
 	attN = top,BURAN.ENGINE.MOUT_4294525186_0|0|0_0|0.639999986|0_0|0|0_0|0.639999986|0
 	EVENTS
@@ -6878,28 +6755,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244998, 20.0586376, -15.8488455)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50354266, 5.86196947, -23.6146259)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -6924,7 +6784,7 @@ PART
 		currentScaleFactor = 1.5
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 1125
-		extraMass = 1.5
+		extraMass = 0.907499969
 		stagingEnabled = True
 		type = free_square
 		defaultScale = 100
@@ -6943,7 +6803,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 14580
+		packedVolume = 8820.90039
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -6964,10 +6824,10 @@ PART
 	part = dockingPortLarge_4294522136
 	partName = Part
 	persistentId = 1463039464
-	pos = 3.01244497,21.988657,-12.0347891
+	pos = 1.50353765,7.79198885,-19.8005695
 	attPos = 0,0,0
 	attPos0 = 0,1.24629688,-0.447999984
-	rot = 0.707106829,0,0,0.707106829
+	rot = 0.707106769,0,0,0.707106769
 	attRot = 0,0,0,1
 	attRot0 = 0,0,0,1
 	mir = 1,1,1
@@ -7290,8 +7150,8 @@ PART
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244497, 21.988657, -12.0347891)
-		originalRotation = (0.707106829, 0, 0, 0.707106829)
+		originalPos = (1.50353765, 7.79198885, -19.8005695)
+		originalRotation = (0.707106769, 0, 0, 0.707106769)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -7341,10 +7201,10 @@ PART
 	part = Buran.Tail_4281605528
 	partName = Part
 	persistentId = 3702328774
-	pos = 3.01244593,24.3530636,-13.7042303
-	attPos = 2.38418579E-07,-0.0146064758,-0.170183182
+	pos = 1.50353861,12.4656086,-21.4700069
+	attPos = 2.38418664E-07,-0.0146026611,-2.47939682
 	attPos0 = -2.38418664E-07,0.214607239,-2.86622715
-	rot = -0.707106709,0,4.21468513E-08,-0.707106948
+	rot = -0.70710665,0,4.21468478E-08,-0.707106888
 	attRot = 0,0,0,1
 	attRot0 = 2.08616257E-07,2.98023224E-08,2.98023224E-08,-1
 	mir = 1,1,1
@@ -7360,7 +7220,7 @@ PART
 	attm = 1
 	sameVesselCollision = False
 	modCost = 149.063019
-	modMass = 2.60860252
+	modMass = 1.57820475
 	modSize = 0,0,0
 	link = Buran.Tail.Control_4286973008
 	srfN = srfAttach,BURAN.ENGINE.MOUT_4294525186,box,0|0|2.22655988,0|0|-1,0|0|2.22655988
@@ -7527,28 +7387,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244593, 24.3530636, -13.7042303)
-		originalRotation = (-0.707106709, 0, 4.21468513E-08, -0.707106948)
+		originalPos = (1.50353861, 12.4656086, -21.4700069)
+		originalRotation = (-0.70710665, 0, 4.21468478E-08, -0.707106888)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -7573,7 +7416,7 @@ PART
 		currentScaleFactor = 1.41999996
 		defaultTransformScale = (1, 1, 1)
 		extraCost = 149.063019
-		extraMass = 2.60860252
+		extraMass = 1.57820475
 		stagingEnabled = True
 		type = free
 		defaultScale = 100
@@ -7592,7 +7435,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 14430.9697
+		packedVolume = 8730.73633
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -7632,12 +7475,12 @@ PART
 	part = Buran.Tail.Control_4286973008
 	partName = Part
 	persistentId = 1500688760
-	pos = 3.01244664,28.5500374,-17.0571098
-	attPos = 0,-1.6947813,-1.38905907
+	pos = 1.50353932,14.3982029,-23.9513721
+	attPos = 2.02232286E-07,0.87148571,2.26438093
 	attPos0 = 5.45732746E-07,-3.3528502,-4.19697523
-	rot = 0.302856266,0.638966441,0.302855581,0.638966799
-	attRot = 0.638966501,-0.302856177,-0.63896668,0.30285579
-	attRot0 = 0.237665936,-0.665968835,0.23766616,-0.665969431
+	rot = 0.317874849,0.631629348,0.317874163,0.631629586
+	attRot = 0.631629407,-0.317874849,-0.631629586,0.317874432
+	attRot0 = 0.221858025,-0.671400428,0.221858248,-0.671401083
 	mir = 1,1,1
 	symMethod = Radial
 	autostrutMode = Grandparent
@@ -7650,11 +7493,11 @@ PART
 	sepI = -1
 	attm = 1
 	sameVesselCollision = False
-	modCost = 812.200562
-	modMass = 0.016244011
+	modCost = 685.799927
+	modMass = 0.00829817913
 	modSize = 0,0,0
 	srfN = ,Buran.Tail_4281605528,box,0|0|0,0|1|0,0|0|0
-	attN = side,Null_0_1.13236535|-0.115888134|0_0.639999986|0|0_1.13236535|-0.115888134|0_0.639999986|0|0
+	attN = side,Null_0_1.07644582|-0.110165238|0_0.639999986|0|0_1.07644582|-0.110165238|0_0.639999986|0|0
 	EVENTS
 	{
 	}
@@ -7899,9 +7742,9 @@ PART
 	{
 		name = FundsKeeper
 		isEnabled = True
-		OriginalCost = 1312.2006
+		OriginalCost = 1185.7999
 		OriginalResourcesCost = 0
-		OriginalModulesCost = 812.2006
+		OriginalModulesCost = 685.7999
 		stagingEnabled = True
 		EVENTS
 		{
@@ -7968,33 +7811,16 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.01244664, 28.5500374, -17.0571098)
-		originalRotation = (0.302856266, 0.638966441, 0.302855581, 0.638966799)
+		originalPos = (1.50353932, 14.3982029, -23.9513721)
+		originalRotation = (0.317874849, 0.631629348, 0.317874163, 0.631629586)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
 		originalAttachNodePos = (1.1, -0.1, 0.0)
-		originalAttachNodeSize = 1
+		originalAttachNodeSize = 2
 		originalAttachNodeOrientation = (0.6, 0.0, 0.0)
 		originalAttachNodeOffset = (0.0, 0.0, 0.0)
 		EVENTS
@@ -8011,14 +7837,14 @@ PART
 	{
 		name = TweakScale
 		isEnabled = True
-		currentScaleFactor = 1.62000036
+		currentScaleFactor = 1.53999996
 		defaultTransformScale = (1, 1, 1)
-		extraCost = 812.200562
-		extraMass = 0.016244011
+		extraCost = 685.799927
+		extraMass = 0.00829817913
 		stagingEnabled = True
 		type = free_square
 		defaultScale = 100
-		currentScale = 162.000031
+		currentScale = 154
 		EVENTS
 		{
 		}
@@ -8033,7 +7859,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 153.055099
+		packedVolume = 79.5463028
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -8054,10 +7880,10 @@ PART
 	part = externalTankRound_4281597432
 	partName = Part
 	persistentId = 1681649181
-	pos = 3.57813048,21.7566528,-13.8922377
+	pos = 2.06922317,7.55998468,-21.6580181
 	attPos = 4.55506706,2.12181664,1.86327183
 	attPos0 = -4.61292076,-2.10982323,-2.6632719
-	rot = 0.683012784,-0.183012649,-0.183012828,0.683012664
+	rot = 0.683012724,-0.183012635,-0.183012813,0.683012605
 	attRot = 0,0,0,1
 	attRot0 = 5.96046448E-08,-0.258819103,-1.1920929E-07,0.965925872
 	mir = 1,1,1
@@ -8153,8 +7979,8 @@ PART
 	{
 		name = FundsKeeper
 		isEnabled = True
-		OriginalCost = 5977.7498941855916
-		OriginalResourcesCost = 494.9997941855916
+		OriginalCost = 5482.7501
+		OriginalResourcesCost = 0.00
 		OriginalModulesCost = 5432.7501
 		stagingEnabled = True
 		EVENTS
@@ -8257,7 +8083,7 @@ PART
 	{
 		name = ModuleCryoTank
 		isEnabled = True
-		LastUpdateTime = 154289853.72432622
+		LastUpdateTime = 157195539.41084492
 		CoolingAllowed = True
 		CoolingEnabled = False
 		BoiloffOccuring = False
@@ -8308,11 +8134,32 @@ PART
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.57813048, 21.7566528, -13.8922377)
-		originalRotation = (0.683012784, -0.183012649, -0.183012828, 0.683012664)
+		originalPos = (2.06922317, 7.55998468, -21.6580181)
+		originalRotation = (0.683012724, -0.183012635, -0.183012813, 0.683012605)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTankBalancer
+		isEnabled = True
+		dryMassMultiplier = 1
+		fuelMultiplier = 1
+		appliedFuelMultiplier = 1
+		scaledCapacity = -1
+		baseCapacities = Oxidizer=2750
+		scaleWholePart = False
+		stagingEnabled = True
 		EVENTS
 		{
 		}
@@ -8362,10 +8209,10 @@ PART
 	part = Buran.EngineAeroR_4278819638
 	partName = Part
 	persistentId = 4278320385
-	pos = 2.44097233,26.3733044,-12.355607
+	pos = 0.970565,12.241636,-20.146387
 	attPos = 0.274810314,0.576805234,0.523183346
 	attPos0 = -0.846283913,0.971818805,-5.57983351
-	rot = 0.45451951,-0.541675329,-0.579227805,0.405579984
+	rot = 0.45451948,-0.54167527,-0.579227746,0.405579954
 	attRot = -5.79965622E-08,-5.94255276E-08,0.0436192714,-0.999048233
 	attRot0 = 0.0346054696,-0.792598188,-0.0265536271,0.608182132
 	mir = 1,1,1
@@ -8381,7 +8228,7 @@ PART
 	attm = 1
 	sameVesselCollision = False
 	modCost = 140.454086
-	modMass = 0.351135254
+	modMass = 0.968430877
 	modSize = 0,0,0
 	srfN = srfAttach,BURAN.ENGINE.MOUT_4294525186,box,2.07527041|-1.8236928|-2.26161408,0.639999986|0|0,2.07527041|-1.8236928|-2.26161408
 	attN = top,Null_0_1.49927044|-1.8236928|-2.16561389_0|0.639999986|0_1.49927044|-1.8236928|-2.16561389_0|0.639999986|0
@@ -8779,28 +8626,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (2.44097233, 26.3733044, -12.355607)
-		originalRotation = (0.45451951, -0.541675329, -0.579227805, 0.405579984)
+		originalPos = (0.93206501, 12.1766357, -20.1213875)
+		originalRotation = (0.45451948, -0.54167527, -0.579227746, 0.405579954)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -8820,12 +8650,52 @@ PART
 	}
 	MODULE
 	{
+		name = ModuleEngineBalancer
+		isEnabled = True
+		ispMultiplier = 1
+		thrustMultiplier = 1
+		massMultiplier = 1
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTankBalancer
+		isEnabled = True
+		dryMassMultiplier = 1
+		fuelMultiplier = 1
+		appliedFuelMultiplier = 1
+		scaledCapacity = -1
+		baseCapacities = LiquidFuel=337.50004023313682;IntakeAtm=2.0250002413988208
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
 		name = TweakScale
 		isEnabled = True
 		currentScaleFactor = 1.5
 		defaultTransformScale = (0.639999986, 0.639999986, 0.639999986)
 		extraCost = 140.454086
-		extraMass = 0.351135254
+		extraMass = 0.968430877
 		stagingEnabled = True
 		type = stack
 		defaultScale = 2.5
@@ -8844,7 +8714,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 2430
+		packedVolume = 6701.93994
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -8909,10 +8779,10 @@ PART
 	part = Buran.EngineAeroL_4278809116
 	partName = Part
 	persistentId = 3281987915
-	pos = 3.50991988,26.5092506,-12.4031725
+	pos = 2.039513,12.247582,-20.143953
 	attPos = 0.261573553,0.994487822,-0.494795322
 	attPos0 = 0.235900402,0.506570756,-4.69780111
-	rot = 0.45451957,0.541675329,0.579227924,0.405579925
+	rot = 0.45451951,0.54167527,0.579227865,0.405579925
 	attRot = 6.44488765E-08,-2.31405153E-08,0.0436193869,0.999048293
 	attRot0 = 0.0346055627,0.792598248,0.0265536904,0.608182132
 	mir = 1,1,1
@@ -8928,7 +8798,7 @@ PART
 	attm = 1
 	sameVesselCollision = False
 	modCost = 140.454086
-	modMass = 0.351135254
+	modMass = 0.968430877
 	modSize = 0,0,0
 	srfN = srfAttach,BURAN.ENGINE.MOUT_4294525186,box,-2.07527041|-1.8236928|-2.16561389,-0.639999986|0|0,-2.07527041|-1.8236928|-2.16561389
 	attN = top,Null_0_-1.49927044|-1.8236928|-2.16561389_0|0.639999986|0_-1.49927044|-1.8236928|-2.16561389_0|0.639999986|0
@@ -9274,28 +9144,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.50991988, 26.5092506, -12.4031725)
-		originalRotation = (0.45451957, 0.541675329, 0.579227924, 0.405579925)
+		originalPos = (2.00101256, 12.312582, -20.1689529)
+		originalRotation = (0.45451951, 0.54167527, 0.579227865, 0.405579925)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -9315,12 +9168,52 @@ PART
 	}
 	MODULE
 	{
+		name = ModuleEngineBalancer
+		isEnabled = True
+		ispMultiplier = 1
+		thrustMultiplier = 1
+		massMultiplier = 1
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTankBalancer
+		isEnabled = True
+		dryMassMultiplier = 1
+		fuelMultiplier = 1
+		appliedFuelMultiplier = 1
+		scaledCapacity = -1
+		baseCapacities = LiquidFuel=337.49989869654928;IntakeAtm=2.0249993921792946
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
 		name = TweakScale
 		isEnabled = True
 		currentScaleFactor = 1.5
 		defaultTransformScale = (0.639999986, 0.639999986, 0.639999986)
 		extraCost = 140.454086
-		extraMass = 0.351135254
+		extraMass = 0.968430877
 		stagingEnabled = True
 		type = stack
 		defaultScale = 2.5
@@ -9339,7 +9232,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 2430
+		packedVolume = 6701.93994
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -9404,10 +9297,10 @@ PART
 	part = Buran.EngineAeroR.AL31F_4278900001
 	partName = Part
 	persistentId = 3987272455
-	pos = 3.940972,24.023304,-12.355607
+	pos = 3.115565,10.741635,-20.146387
 	attPos = 0.274810314,0.576805234,0.523183346
 	attPos0 = -0.846283913,0.971818805,-5.57983351
-	rot = 0.45451951,-0.541675329,-0.579227805,0.405579984
+	rot = 0.45451948,-0.54167527,-0.579227746,0.405579954
 	attRot = -5.79965622E-08,-5.94255276E-08,0.0436192714,-0.999048233
 	attRot0 = 0.0346054696,-0.792598188,-0.0265536271,0.608182132
 	mir = 1,1,1
@@ -9417,13 +9310,13 @@ PART
 	istg = 2
 	resPri = 0
 	dstg = 0
-	sidx = 0
+	sidx = 2
 	sqor = 2
 	sepI = -1
 	attm = 1
 	sameVesselCollision = False
 	modCost = 140.454086
-	modMass = 0.351135254
+	modMass = 0.968430877
 	modSize = 0,0,0
 	srfN = srfAttach,BURAN.ENGINE.MOUT_4294525186,box,2.07527041|-1.8236928|-2.26161408,0.639999986|0|0,2.07527041|-1.8236928|-2.26161408
 	attN = top,Null_0_1.49927044|-1.8236928|-2.16561389_0|0.639999986|0_1.49927044|-1.8236928|-2.16561389_0|0.639999986|0
@@ -9821,28 +9714,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (2.44097233, 26.3733044, -12.355607)
-		originalRotation = (0.45451951, -0.541675329, -0.579227805, 0.405579984)
+		originalPos = (2.43206477, 9.82663536, -20.1213875)
+		originalRotation = (0.45451948, -0.54167527, -0.579227746, 0.405579954)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -9862,12 +9738,52 @@ PART
 	}
 	MODULE
 	{
+		name = ModuleEngineBalancer
+		isEnabled = True
+		ispMultiplier = 1
+		thrustMultiplier = 1
+		massMultiplier = 1
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTankBalancer
+		isEnabled = True
+		dryMassMultiplier = 1
+		fuelMultiplier = 1
+		appliedFuelMultiplier = 1
+		scaledCapacity = -1
+		baseCapacities = LiquidFuel=337.50004023313682;IntakeAtm=2.0250002413988208
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
 		name = TweakScale
 		isEnabled = True
 		currentScaleFactor = 1.5
 		defaultTransformScale = (0.639999986, 0.639999986, 0.639999986)
 		extraCost = 140.454086
-		extraMass = 0.351135254
+		extraMass = 0.968430877
 		stagingEnabled = True
 		type = stack
 		defaultScale = 2.5
@@ -9886,7 +9802,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 2430
+		packedVolume = 6701.93994
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -9951,10 +9867,10 @@ PART
 	part = Buran.EngineAeroL.AL31F_4278900002
 	partName = Part
 	persistentId = 3479664242
-	pos = 2.009920,24.159251,-12.403173
+	pos = -0.105487,10.747582,-20.143955
 	attPos = 0.261573553,0.994487822,-0.494795322
 	attPos0 = 0.235900402,0.506570756,-4.69780111
-	rot = 0.45451957,0.541675329,0.579227924,0.405579925
+	rot = 0.45451951,0.54167527,0.579227865,0.405579925
 	attRot = 6.44488765E-08,-2.31405153E-08,0.0436193869,0.999048293
 	attRot0 = 0.0346055627,0.792598248,0.0265536904,0.608182132
 	mir = 1,1,1
@@ -9964,13 +9880,13 @@ PART
 	istg = 2
 	resPri = 0
 	dstg = 0
-	sidx = 1
+	sidx = 3
 	sqor = 2
 	sepI = -1
 	attm = 1
 	sameVesselCollision = False
 	modCost = 140.454086
-	modMass = 0.351135254
+	modMass = 0.968430877
 	modSize = 0,0,0
 	srfN = srfAttach,BURAN.ENGINE.MOUT_4294525186,box,-2.07527041|-1.8236928|-2.16561389,-0.639999986|0|0,-2.07527041|-1.8236928|-2.16561389
 	attN = top,Null_0_-1.49927044|-1.8236928|-2.16561389_0|0.639999986|0_-1.49927044|-1.8236928|-2.16561389_0|0.639999986|0
@@ -10316,28 +10232,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.50991988, 26.5092506, -12.4031725)
-		originalRotation = (0.45451957, 0.541675329, 0.579227924, 0.405579925)
+		originalPos = (0.501012564, 9.96258163, -20.1689548)
+		originalRotation = (0.45451951, 0.54167527, 0.579227865, 0.405579925)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -10357,12 +10256,52 @@ PART
 	}
 	MODULE
 	{
+		name = ModuleEngineBalancer
+		isEnabled = True
+		ispMultiplier = 1
+		thrustMultiplier = 1
+		massMultiplier = 1
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
+		name = ModuleTankBalancer
+		isEnabled = True
+		dryMassMultiplier = 1
+		fuelMultiplier = 1
+		appliedFuelMultiplier = 1
+		scaledCapacity = -1
+		baseCapacities = LiquidFuel=337.49989869654928;IntakeAtm=2.0249993921792946
+		scaleWholePart = False
+		stagingEnabled = True
+		EVENTS
+		{
+		}
+		ACTIONS
+		{
+		}
+		UPGRADESAPPLIED
+		{
+		}
+	}
+	MODULE
+	{
 		name = TweakScale
 		isEnabled = True
 		currentScaleFactor = 1.5
 		defaultTransformScale = (0.639999986, 0.639999986, 0.639999986)
 		extraCost = 140.454086
-		extraMass = 0.351135254
+		extraMass = 0.968430877
 		stagingEnabled = True
 		type = stack
 		defaultScale = 2.5
@@ -10381,7 +10320,7 @@ PART
 	{
 		name = ModuleCargoPart
 		isEnabled = True
-		packedVolume = 2430
+		packedVolume = 6701.93994
 		beingAttached = False
 		beingSettled = False
 		reinitResourcesOnStoreInVessel = False
@@ -10446,10 +10385,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276181898
 	partName = Part
 	persistentId = 4201886494
-	pos = 1.36666107,23.6948071,-17.131382
+	pos = -0.142246246,9.49813652,-24.8971672
 	attPos = 0,-0.0338401794,-0.132987976
 	attPos0 = -1.64578485,-3.19330788,-2.24516296
-	rot = -0.50000006,0.49999994,0.50000006,-0.49999994
+	rot = -0.50000006,0.499999911,0.50000006,-0.499999911
 	attRot = 0,0,0,1
 	attRot0 = -5.96046448E-08,0.707106829,5.96046448E-08,-0.707106829
 	mir = 1,1,1
@@ -10685,28 +10624,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (1.36666107, 23.6948071, -17.131382)
-		originalRotation = (-0.50000006, 0.49999994, 0.50000006, -0.49999994)
+		originalPos = (-0.142246246, 9.49813652, -24.8971672)
+		originalRotation = (-0.50000006, 0.499999911, 0.50000006, -0.499999911)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -10726,10 +10648,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276181698
 	partName = Part
 	persistentId = 194364679
-	pos = 4.65823078,23.6948071,-17.1313896
+	pos = 3.14932346,9.49813652,-24.8971748
 	attPos = 0,-0.0338478088,-0.132987976
 	attPos0 = 1.64578485,-3.19330788,-2.24516296
-	rot = -0.500000119,0.5,0.500000119,-0.5
+	rot = -0.50000006,0.499999911,0.50000006,-0.499999911
 	attRot = 0,0,0,1
 	attRot0 = -1.19209275E-07,0.707106769,8.94069601E-08,-0.707106829
 	mir = 1,1,1
@@ -10965,28 +10887,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (4.65823078, 23.6948071, -17.1313896)
-		originalRotation = (-0.500000119, 0.5, 0.500000119, -0.5)
+		originalPos = (3.14932346, 9.49813652, -24.8971748)
+		originalRotation = (-0.50000006, 0.499999911, 0.50000006, -0.499999911)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -11006,10 +10911,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276178210
 	partName = Part
 	persistentId = 1549339905
-	pos = 1.38147724,23.659256,-16.8389969
+	pos = -0.127430081,9.46258545,-24.6047821
 	attPos = 0,0.593666077,-0.0837593079
 	attPos0 = -1.63096869,-3.52842903,-2.25884056
-	rot = -0.50000006,0.49999994,0.50000006,-0.49999994
+	rot = -0.50000006,0.499999911,0.50000006,-0.499999911
 	attRot = 0,0,0,1
 	attRot0 = -5.96046448E-08,0.707106829,5.96046448E-08,-0.707106829
 	mir = 1,1,1
@@ -11245,28 +11150,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (1.38147724, 23.659256, -16.8389969)
-		originalRotation = (-0.50000006, 0.49999994, 0.50000006, -0.49999994)
+		originalPos = (-0.127430081, 9.46258545, -24.6047821)
+		originalRotation = (-0.50000006, 0.499999911, 0.50000006, -0.499999911)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -11286,10 +11174,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276175482
 	partName = Part
 	persistentId = 1850375508
-	pos = 4.6434145,23.659256,-16.8390045
+	pos = 3.13450718,9.46258545,-24.6047897
 	attPos = 0,0.593658447,-0.0837593079
 	attPos0 = 1.63096857,-3.52842903,-2.25884056
-	rot = -0.500000119,0.5,0.500000119,-0.5
+	rot = -0.50000006,0.499999911,0.50000006,-0.499999911
 	attRot = 0,0,0,1
 	attRot0 = -1.19209275E-07,0.707106769,8.94069601E-08,-0.707106829
 	mir = 1,1,1
@@ -11525,28 +11413,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (4.6434145, 23.659256, -16.8390045)
-		originalRotation = (-0.500000119, 0.5, 0.500000119, -0.5)
+		originalPos = (3.13450718, 9.46258545, -24.6047897)
+		originalRotation = (-0.50000006, 0.499999911, 0.50000006, -0.499999911)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -11566,10 +11437,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276163198
 	partName = Part
 	persistentId = 3679858851
-	pos = 1.36945319,23.6831951,-17.426712
+	pos = -0.139454126,9.48652458,-25.1924973
 	attPos = 0,0.101036072,-0.107698441
 	attPos0 = -1.64299273,-3.62351418,-2.25884056
-	rot = -0.49999997,0.500000119,0.49999997,-0.500000119
+	rot = -0.499999911,0.50000006,0.499999911,-0.50000006
 	attRot = 0,0,0,1
 	attRot0 = 1.19209275E-07,0.707106829,-1.19209275E-07,-0.707106829
 	mir = 1,1,1
@@ -11805,28 +11676,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (1.36945319, 23.6831951, -17.426712)
-		originalRotation = (-0.49999997, 0.500000119, 0.49999997, -0.500000119)
+		originalPos = (-0.139454126, 9.48652458, -25.1924973)
+		originalRotation = (-0.499999911, 0.50000006, 0.499999911, -0.50000006)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -11846,10 +11700,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276162840
 	partName = Part
 	persistentId = 2792389381
-	pos = 4.65543842,23.6831951,-17.4267197
+	pos = 3.14653111,9.48652458,-25.1925049
 	attPos = 0,0.101028442,-0.107698441
 	attPos0 = 1.6429925,-3.62351418,-2.25884056
-	rot = -0.50000006,0.500000179,0.49999994,-0.50000006
+	rot = -0.49999994,0.50000006,0.499999851,-0.49999994
 	attRot = 0,0,0,1
 	attRot0 = 2.98023224E-08,0.707106829,-2.08616257E-07,-0.707106829
 	mir = 1,1,1
@@ -12085,28 +11939,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (4.65543842, 23.6831951, -17.4267197)
-		originalRotation = (-0.50000006, 0.500000179, 0.49999994, -0.50000006)
+		originalPos = (3.14653111, 9.48652458, -25.1925049)
+		originalRotation = (-0.49999994, 0.50000006, 0.499999851, -0.49999994)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -12126,10 +11963,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276158836
 	partName = Part
 	persistentId = 312593338
-	pos = 2.68961406,20.064703,12.1419106
+	pos = 1.18070674,5.86803961,4.37613487
 	attPos = 0,-0.152380466,-0.536529779
 	attPos0 = -0.322832108,4.77746296,1.78848433
-	rot = 0.49442786,0.505510807,0.49442786,0.505510807
+	rot = 0.49442783,0.505510807,0.49442783,0.505510807
 	attRot = 0,0,0,1
 	attRot0 = -0.0078368187,0.707063377,-0.0078368187,0.707063377
 	mir = 1,1,1
@@ -12365,28 +12202,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (2.68961406, 20.064703, 12.1419106)
-		originalRotation = (0.49442786, 0.505510807, 0.49442786, 0.505510807)
+		originalPos = (1.18070674, 5.86803961, 4.37613487)
+		originalRotation = (0.49442783, 0.505510807, 0.49442783, 0.505510807)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -12406,10 +12226,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276151666
 	partName = Part
 	persistentId = 4239138247
-	pos = 3.33527827,20.064703,12.1419115
+	pos = 1.82637095,5.86803961,4.37613583
 	attPos = 0,-0.152380466,-0.536529779
 	attPos0 = 0.322832108,4.77746391,1.78848433
-	rot = 0.494427919,0.505510867,0.49442789,0.505510747
+	rot = 0.4944278,0.505510807,0.49442783,0.505510628
 	attRot = 0,0,0,1
 	attRot0 = -0.00783693697,0.707063437,-0.00783687737,0.707063317
 	mir = 1,1,1
@@ -12645,28 +12465,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.33527827, 20.064703, 12.1419115)
-		originalRotation = (0.494427919, 0.505510867, 0.49442789, 0.505510747)
+		originalPos = (1.82637095, 5.86803961, 4.37613583)
+		originalRotation = (0.4944278, 0.505510807, 0.49442783, 0.505510628)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -12686,10 +12489,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276147262
 	partName = Part
 	persistentId = 685069449
-	pos = 2.67363834,19.9965611,11.7893381
+	pos = 1.16473103,5.79989767,4.02356243
 	attPos = 0,0.0837845802,-0.481439829
 	attPos0 = -0.338807821,4.18872547,1.80153632
-	rot = 0.49442786,0.505510807,0.49442786,0.505510807
+	rot = 0.49442783,0.505510807,0.49442783,0.505510807
 	attRot = 0,0,0,1
 	attRot0 = -0.0078368187,0.707063377,-0.0078368187,0.707063377
 	mir = 1,1,1
@@ -12925,28 +12728,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (2.67363834, 19.9965611, 11.7893381)
-		originalRotation = (0.49442786, 0.505510807, 0.49442786, 0.505510807)
+		originalPos = (1.16473103, 5.79989767, 4.02356243)
+		originalRotation = (0.49442783, 0.505510807, 0.49442783, 0.505510807)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -12966,10 +12752,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276147076
 	partName = Part
 	persistentId = 4177442507
-	pos = 3.35125399,19.9965611,11.7893391
+	pos = 1.84234667,5.79989767,4.02356339
 	attPos = 0,0.0837864876,-0.481439829
 	attPos0 = 0.338807821,4.18872452,1.80153632
-	rot = 0.494427919,0.505510867,0.49442789,0.505510747
+	rot = 0.4944278,0.505510807,0.49442783,0.505510628
 	attRot = 0,0,0,1
 	attRot0 = -0.00783693697,0.707063437,-0.00783687737,0.707063317
 	mir = 1,1,1
@@ -13205,28 +12991,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.35125399, 19.9965611, 11.7893391)
-		originalRotation = (0.494427919, 0.505510867, 0.49442789, 0.505510747)
+		originalPos = (1.84234667, 5.79989767, 4.02356339)
+		originalRotation = (0.4944278, 0.505510807, 0.49442783, 0.505510628)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -13246,10 +13015,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276146034
 	partName = Part
 	persistentId = 3851718448
-	pos = 2.73592281,20.1774654,12.4563208
+	pos = 1.2270155,5.98080206,4.69054508
 	attPos = 0,-0.289408207,-0.639284372
 	attPos0 = -0.276523352,5.22890091,1.77847648
-	rot = 0.494428009,0.505510867,0.494427741,0.505510747
+	rot = 0.494427949,0.505510807,0.494427651,0.505510688
 	attRot = 0,0,0,1
 	attRot0 = -0.0078368187,0.707063377,-0.0078368187,0.707063377
 	mir = 1,1,1
@@ -13485,28 +13254,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (2.73592281, 20.1774654, 12.4563208)
-		originalRotation = (0.494428009, 0.505510867, 0.494427741, 0.505510747)
+		originalPos = (1.2270155, 5.98080206, 4.69054508)
+		originalRotation = (0.494427949, 0.505510807, 0.494427651, 0.505510688)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
@@ -13526,10 +13278,10 @@ PART
 	part = rcsblock-orbital-linear-1_4276145910
 	partName = Part
 	persistentId = 3491754232
-	pos = 3.28896952,20.1774654,12.4563189
+	pos = 1.7800622,5.98080206,4.69054317
 	attPos = 0,-0.289410114,-0.639284372
 	attPos0 = 0.276523352,5.22890091,1.77847648
-	rot = 0.494427741,0.505510926,0.49442789,0.505510867
+	rot = 0.494427651,0.505510807,0.49442783,0.505510807
 	attRot = 0,0,0,1
 	attRot0 = -0.00783693697,0.707063437,-0.00783687737,0.707063317
 	mir = 1,1,1
@@ -13765,28 +13517,11 @@ PART
 	}
 	MODULE
 	{
-		name = ModuleB9PartSwitch
-		isEnabled = True
-		stagingEnabled = True
-		moduleID = SimpleRepaint
-		currentSubtype = SR_Original
-		EVENTS
-		{
-		}
-		ACTIONS
-		{
-		}
-		UPGRADESAPPLIED
-		{
-		}
-	}
-	MODULE
-	{
 		name = AttachedOnEditor
 		isEnabled = True
 		active = True
-		originalPos = (3.28896952, 20.1774654, 12.4563189)
-		originalRotation = (0.494427741, 0.505510926, 0.49442789, 0.505510867)
+		originalPos = (1.7800622, 5.98080206, 4.69054317)
+		originalRotation = (0.494427651, 0.505510807, 0.49442783, 0.505510807)
 		moduleVersion = 6
 		stagingEnabled = True
 		userReallyDeactivatedIt = False
