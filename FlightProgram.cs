@@ -1900,10 +1900,14 @@ namespace RSSBalancer
         // ścieżki” szybował na najlepszej doskonałości, zgubił prędkość i trzy razy wpadał w przeciągnięcie.
         // Orbitalny Buran (lot 2026-11-20 23:23, udany) wchodził na ścieżkę ~10 km przed progiem na ~4,8 km – nad nią.
         private bool patFinal;
+
+        // Stroma ścieżka Burana – JEDNA definicja dla podejścia z orbity i dla kręgu OK-GLI (19°, cel 2,5 km przed progiem).
+        private const double SteepPathDeg = 19.0, SteepPathAim = 2500.0;
+        private static double SteepPathHeight(double d) { return (d - SteepPathAim) * Math.Tan(SteepPathDeg * Math.PI / 180); }
         private void PatternFinal(object ap, Vector3d pos, Vector3d up, double x, double h, double easNow, double vSt)
         {
             double d = -x;
-            double ht = (d - 2500) * Math.Tan(19 * Math.PI / 180);
+            double ht = SteepPathHeight(d);
             steerHdg = double.NaN;
             SetF(ap, "HeadingTarget", CenterlineHeading(pos, up));
             SetF(ap, "VertSpeedTarget", Math.Max(-10, Math.Min(10, 0.05 * (PatAlt - h))));
@@ -2269,8 +2273,8 @@ namespace RSSBalancer
                 else
                 {
                     // stroma ścieżka jak w Buranie: 17–22° (tu 19°), punkt kluczowy ~12,5 km przed pasem na ~4 km
-                    double ht = (d - 2500) * Math.Tan(19 * Math.PI / 180);
-                    vs = -vh * Math.Tan(19 * Math.PI / 180) + 0.08 * (ht - h);
+                    double ht = SteepPathHeight(d);
+                    vs = -vh * Math.Tan(SteepPathDeg * Math.PI / 180) + 0.08 * (ht - h);
                     approachPhase = "stroma ścieżka 19°";
                     double vsMin = -vh * Math.Tan(10 * Math.PI / 180);
                     lowEnergy = false;
