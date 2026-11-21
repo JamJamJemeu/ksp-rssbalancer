@@ -93,7 +93,7 @@ namespace RSSBalancer
         }
 
         /// <summary>Ustawia jedno pole/właściwość modułu MechJeba. Obsługuje EditableDouble/Int (pole Val), bool, liczby i listy int.</summary>
-        private static bool SetMember(object target, string name, string value, out string error)
+        internal static bool SetMember(object target, string name, string value, out string error)
         {
             error = null;
             Type t = target.GetType();

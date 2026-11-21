@@ -29,6 +29,8 @@ namespace RSSBalancer
     ///           stageTo = 2                      // stage'uj, dopóki obecny stage > 2
     ///           mechjebPreset = nazwa            // preset z zakładki MechJeb
     ///           mechjebAscent = on / off         // włącz / wyłącz Ascent Guidance MechJeba
+    ///           autoOrbit = auto auto [dopasuj]  // dowolna rakieta na orbitę: analiza stopni, PVG MechJeba, domknięcie orbity
+    ///                                            // (wys. km / nachylenie °, „auto” = niska orbita / szerokość startu; „dopasuj” = popraw ISP/ciąg)
     ///           attitude = 90 85 / off           // kurs i pochylenie [°] przez MechJeba (powierzchniowo), off = zwolnij
     ///           orient = retrograde | prograde | normal | antinormal | radialout | radialin | srfvel <AoA> <odchylenie> <przechylenie> | off
     ///           burn = on / off                  // pełny ciąg, gdy statek jest ustawiony (błąd < 5°)
@@ -886,6 +888,7 @@ namespace RSSBalancer
             if (holdAttitude) HoldAttitude();
             if (!approachOn && vessel.mainBody.atmosphere && vessel.altitude < vessel.mainBody.atmosphereDepth) { double e1, v1, a1; StallLevel = StallCheck(out e1, out v1, out a1); }
             if (approachOn) Approach();
+            if (aoPhase == AO.Ascent || aoPhase == AO.Finish) AutoOrbitTick();
             if (mph != MPh.None && mph != MPh.Done) Maneuver();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
             // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
@@ -983,6 +986,7 @@ namespace RSSBalancer
                 case "sitexrange": return SiteAngle(true);
                 case "deorbitin": return DeorbitIn();
                 case "orbitdone": return mph == MPh.Done ? 1 : 0;
+                case "autoorbit": return aoPhase == AO.Done ? 1 : aoPhase == AO.Failed ? -1 : 0;
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
                 case "upper": return id != null && id.ok ? Running_(id.upper, v) : double.NaN;
@@ -1371,6 +1375,10 @@ namespace RSSBalancer
                     }
                     else if (key == "program") pendingProgram = val.Trim();
                     else if (key == "askProgram" || key == "askprogram") AskProgram(val.Trim());
+                    else if (key == "autoOrbit" || key == "autoorbit")
+                    {
+                        LastMessage += "\n" + StartAutoOrbit(val);
+                    }
                     else if (key == "orbittarget")
                     {
                         // orbittarget = <perygeum km> <apogeum km> <nachylenie °>
@@ -1465,6 +1473,175 @@ namespace RSSBalancer
             if (pool == null) return "MechJeb: nie znaleziono autopilota wznoszenia.";
             PoolCall(pool, on ? "Add" : "Remove");
             return on ? "MechJeb: Ascent Guidance włączone." : "MechJeb: Ascent Guidance wyłączone.";
+        }
+
+        // ------------------------------------------------------------------ „autoOrbit” – dowolna rakieta na orbitę
+        // 1) analiza: potrzebna Δv (ToOrbit z nachyleniem, straty grawitacyjne i oporu), Δv i TWR każdego stopnia (stock),
+        //    słabe ogniwa do dziennika; z „dopasuj” – ISP wszystkich silników tak, by było +8 % zapasu, a ciąg pierwszego
+        //    stopnia tak, by TWR na starcie ≥ 1,3 (te same mnożniki co w balancerze, zakres 0,1–5×);
+        // 2) MechJeb Ascent Guidance (PVG) na orbitę kołową o zadanej wysokości i nachyleniu, autostaging, ≤ 4 g,
+        //    początek zakrętu zależny od TWR; MechJeb sam odpala pierwszy stopień i zwalnia klamry;
+        // 3) gdy MechJeb skończy (albo zabraknie mu paliwa, orbita suborbitalna/krzywa) – nasz „orbittarget” domyka orbitę.
+        private enum AO { None, Ascent, Finish, Done, Failed }
+        private AO aoPhase = AO.None;
+        private double aoAlt, aoInc, aoStartUT, nextAoLog;
+        public string AutoOrbitInfo = "";
+
+        private string StartAutoOrbit(string val)
+        {
+            CelestialBody b = vessel.mainBody;
+            string[] w = (val ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            bool fit = Array.Exists(w, x => x.ToLowerInvariant() == "dopasuj" || x.ToLowerInvariant() == "fit");
+            double lat = Math.Abs(vessel.latitude);
+            double altKm = w.Length > 0 && w[0].ToLowerInvariant() != "auto" ? Num(w[0], 0) : 0;
+            if (altKm <= 0) altKm = b.atmosphere ? Math.Max(b.atmosphereDepth / 1000 + 60, Math.Round(b.atmosphereDepth / 1000 * 1.4)) : DeltaVPlanner.LowOrbitAlt(b) / 1000;
+            double inc = w.Length > 1 && w[1].ToLowerInvariant() != "auto" ? Num(w[1], lat) : Math.Ceiling(lat * 10) / 10;
+            string incNote = "";
+            if (inc < lat) { incNote = " (" + inc.ToString("F1", Inv) + "° niemożliwe ze startu na " + lat.ToString("F1", Inv) + "° – biorę " + Math.Ceiling(lat * 10) / 10 + "°)"; inc = Math.Ceiling(lat * 10) / 10; }
+            aoAlt = altKm; aoInc = inc;
+
+            // --- analiza
+            double need = DeltaVPlanner.ToOrbit(b, altKm * 1000, inc);
+            double vac; StockDeltaV.TotalVac(out vac);
+            double twr = StockDeltaV.LiftoffTwr();
+            List<string> rep = new List<string>();
+            rep.Add("Cel: orbita " + altKm.ToString("F0", Inv) + " km, nachylenie " + inc.ToString("F1", Inv) + "°" + incNote + "; potrzeba ≈ " + need.ToString("F0", Inv) + " m/s");
+            rep.Add("Rakieta: Δv (próżnia) " + vac.ToString("F0", Inv) + " m/s, TWR na starcie " + twr.ToString("F2", Inv));
+            VesselDeltaV vdv = StockDeltaV.Current();
+            string weak = "";
+            if (vdv != null && vdv.OperatingStageInfo != null)
+            {
+                List<DeltaVStageInfo> st = new List<DeltaVStageInfo>(vdv.OperatingStageInfo);
+                st.Sort((x, y) => y.stage.CompareTo(x.stage));
+                bool first = true;
+                foreach (DeltaVStageInfo si in st)
+                {
+                    if (si == null || si.deltaVinVac < 1) continue;
+                    string line = "  stopień " + si.stage + ": Δv " + si.deltaVinVac.ToString("F0", Inv) + " m/s, TWR " + (first ? si.TWRASL.ToString("F2", Inv) + " (ziemia)" : si.TWRVac.ToString("F2", Inv)) +
+                                  ", czas pracy " + si.stageBurnTime.ToString("F0", Inv) + " s";
+                    if (first && si.TWRASL < 1.15) { line += "  ← za mały ciąg na start"; weak += "stopień " + si.stage + " (TWR startowy " + si.TWRASL.ToString("F2", Inv) + "); "; }
+                    else if (!first && si.TWRVac < 0.35 && si.stageBurnTime > 600) { line += "  ← słaby ciąg, długie palenie (straty)"; weak += "stopień " + si.stage + " (TWR " + si.TWRVac.ToString("F2", Inv) + "); "; }
+                    rep.Add(line); first = false;
+                }
+            }
+            bool shortDv = vac > 0 && vac < need;
+            if (shortDv) rep.Add("BRAKUJE ok. " + (need - vac).ToString("F0", Inv) + " m/s Δv");
+            if (weak.Length > 0) rep.Add("Słabe ogniwa: " + weak);
+
+            // --- dopasowanie (opcjonalne)
+            if (fit && vac > 0)
+            {
+                float kIsp = (float)(need * 1.08 / vac);
+                List<ModuleEngineBalancer> mods = new List<ModuleEngineBalancer>();
+                foreach (Part p in vessel.parts) mods.AddRange(p.FindModulesImplementing<ModuleEngineBalancer>());
+                if (kIsp > 1.0f && mods.Count > 0)
+                {
+                    foreach (ModuleEngineBalancer m in mods) { m.ispMultiplier = Mathf.Clamp(m.ispMultiplier * kIsp, ModuleEngineBalancer.MinIspMult, ModuleEngineBalancer.MaxIspMult); m.ApplyMultipliers(); }
+                    rep.Add("Dopasowanie: ISP wszystkich silników ×" + kIsp.ToString("F2", Inv) + " (cel " + (need * 1.08).ToString("F0", Inv) + " m/s)");
+                }
+                if (twr > 0 && twr < 1.3 && mods.Count > 0)
+                {
+                    int firstStage = -1;
+                    foreach (Part p in vessel.parts) if (p.FindModuleImplementing<ModuleEngines>() != null) firstStage = Math.Max(firstStage, p.inverseStage);
+                    float kT = (float)(1.3 / twr);
+                    foreach (Part p in vessel.parts)
+                        if (p.inverseStage == firstStage)
+                            foreach (ModuleEngineBalancer m in p.FindModulesImplementing<ModuleEngineBalancer>())
+                            { m.thrustMultiplier = Mathf.Clamp(m.thrustMultiplier * kT, ModuleEngineBalancer.MinThrustMult, ModuleEngineBalancer.MaxThrustMult); m.ApplyMultipliers(); }
+                    rep.Add("Dopasowanie: ciąg pierwszego stopnia ×" + kT.ToString("F2", Inv) + " (TWR na starcie → 1,3)");
+                    twr = 1.3;
+                }
+            }
+            else if (shortDv || weak.Length > 0) rep.Add("Bez dopasowania – może nie dolecieć (program „… z dopasowaniem” albo zakładka Balans).");
+            foreach (string r in rep) FlightLogger.Event("Start na orbitę: " + r);
+
+            // --- MechJeb
+            List<PartModule> cores = new List<PartModule>();
+            foreach (Part p in vessel.parts) foreach (PartModule pm in p.Modules) if (pm.GetType().Name == "MechJebCore") cores.Add(pm);
+            if (cores.Count == 0) { aoPhase = AO.Failed; return string.Join("\n", rep.ToArray()) + "\nNa rakiecie nie ma MechJeba – dodaj część/moduł MechJeb."; }
+            double pitchStart = Math.Max(25, Math.Min(70, 55 / Math.Max(0.8, twr)));
+            string[][] asc = {
+                new[] { "AscentTypeInteger", "1" }, new[] { "DesiredOrbitAltitude", (altKm * 1000).ToString("F0", Inv) },
+                new[] { "DesiredApoapsis", (altKm * 1000).ToString("F0", Inv) }, new[] { "AttachAltFlag", "False" },
+                new[] { "DesiredInclination", inc.ToString("F2", Inv) }, new[] { "LastStage", "0" }, new[] { "OptimizeStageFlag", "False" },
+                new[] { "CoastStageFlag", "False" }, new[] { "UnguidedStagesFlag", "False" }, new[] { "SkipCircularization", "False" },
+                new[] { "PitchStartVelocity", pitchStart.ToString("F0", Inv) }, new[] { "PitchRate", "0.75" },
+                new[] { "Autostage", "True" }, new[] { "ForceRoll", "True" }, new[] { "VerticalRoll", "0" }, new[] { "TurnRoll", "0" } };
+            string[][] thr = { new[] { "LimitAcceleration", "True" }, new[] { "MaxAcceleration", "39.2" } };
+            string[][] stg = { new[] { "AutostageLimit", "0" } };
+            int bad = 0;
+            foreach (PartModule core in cores)
+            {
+                foreach (var pair in new[] { new { m = "MechJebModuleAscentSettings", v = asc }, new { m = "MechJebModuleThrustController", v = thr }, new { m = "MechJebModuleStagingController", v = stg } })
+                {
+                    object mod = Module(core, pair.m); if (mod == null) { bad++; continue; }
+                    foreach (string[] kv in pair.v) { string err; if (!MechJebPresets.SetMember(mod, kv[0], kv[1], out err)) bad++; }
+                }
+            }
+            string mj = MechJebAscent(true);
+            aoPhase = AO.Ascent; aoStartUT = Planetarium.GetUniversalTime(); nextAoLog = 0;
+            vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+            AutoOrbitInfo = "wznoszenie (MechJeb PVG) na " + altKm.ToString("F0", Inv) + " km / " + inc.ToString("F1", Inv) + "°";
+            FlightLogger.Event("Start na orbitę: MechJeb PVG ustawiony (początek zakrętu " + pitchStart.ToString("F0", Inv) + " m/s" + (bad > 0 ? ", " + bad + " ustawień nie przyjęto" : "") + "), " + mj);
+            return string.Join("\n", rep.ToArray()) + "\n" + mj;
+        }
+
+        private object AscentAutopilot()
+        {
+            object core = Core(); if (core == null) return null;
+            object settings = Module(core, "MechJebModuleAscentSettings"); if (settings == null) return null;
+            PropertyInfo ap = settings.GetType().GetProperty("AscentAutopilot", Flags);
+            return ap != null ? ap.GetValue(settings, null) : null;
+        }
+
+        private bool AscentEnabled()
+        {
+            object a = AscentAutopilot(); if (a == null) return false;
+            PropertyInfo en = a.GetType().GetProperty("Enabled", Flags);
+            if (en != null) try { return (bool)en.GetValue(a, null); } catch { }
+            FieldInfo ef = a.GetType().GetField("enabled", Flags);
+            return ef != null && (bool)ef.GetValue(a);
+        }
+
+        private void AutoOrbitTick()
+        {
+            CelestialBody b = vessel.mainBody; Orbit o = vessel.orbit;
+            double now = Planetarium.GetUniversalTime();
+            double atmTop = b.atmosphere ? b.atmosphereDepth : 0;
+            if (aoPhase == AO.Ascent)
+            {
+                AutoOrbitInfo = "wznoszenie: apogeum " + (o.ApA / 1000).ToString("F0", Inv) + " km, perygeum " + (o.PeA / 1000).ToString("F0", Inv) + " km, cel " + aoAlt.ToString("F0", Inv) + " km";
+                if (now > nextAoLog) { nextAoLog = now + 20; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); }
+                bool mjOff = now - aoStartUT > 10 && !AscentEnabled();
+                bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= 0 && vessel.altitude > atmTop;
+                bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;
+                if (!(mjOff || fuelOut || inOrbit)) return;
+                MechJebAscent(false);
+                bool good = o.PeA > atmTop + 5000 && Math.Abs(o.ApA / 1000 - aoAlt) < aoAlt * 0.1 + 10 && Math.Abs(o.PeA / 1000 - aoAlt) < aoAlt * 0.1 + 10 && Math.Abs(o.inclination - aoInc) < 1.0;
+                if (good)
+                {
+                    aoPhase = AO.Done; AutoOrbitInfo = "na orbicie " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km, " + o.inclination.ToString("F1", Inv) + "°";
+                    FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo + ", Δv zostało " + (StockDeltaV.TotalVac(out double rest) ? rest.ToString("F0", Inv) : "?") + " m/s");
+                    ScreenMessages.PostScreenMessage("Na orbicie: " + AutoOrbitInfo, 6f, ScreenMessageStyle.UPPER_CENTER);
+                    return;
+                }
+                if (o.eccentricity >= 1 || vessel.altitude < atmTop * 0.6) { aoPhase = AO.Failed; AutoOrbitInfo = "wznoszenie przerwane nisko – rakieta nie dała rady"; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); return; }
+                FlightLogger.Event("Start na orbitę: MechJeb skończył przy " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km – domykam orbitę");
+                double incT = Math.Abs(o.inclination - aoInc) < 1.0 ? o.inclination : aoInc;
+                StartManeuver(aoAlt, aoAlt, incT);
+                aoPhase = AO.Finish;
+                return;
+            }
+            if (aoPhase == AO.Finish)
+            {
+                AutoOrbitInfo = "domykanie orbity: " + ManeuverInfo;
+                if (mph == MPh.Done)
+                {
+                    aoPhase = AO.Done; AutoOrbitInfo = "na orbicie " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km, " + o.inclination.ToString("F1", Inv) + "°";
+                    FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo);
+                    ScreenMessages.PostScreenMessage("Na orbicie: " + AutoOrbitInfo, 6f, ScreenMessageStyle.UPPER_CENTER);
+                }
+            }
         }
 
         // ------------------------------------------------------------------ podejście i lądowanie
