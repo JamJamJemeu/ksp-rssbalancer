@@ -1622,11 +1622,11 @@ namespace RSSBalancer
 
             if (!patAirborne)
             {
-                double vr = 1.35 * vSt;                     // prędkość oderwania
+                double vr = 1.45 * vSt;                     // prędkość oderwania (lot 2026-11-21 15:49: 1,35× – za mało zapasu)
                 HookSteer();
                 steerHdg = CenterlineHeading(pos, up);
                 SetF(ap, "HeadingTarget", steerHdg);
-                SetF(ap, "VertSpeedTarget", easNow > vr ? 8.0 : 0.0);
+                SetF(ap, "VertSpeedTarget", easNow > vr ? 4.0 : 0.0);
                 patternPhase = "rozbieg  EAS " + easNow.ToString("F0", Inv) + " / oderwanie " + vr.ToString("F0", Inv) + " m/s";
                 if (!vessel.Landed && h > 30) { patAirborne = true; steerHdg = double.NaN; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s"); }
                 return;
@@ -1639,7 +1639,16 @@ namespace RSSBalancer
             double dist = to.magnitude;
             double hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
             double vs = Math.Max(-25, Math.Min(25, 0.05 * (PatAlt - h)));
-            if (StallLevel >= 1) { vs = Math.Min(vs, -10); hdg = HeadingOf(vessel.srf_velocity, up, north, east); }
+            // Wznoszenie tylko z nadmiaru prędkości: Buran z dwoma AL-31 ma ciąg/ciężar ~0,3 – lot 2026-11-21 15:49 wznosił
+            // się 25–30 m/s zaraz po oderwaniu, zgubił prędkość, ochrona przed przeciągnięciem kazała schodzić −10 m/s
+            // i Buran uderzył w ziemię. Teraz: poniżej 1,6× przeciągnięcia prawie płasko (rozpędzanie), wyżej stopniowo.
+            if (vs > 0) vs = Math.Min(vs, Math.Max(1.0, (easNow - 1.55 * vSt) * 0.8));
+            if (StallLevel >= 1)
+            {
+                // nisko nie wolno nurkować: lot poziomy i rozpędzanie; wysoko jak dotąd – w dół po prędkość
+                vs = h < 400 ? Math.Min(vs, 0.0) : Math.Min(vs, -10);
+                hdg = HeadingOf(vessel.srf_velocity, up, north, east);
+            }
             SetF(ap, "HeadingTarget", hdg);
             SetF(ap, "VertSpeedTarget", vs);
             SetF(ap, "RollLimit", StallLevel >= 1 ? 5.0 : easNow < 1.6 * vSt ? 15.0 : 30.0);
