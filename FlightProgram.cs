@@ -1749,7 +1749,7 @@ namespace RSSBalancer
             if (ap == null) { LastMessage += "\nMechJeb: brak Aircraft Autopilot."; return; }
             ReleaseAttitude();
             ChooseRunwayEnd();
-            jetsAvail = HasJets(); jetAssist = false;
+            jetsAvail = HasJets(); jetAssist = false; vsCmdPrev = double.NaN;
             object pool = Users(ap);
             if (pool != null) PoolCall(pool, "Add");
             SetF(ap, "PitchDownLimit", 35.0);
@@ -1771,9 +1771,32 @@ namespace RSSBalancer
         // silniki na jałowy bieg i dalej zwykłe podejście Burana (stroma ścieżka 19°, wyrównanie, przyziemienie).
         private bool patternOn, patAirborne, patGearUp;
         private bool jetsAvail, jetAssist;
+        private double vsCmdPrev = double.NaN;
         private string patternPhase = "";
         private readonly List<Vector2d> patWps = new List<Vector2d>();
         private int patWp;
+        private const double PatBank = 30;       // przechylenie w zakrętach kręgu
+        private double patR, patDInt;            // promień zakrętu, odległość wejścia na ścieżkę 19° (od progu)
+        public List<Vector2d> PatternCorners { get { return patWps; } }
+        public int PatternLeg { get { return patWp; } }
+        public bool PatternActive { get { return patternOn; } }
+        public bool PatternFinalActive { get { return patternOn && patFinal; } }
+        public double GlideInterceptD { get { return patDInt > 0 ? patDInt : PatAlt / Math.Tan(SteepPathDeg * Math.PI / 180) + SteepPathAim; } }
+        /// <summary>Próg i kierunek lądowania (wektory względem środka ciała) – dla planszetu ПА-3.</summary>
+        public bool RunwayGeo(out Vector3d thr, out Vector3d dir, out double len)
+        {
+            thr = dir = Vector3d.zero; len = 0;
+            if (!rwySet || vessel == null) return false;
+            Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt), b = Surf(rwyLatB, rwyLonB, rwyAlt);
+            len = (b - a).magnitude;
+            if (patternOn || approachOn) { thr = thrPos; dir = rwyDir; return true; }
+            Vector3d up = (vessel.CoMD - vessel.mainBody.position).normalized;
+            Vector3d vh = Vector3d.Exclude(up, (Vector3d)vessel.srf_velocity);
+            if (vh.magnitude < 1) vh = Vector3d.Exclude(up, (Vector3d)vessel.transform.up);
+            Vector3d ab = (b - a).normalized;
+            if (Vector3d.Dot(vh, ab) >= 0) { thr = a; dir = ab; } else { thr = b; dir = -ab; }
+            return true;
+        }
         private const double PatAlt = 4000;      // wysokość kręgu nad pasem (punkt kluczowy Burana: ~4 km, 12,5 km przed pasem)
 
         private void StartPattern()
@@ -1790,12 +1813,25 @@ namespace RSSBalancer
             Vector3d north = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized, east = Vector3d.Cross(up, north).normalized;
             rwyHeading = (Math.Atan2(Vector3d.Dot(rwyDir, east), Vector3d.Dot(rwyDir, north)) * 180 / Math.PI + 360) % 360;
             double len = (b - a).magnitude;
-            // punkty kręgu w układzie pasa: x wzdłuż kierunku lądowania od progu, y w prawo; krąg lewy
+            // Krąg prostokątny jak w lotnictwie: cztery zakręty po 90° (lewe), układ pasa: x wzdłuż kierunku lądowania od
+            // progu, y w PRAWO (ta sama oś co w RunwayFrame i na planszecie ПА-3). Promień zakrętu z prędkości kręgu na
+            // wysokości kręgu i przechylenia 30°; zakręt zaczyna się R przed narożnikiem, więc kończy się na nowym boku.
+            // Lot 2026-11-22 02:18: stare punkty „po skosie” (1→2 i 3→4) dawały zakręty ~45° i ścinanie narożników,
+            // a wyjście na prostą wypadało w złym miejscu. Teraz: 4. zakręt kończy się na osi pasa ~3 km przed miejscem
+            // wejścia na stromą ścieżkę 19° (to samo miejsce co dla orbitalnego Burana), bok z wiatrem jest odpowiednio długi.
+            double vStP = StallEas, rhoP = 1.225 * Math.Exp(-PatAlt / 8500.0);
+            double tasP = 1.9 * vStP * Math.Sqrt(1.225 / rhoP);
+            patR = tasP * tasP / (9.81 * Math.Tan(PatBank * Math.PI / 180));
+            patDInt = PatAlt / Math.Tan(SteepPathDeg * Math.PI / 180) + SteepPathAim;
+            double W = 2 * patR + 2000, U = patR + 3000, Xb = patDInt + 3000 + patR;
             patWps.Clear();
-            patWps.Add(new Vector2d(len + 7000, 0));        // wznoszenie po starcie
-            patWps.Add(new Vector2d(len + 9000, -6000));    // 1. i 2. zakręt – przecięcie, potem z wiatrem
-            patWps.Add(new Vector2d(-14000, -6000));        // koniec odcinka z wiatrem
-            patWps.Add(new Vector2d(-16000, 0));            // 3. i 4. zakręt – baza, wyjście na prostą
+            patWps.Add(new Vector2d(len + U, 0));        // koniec prostej startowej – 1. zakręt
+            patWps.Add(new Vector2d(len + U, -W));       // koniec odcinka przecinającego – 2. zakręt
+            patWps.Add(new Vector2d(-Xb, -W));           // koniec boku z wiatrem – 3. zakręt
+            patWps.Add(new Vector2d(-Xb, 0));            // koniec bazy – 4. zakręt (wyjście na oś pasa)
+            patWps.Add(new Vector2d(0, 0));              // prosta do progu
+            FlightLogger.Event("Krąg: promień zakrętu " + (patR / 1000).ToString("F1", Inv) + " km (przechylenie " + PatBank.ToString("F0", Inv) + "°, TAS ~" + tasP.ToString("F0", Inv) +
+                " m/s), szerokość " + (W / 1000).ToString("F1", Inv) + " km, 4. zakręt kończy się " + ((Xb - patR) / 1000).ToString("F1", Inv) + " km przed progiem, ścieżka 19° od " + (patDInt / 1000).ToString("F1", Inv) + " km");
             patWp = 0; patAirborne = false; patGearUp = false; patFinal = false; airUT = -1; rotTarget = double.NaN; lastPitch = double.NaN;
             foreach (Part p in vessel.parts)
                 foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
@@ -1805,7 +1841,7 @@ namespace RSSBalancer
             object pool = Users(ap);
             if (pool != null) PoolCall(pool, "Add");
             SetF(ap, "PitchDownLimit", 15.0); SetF(ap, "PitchUpLimit", 20.0);
-            SetF(ap, "RollLimit", 30.0); SetF(ap, "BankAngle", 25.0);
+            SetF(ap, "RollLimit", PatBank + 5); SetF(ap, "BankAngle", PatBank);
             SetF(ap, "HeadingTarget", rwyHeading); SetF(ap, "VertSpeedTarget", 0.0);
             Call(ap, "EnableHeadingHold"); Call(ap, "EnableVertSpeedHold");
             SetF(ap, "SpeedTarget", 200.0); Call(ap, "EnableSpeedHold");
@@ -1863,11 +1899,15 @@ namespace RSSBalancer
             if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
             if (patFinal) { PatternFinal(ap, pos, up, x, h, easNow, vSt); return; }
 
-            Vector2d wp = patWps[patWp];
-            Vector3d target = thrPos + rwyDir * wp.x + right * wp.y;
-            Vector3d to = target - pos; to -= up * Vector3d.Dot(to, up);
-            double dist = to.magnitude;
-            double hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
+            // prowadzenie po bokach kręgu: kurs boku + poprawka na odchylenie boczne, zakręt R przed narożnikiem
+            Vector3d rightT = Vector3d.Cross(up, rwyDir).normalized;      // prawdziwe „w prawo” (jak RunwayFrame)
+            Vector2d P = new Vector2d(x, Vector3d.Dot(rel, rightT));
+            Vector2d A = patWp == 0 ? new Vector2d(0, 0) : patWps[patWp - 1], B = patWps[patWp];
+            Vector2d u = (B - A).normalized, nR = new Vector2d(-u.y, u.x);
+            double remain = Vector2d.Dot(B - P, u), e = Vector2d.Dot(P - A, nR);
+            double legHdg = rwyHeading + Math.Atan2(u.y, u.x) * 180 / Math.PI;
+            double hdg = (legHdg - Math.Atan2(e, 2500) * 180 / Math.PI + 720) % 360;
+            double dist = Math.Max(0, remain);
             double vs = Math.Max(-25, Math.Min(25, 0.05 * (PatAlt - h)));
             // Wznoszenie tylko z nadmiaru prędkości: Buran z dwoma AL-31 ma ciąg/ciężar ~0,3 – lot 2026-11-21 15:49 wznosił
             // się 25–30 m/s zaraz po oderwaniu, zgubił prędkość, ochrona przed przeciągnięciem kazała schodzić −10 m/s
@@ -1881,16 +1921,23 @@ namespace RSSBalancer
             }
             SetF(ap, "HeadingTarget", hdg);
             SetF(ap, "VertSpeedTarget", vs);
-            SetF(ap, "RollLimit", StallLevel >= 1 ? 5.0 : easNow < 1.6 * vSt ? 15.0 : 30.0);
-            string[] names = { "wznoszenie po starcie", "odcinek przecinający (zakręty 1–2)", "z wiatrem", "baza (zakręty 3–4)" };
-            patternPhase = "krąg: " + names[Math.Min(patWp, names.Length - 1)] + ", do punktu " + (dist / 1000).ToString("F1", Inv) + " km, h " + h.ToString("F0", Inv) +
-                           " m, EAS " + easNow.ToString("F0", Inv) + " m/s";
+            SetF(ap, "RollLimit", StallLevel >= 1 ? 5.0 : easNow < 1.6 * vSt ? 15.0 : PatBank + 5);
+            string[] names = { "prosta startowa (wznoszenie)", "odcinek przecinający (po 1. zakręcie)", "z wiatrem (po 2. zakręcie)", "baza (po 3. zakręcie)", "prosta do lądowania (po 4. zakręcie)" };
+            patternPhase = "krąg: " + names[Math.Min(patWp, names.Length - 1)] + ", do zakrętu " + (dist / 1000).ToString("F1", Inv) + " km, z boku " + (e / 1000).ToString("F1", Inv) +
+                           " km, h " + h.ToString("F0", Inv) + " m, EAS " + easNow.ToString("F0", Inv) + " m/s";
             if (Planetarium.GetUniversalTime() > nextALog) { nextALog = Planetarium.GetUniversalTime() + 10; FlightLogger.Event("Krąg: " + patternPhase); }
-            if (dist < 1500)
+            double v = Math.Max(50, vessel.srfSpeed);
+            double lead = v * v / (9.81 * Math.Tan(PatBank * Math.PI / 180));   // promień przy obecnej prędkości
+            if (patWp < patWps.Count - 1 && remain <= lead)
             {
                 patWp++;
-                if (patWp >= patWps.Count) { patWp = patWps.Count - 1; patFinal = true; FlightLogger.Event("Krąg: na prostej z silnikami – lot poziomy do przechwycenia ścieżki 19°"); }
-                else FlightLogger.Event("Krąg: punkt " + patWp + " – " + names[Math.Min(patWp, names.Length - 1)]);
+                FlightLogger.Event("Krąg: " + patWp + ". zakręt w lewo o 90° → " + names[patWp] + " (promień " + (lead / 1000).ToString("F1", Inv) + " km, h " + h.ToString("F0", Inv) + " m)");
+            }
+            else if (patWp == patWps.Count - 1 && Math.Abs(e) < 500)
+            {
+                double trk = HeadingOf(vessel.srf_velocity, up, north, east);
+                if (Math.Abs(((trk - rwyHeading) + 540) % 360 - 180) < 12)
+                { patFinal = true; FlightLogger.Event("Krąg: na prostej do lądowania " + (-x / 1000).ToString("F1", Inv) + " km przed progiem, z boku " + e.ToString("F0", Inv) + " m – lot poziomy z silnikami do ścieżki 19°"); }
             }
         }
 
@@ -1914,7 +1961,9 @@ namespace RSSBalancer
             SetF(ap, "RollLimit", 20.0);
             patternPhase = "prosta z silnikami: d " + (d / 1000).ToString("F1", Inv) + " km, h " + h.ToString("F0", Inv) + " m, ścieżka 19° na " + Math.Max(0, ht).ToString("F0", Inv) + " m, EAS " + easNow.ToString("F0", Inv) + " m/s";
             if (Planetarium.GetUniversalTime() > nextALog) { nextALog = Planetarium.GetUniversalTime() + 5; FlightLogger.Event("Krąg: " + patternPhase); }
-            if (h < ht - 30 && d > 2500) return;
+            // pochylanie na ścieżkę zaczynamy ~350 m wcześniej – zejście z lotu poziomego do −19° trwa kilkanaście sekund
+            // (lot 2026-11-22 02:18: skok zadanej prędkości pionowej z 0 na −52 m/s → gwałtowne pchnięcie, α 25°, korkociąg)
+            if (h < ht - 350 && d > 2500) return;
             // na ścieżce: silniki wyłączone – dalej jak Buran, bez napędu
             Call(ap, "DisableSpeedHold");
             JetsOff();
@@ -2337,6 +2386,15 @@ namespace RSSBalancer
                 if (wantBrakes != brakesOut) { brakesOut = wantBrakes; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wantBrakes); }
             }
             vs = Math.Max(-250, Math.Min(0, vs));
+            // statek z silnikami (OK-GLI) wchodzi na ścieżkę z lotu poziomego: zadana prędkość pionowa zmienia się
+            // płynnie (≤ 4 m/s na sekundę), żeby autopilot nie pchał gwałtownie nosa w dół. Orbitalny Buran – bez zmian.
+            if (jetsAvail)
+            {
+                double dtA = Math.Max(0.005, TimeWarp.fixedDeltaTime);
+                if (double.IsNaN(vsCmdPrev)) vsCmdPrev = vessel.verticalSpeed;
+                vs = Math.Max(vs, vsCmdPrev - 4.0 * dtA);
+                vsCmdPrev = vs;
+            }
             SetF(ap, "VertSpeedTarget", vs);
 
             if (!gearDone && hr < 300)
