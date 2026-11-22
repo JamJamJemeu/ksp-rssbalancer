@@ -1823,7 +1823,7 @@ namespace RSSBalancer
             double tasP = 1.9 * vStP * Math.Sqrt(1.225 / rhoP);
             patR = tasP * tasP / (9.81 * Math.Tan(PatBank * Math.PI / 180));
             patDInt = PatAlt / Math.Tan(SteepPathDeg * Math.PI / 180) + SteepPathAim;
-            double W = 2 * patR + 2000, U = patR + 3000, Xb = patDInt + 3000 + patR;
+            double W = 2 * patR + 6000, U = patR + 3000, Xb = patDInt + 3000 + patR;
             patWps.Clear();
             patWps.Add(new Vector2d(len + U, 0));        // koniec prostej startowej – 1. zakręt
             patWps.Add(new Vector2d(len + U, -W));       // koniec odcinka przecinającego – 2. zakręt
