@@ -80,6 +80,34 @@ namespace RSSBalancer
                 }
             }
 
+            // 1) Czy to w ogóle Energia: rdzeń wodorowo-tlenowy (ISP > 375 s). R-7/Sojuz ma ten sam układ, ale rdzeń naftowy.
+            if (!Looks(r.id))
+            {
+                r.message = "To nie wygląda na Energię: rdzeń ma ISP " + C.ispVac.ToString("F0") + " s (Energia: wodór-tlen ~454 s). " +
+                            "Dla R-7 / Sojuza użyj zakładki Sojuz – nic nie zmieniono.";
+                return r;
+            }
+
+            // 2) Liczba bloków A (jeden RD-170 = jeden blok). Paliwo i konstrukcja bloków są podane dla 4 bloków (Energia) –
+            //    dla innej liczby przeliczane na blok (blok A to ten sam moduł). Rdzeń znamy tylko dla 4 × RD-0120:
+            //    przy innej liczbie silników zostaje jego obecne paliwo i konstrukcja, ustawiany jest tylko ciąg i ISP.
+            int nB = B.engines, nC = C.engines;
+            string version = nB == 4 && nC == 4 ? "Energia (4 bloki A, 4 × RD-0120)"
+                           : nB == 2 ? "Energia-M? (" + nB + " bloki A, " + nC + " × RD-0120)"
+                           : nB >= 6 ? "Wulkan / Groza? (" + nB + " bloków A, " + nC + " × RD-0120)"
+                           : nB + " bloki A, " + nC + " × RD-0120";
+            if (nB != 4)
+            {
+                if (Math.Abs(t.propB - BoosterProp) < 0.01) t.propB = BoosterProp / 4.0 * nB;
+                if (Math.Abs(t.dryB - BoosterDry) < 0.01) t.dryB = BoosterDry / 4.0 * nB;
+                if (t.mode == DryMode.LiftoffMass) t.mode = DryMode.Original;   // masa startowa 2375 t jest tylko dla Energii-Buran
+            }
+            if (nC != 4)
+            {
+                t.propC = C.propMass; t.dryC = C.dryMass;
+                if (t.mode == DryMode.LiftoffMass) t.mode = DryMode.Original;
+            }
+
             bool clamped = false;
             double propB = Fit(B, t.propB, t.ispB, t.tB, BoosterThrustVac, ref clamped);
             double propC = Fit(C, t.propC, t.ispC, t.tC, CoreThrustVac, ref clamped);
@@ -138,7 +166,7 @@ namespace RSSBalancer
             }
             r.twrAfter = r.massAfter > 0 && gSurf > 0 ? thrust / (r.massAfter * gSurf) : 0;
 
-            r.message = "Bloki A: paliwo ×" + B.fuel.ToString("F2") + ", ISP ×" + B.isp.ToString("F2") + ", ciąg ×" + B.thrust.ToString("F2") +
+            r.message = "Rozpoznano: " + version + (nC != 4 ? " – rdzeń inny niż w Energii: paliwo i masa rdzenia bez zmian" : "") + "\n" + "Bloki A: paliwo ×" + B.fuel.ToString("F2") + ", ISP ×" + B.isp.ToString("F2") + ", ciąg ×" + B.thrust.ToString("F2") +
                         "   Rdzeń: paliwo ×" + C.fuel.ToString("F2") + ", ISP ×" + C.isp.ToString("F2") + ", ciąg ×" + C.thrust.ToString("F2") +
                         "\nMasa pustych ×: bloki " + B.dry.ToString("F2") + ", rdzeń " + C.dry.ToString("F2") +
                         " · masa silników ×: bloki " + B.engMass.ToString("F2") + ", rdzeń " + C.engMass.ToString("F2") +
