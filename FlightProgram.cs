@@ -1892,7 +1892,12 @@ namespace RSSBalancer
                 takeoffRoll = true; takeoffRotate = easNow > vr || airUT >= 0;
                 SetF(ap, "VertSpeedTarget", takeoffRotate ? 2.0 : 0.0);
                 patternPhase = (airUT >= 0 ? "oderwanie – trzymam 7°, h " + h.ToString("F0", Inv) + " m" : "rozbieg") + "  EAS " + easNow.ToString("F0", Inv) + " / obrót " + vr.ToString("F0", Inv) + " m/s";
-                if (!vessel.Landed && (h > 30 || (h > 10 && nowUT - airUT > 4)))
+                // Oddanie sterowania autopilotowi kręgu dopiero gdy Buran naprawdę leci: ≥ 40 m, nos uspokojony, prędkość
+                // ≥ 1,2× przeciągnięcia (albo awaryjnie > 120 m). Lot 2026-11-23 16:10: podskoki na pasie, oddanie na 10 m
+                // przy nosie 12° i +10 m/s – autopilot pchnął nos do −18° i Buran uderzył w ziemię. Lot 2026-11-21 20:48
+                // (udany) oddawał przy 98 m/s, nos 4°, spokojnie.
+                bool calm = Math.Abs(fbwPitchRate) < 3.0 && easNow > 1.2 * vSt;
+                if (!vessel.Landed && ((h > 40 && calm) || h > 120))
                 { patAirborne = true; steerHdg = double.NaN; takeoffRoll = false; FlightLogger.Event("Krąg: oderwanie, EAS " + easNow.ToString("F0", Inv) + " m/s, h " + h.ToString("F0", Inv) + " m"); }
                 return;
             }
@@ -1919,6 +1924,7 @@ namespace RSSBalancer
                 vs = h < 400 ? Math.Min(vs, 0.0) : Math.Min(vs, -10);
                 hdg = HeadingOf(vessel.srf_velocity, up, north, east);
             }
+            if (h < 100) vs = Math.Max(vs, 0.0);   // nisko po starcie nigdy nie każ schodzić
             SetF(ap, "HeadingTarget", hdg);
             SetF(ap, "VertSpeedTarget", vs);
             SetF(ap, "RollLimit", StallLevel >= 1 ? 5.0 : easNow < 1.6 * vSt ? 15.0 : PatBank + 5);
@@ -2007,7 +2013,7 @@ namespace RSSBalancer
         // główne prawie bez nacisku nie trzymały kierunku i Buran zjechał w prawo z pasa). Na rozbiegu sami trzymamy
         // pochylenie: nos poziomo (+0,5°), od prędkości oderwania – podniesienie nosa do 8°.
         private bool takeoffRoll, takeoffRotate;
-        private double airUT = -1, rotTarget = double.NaN, lastPitch = double.NaN;
+        private double airUT = -1, rotTarget = double.NaN, lastPitch = double.NaN, fbwPitchRate;
 
         private void HookSteer()
         {
@@ -2065,6 +2071,7 @@ namespace RSSBalancer
                 double dt = Math.Max(0.005, TimeWarp.fixedDeltaTime);
                 double rate = double.IsNaN(lastPitch) ? 0 : (pitchDeg - lastPitch) / dt;   // °/s, + = nos w górę
                 lastPitch = pitchDeg;
+                fbwPitchRate = 0.8 * fbwPitchRate + 0.2 * rate;
                 if (!takeoffRotate)
                 {
                     rotTarget = double.NaN;
@@ -2074,7 +2081,8 @@ namespace RSSBalancer
                 {
                     // cel rośnie od bieżącego kąta o 1,5°/s do 7°; PD z tłumieniem prędkości kątowej, przy ziemi nos najwyżej lekko w dół
                     if (double.IsNaN(rotTarget)) rotTarget = Math.Max(0.5, pitchDeg);
-                    rotTarget = Math.Min(7.0, rotTarget + 1.5 * dt);
+                    // obrót szybciej (3°/s) – Buran ma zejść z pasa zdecydowanie, zanim zacznie podskakiwać na podwoziu
+                    rotTarget = Math.Min(7.0, rotTarget + 3.0 * dt);
                     float lo = vessel.Landed || vessel.radarAltitude < 15 ? -0.08f : -0.25f;
                     s.pitch = Mathf.Clamp((float)((rotTarget - pitchDeg) * 0.06 - rate * 0.10), lo, 0.4f);
                 }
