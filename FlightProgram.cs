@@ -1830,6 +1830,7 @@ namespace RSSBalancer
             patWps.Add(new Vector2d(-Xb, -W));           // koniec boku z wiatrem – 3. zakręt
             patWps.Add(new Vector2d(-Xb, 0));            // koniec bazy – 4. zakręt (wyjście na oś pasa)
             patWps.Add(new Vector2d(0, 0));              // prosta do progu
+            abOn = false; Afterburner(true, "start i wznoszenie");
             FlightLogger.Event("Krąg: promień zakrętu " + (patR / 1000).ToString("F1", Inv) + " km (przechylenie " + PatBank.ToString("F0", Inv) + "°, TAS ~" + tasP.ToString("F0", Inv) +
                 " m/s), szerokość " + (W / 1000).ToString("F1", Inv) + " km, 4. zakręt kończy się " + ((Xb - patR) / 1000).ToString("F1", Inv) + " km przed progiem, ścieżka 19° od " + (patDInt / 1000).ToString("F1", Inv) + " km");
             patWp = 0; patAirborne = false; patGearUp = false; patFinal = false; airUT = -1; rotTarget = double.NaN; lastPitch = double.NaN;
@@ -1902,6 +1903,8 @@ namespace RSSBalancer
                 return;
             }
             if (!patGearUp && h > 150) { patGearUp = true; vessel.ActionGroups.SetGroup(KSPActionGroup.Gear, false); FlightLogger.Event("Krąg: podwozie schowane"); }
+            // jak w OK-GLI: dopalacz do startu i wznoszenia, na wysokości kręgu tryb maksymalny bez dopalacza
+            if (abOn && h > PatAlt - 150) Afterburner(false, "wysokość kręgu " + h.ToString("F0", Inv) + " m");
             if (patFinal) { PatternFinal(ap, pos, up, x, h, easNow, vSt); return; }
 
             // prowadzenie po bokach kręgu: kurs boku + poprawka na odchylenie boczne, zakręt R przed narożnikiem
@@ -1994,11 +1997,26 @@ namespace RSSBalancer
                     if (e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Shutdown();
         }
 
+        // Dopalacz AL-31F: w KSP ogranicznik ciągu mnoży przepustnicę, a krzywa ISP od przepustnicy (Patches/Buran_AL31.cfg)
+        // daje tryb bez dopalacza do 24,4 % – więc ogranicznik 24,4 % = „dopalacz wyłączony”, 100 % = dostępny.
+        private const float AbOffLimit = 24.4f;
+        private bool abOn = true;
+        private void Afterburner(bool on, string why)
+        {
+            int n = 0;
+            foreach (Part p in vessel.parts)
+                if (p.partInfo != null && p.partInfo.name.Replace('.', '_').EndsWith("_AL31F"))   // KSP zamienia „_” w nazwie części na „.”
+                    foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>()) { e.thrustPercentage = on ? 100f : AbOffLimit; n++; }
+            if (n > 0 && on != abOn) FlightLogger.Event("Dopalacz AL-31F " + (on ? "dostępny" : "wyłączony (tryb maksymalny bez dopalacza)") + " – " + why);
+            abOn = on;
+        }
+
         private void JetsOn()
         {
             foreach (Part p in vessel.parts)
                 foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
                     if (!e.EngineIgnited && e.propellants.Exists(pr => pr.name == "IntakeAir")) e.Activate();
+            Afterburner(true, "wspomaganie w podejściu");
             FlightInputHandler.state.mainThrottle = 1f;
         }
 
