@@ -56,3 +56,12 @@ Projekt `RSSBalancer.csproj` (.NET Framework 4.7.2) korzysta z bibliotek KSP z `
 | `StockDeltaV.cs` | odczyt stockowych statystyk Δv / TWR / czasu pracy |
 | `PresetStore.cs`, `BalancerSettings.cs` | presety i ustawienia |
 | `GameData/RSSBalancer/RSSBalancer.cfg` | patch ModuleManagera |
+
+## Wersje bazowe (działające – do porównań i jako kopia zapasowa)
+
+| Gałąź | Wersja | Co na pewno działa |
+|---|---|---|
+| `baza-buran-1.33` | 1.33 | Buran 1K1: zejście z orbity i automatyczne lądowanie na Jubilejnym |
+| `baza-okgli-1.38.1` | 1.38.1 | OK-GLI z Jubilejnego: start z pasa, krąg prostokątny (4 zakręty po 90°), prosta z silnikami, ścieżka 19° i lądowanie; Energia–Buran z prawdziwymi silnikami (RD-170, RD-0120 bez mnożników); planszet ПА-3 |
+
+Gotowy `RSSBalancer.dll` wersji bazowej leży w `kopie/<wersja>/` – wystarczy skopiować go do `GameData/RSSBalancer/` (przy zamkniętym KSP). Statki do tej wersji: `crafts/` (do `saves/<zapis>/Ships/VAB` albo `SPH`).
