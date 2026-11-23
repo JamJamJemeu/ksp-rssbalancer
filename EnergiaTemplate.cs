@@ -21,6 +21,8 @@ namespace RSSBalancer
         public const double BoosterTime = 143.0;    // wyłączenie RD-170 T+142 s, odrzut T+144 s
         public const double CoreTime = 466.0;       // wyłączenie RD-0120 T+466 s
         public const double BoosterIspVac = 338.0;  // RD-170: 309 s / 338 s
+        public const double BoosterThrustVac = 7906.1; // kN na silnik RD-170 w próżni (prawdziwy, pełny ciąg)
+        public const double CoreThrustVac = 1875.0;    // kN na silnik RD-0120 w próżni (rdzeń 7500 kN / 4)
         public const double CoreIspVac = 454.0;     // RD-0120: 359 s / 454 s
         public const double BoosterProp = 1228.0;   // I stopień: 886,8 t tlenu + 341,2 t nafty (4 bloki razem)
         public const double CoreProp = 703.6;       // II stopień: 602,8 t tlenu + 100,9 t wodoru
@@ -79,8 +81,8 @@ namespace RSSBalancer
             }
 
             bool clamped = false;
-            double propB = Fit(B, t.propB, t.ispB, t.tB, ref clamped);
-            double propC = Fit(C, t.propC, t.ispC, t.tC, ref clamped);
+            double propB = Fit(B, t.propB, t.ispB, t.tB, BoosterThrustVac, ref clamped);
+            double propC = Fit(C, t.propC, t.ispC, t.tC, CoreThrustVac, ref clamped);
 
             // Masa: wszystko poza paliwem i konstrukcją bloków i rdzenia (orbiter, adaptery…) zostaje bez zmian.
             double fixedMass = shipMass - B.propMass - C.propMass - B.dryMass - C.dryMass;
@@ -192,15 +194,19 @@ namespace RSSBalancer
         }
 
         /// <summary>Ustawia paliwo, ISP i ciąg jednej grupy. Zwraca masę paliwa po zatankowaniu do pełna [t].</summary>
-        private static double Fit(EngineGroup g, double propTarget, double ispTarget, double time, ref bool clamped)
+        private static double Fit(EngineGroup g, double propTarget, double ispTarget, double time, double thrTarget, ref bool clamped)
         {
             g.fuel = Clamp((float)(g.appliedFuel * propTarget / g.propCapacity), ModuleTankBalancer.MinFuel, ModuleTankBalancer.MaxFuel, ref clamped);
             double prop = g.propCapacity * g.fuel / g.appliedFuel;
 
             g.isp = Clamp((float)(g.appliedIsp * ispTarget / g.ispVac), ModuleEngineBalancer.MinIspMult, ModuleEngineBalancer.MaxIspMult, ref clamped);
 
-            // przepływ ∝ ciąg / ISP;  czas = paliwo / przepływ × krzywa ciągu (RD-170 dławi się do 70% w drugiej połowie pracy)
-            double thr = g.appliedThrust * (prop * g.curveTime / (g.massFlow * time)) * (g.isp / g.appliedIsp);
+            // Ciąg = PRAWDZIWY pełny ciąg silnika (nie dobierany pod czas pracy). Wcześniej ciąg liczono tak, by przy pełnym
+            // ciągu paliwo starczyło dokładnie na 143 s / 466 s – a w rzeczywistości te czasy wynikały z dławienia (max-Q,
+            // limit 3 g). Skutek: RD-170 ×0,90 i RD-0120 ×0,86, TWR 1,32 zamiast ~1,48 i płaski tor (lot 2026-11-23 19:42).
+            // Czas pracy wynika teraz z paliwa, ciągu i programu lotu (dławienie), a „time” służy tylko do raportu.
+            double thrNowVac = g.engines > 0 ? g.massFlow * g.ispVac * G0 / g.engines : 0;   // kN na silnik przy obecnych mnożnikach
+            double thr = thrNowVac > 0 ? g.appliedThrust * thrTarget / thrNowVac : g.appliedThrust;
             g.thrust = Clamp((float)thr, ModuleEngineBalancer.MinThrustMult, ModuleEngineBalancer.MaxThrustMult, ref clamped);
             return prop;
         }
