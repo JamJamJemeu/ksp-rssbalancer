@@ -108,6 +108,7 @@ namespace RSSBalancer
 
         public static void Reload()
         {
+            VehicleProfile.Reload();
             Programs.Clear();
             try
             {
@@ -934,7 +935,7 @@ namespace RSSBalancer
         public double EntryCos { get { return hudCos; } }
         public double AoaCommand { get { return entryGuide ? gAoaCmd : double.NaN; } }
         public double BankCommand { get { return entryGuide ? bankCmd : double.NaN; } }
-        public double StallEas { get { return vessel != null ? 70 * Math.Sqrt(Math.Max(10, vessel.totalMass) / 75.0) : 70; } }
+        public double StallEas { get { return vessel != null ? VehicleProfile.Current.StallEas(vessel.totalMass) : VehicleProfile.Current.stallEas; } }
 
         /// <summary>Położenie względem pasa: d – odległość do progu wzdłuż osi (dodatnia przed progiem), y – w bok (dodatnia w prawo),
         /// h – wysokość nad pasem, len – długość pasa, vAlong/vCross – prędkość wzdłuż osi / w bok.</summary>
@@ -1051,6 +1052,12 @@ namespace RSSBalancer
             Running = p;
             Current = 0;
             burnOn = false;
+            {
+                bool vf; string vn = p.node != null ? p.node.GetValue("vehicle") : null;
+                VehicleProfile.Current = VehicleProfile.Find(vn, out vf);
+                if (!vf) { LastMessage = "Brak profilu statku „" + vn.Trim() + "” w PluginData/Vehicles – używam Burana."; FlightLogger.Event("Program lotu: " + LastMessage); }
+                else if (!string.IsNullOrEmpty(vn)) FlightLogger.Event("Program lotu: profil statku „" + VehicleProfile.Current.name + "” (" + VehicleProfile.Current.file + ")");
+            }
             siteSet = false;
             string site = p.node != null ? p.node.GetValue("site") : null;
             string rwyCfg = p.node != null ? p.node.GetValue("runway") : null;
@@ -2491,7 +2498,8 @@ namespace RSSBalancer
         private bool patFinal;
 
         // Stroma ścieżka Burana – JEDNA definicja dla podejścia z orbity i dla kręgu OK-GLI (19°, cel 2,5 km przed progiem).
-        private const double SteepPathDeg = 19.0, SteepPathAim = 2500.0;
+        private static double SteepPathDeg { get { return VehicleProfile.Current.steepDeg; } }   // z profilu statku (Buran: 19°, 2,5 km)
+        private static double SteepPathAim { get { return VehicleProfile.Current.steepAim; } }
         private static double SteepPathHeight(double d) { return (d - SteepPathAim) * Math.Tan(SteepPathDeg * Math.PI / 180); }
         private void PatternFinal(object ap, Vector3d pos, Vector3d up, double x, double h, double easNow, double vSt)
         {
@@ -2746,7 +2754,7 @@ namespace RSSBalancer
         private int StallCheck(out double eas, out double vStall, out double aoa)
         {
             eas = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
-            vStall = 70 * Math.Sqrt(Math.Max(10, vessel.totalMass) / 75.0);
+            vStall = VehicleProfile.Current.StallEas(vessel.totalMass);
             Vector3d vel = vessel.srf_velocity;
             aoa = vel.magnitude > 1 ? Vector3d.Angle((Vector3d)vessel.ReferenceTransform.up, vel) : 0;
             if (vessel.mach > 2 || vessel.LandedOrSplashed || vessel.altitude > 60000) { StallInfo = ""; return 0; }
@@ -2778,7 +2786,8 @@ namespace RSSBalancer
         private int hacSide = 1, hacLap, hacSsgn = 1;
         private double hacXa = 12000, hacPrevArc = double.NaN, hacExc;
         private Vector3d hacC0, hacE, hacN;              // płaski układ przy pasie: początek, wschód, północ
-        private const double HacBank = 28, HacLDP = 4.0, HacEM = 600;
+        private const double HacLDP = 4.0, HacEM = 600;
+        private static double HacBank { get { return VehicleProfile.Current.hacBank; } }
         private static readonly double[] HacXas = { 12000, 8000, 5000 };
 
         private Vector2d HacP(Vector3d pos) { Vector3d r = pos - hacC0; return new Vector2d(Vector3d.Dot(r, hacE), Vector3d.Dot(r, hacN)); }
@@ -2786,12 +2795,7 @@ namespace RSSBalancer
         private static double Mod(double a, double m) { a %= m; return a < 0 ? a + m : a; }
         private static double W180(double a) { return Mod(a + 180, 360) - 180; }
         /// <summary>Doskonałość Burana w locie poddźwiękowym z logów 18:34 i 22:14: zależy od EAS i Macha (M 0,6–0,9 tylko ~0,7×).</summary>
-        private static double HacLD(double eas, double M)
-        {
-            double lde = Interp(eas, new[] { 70.0, 90, 130, 170, 220 }, new[] { 4.6, 5.2, 3.8, 3.0, 2.3 });
-            double mf = Interp(M, new[] { 0.5, 0.55, 0.6, 0.9, 0.95, 1.05, 1.3 }, new[] { 1.0, 0.97, 0.75, 0.7, 0.5, 0.4, 0.4 });
-            return lde * mf;
-        }
+        private static double HacLD(double eas, double M) { return VehicleProfile.Current.GlideLD(eas, M); }
         private static double Interp(double x, double[] xs, double[] ys)
         {
             if (x <= xs[0]) return ys[0];
@@ -3124,28 +3128,14 @@ namespace RSSBalancer
         private bool aoaByMach;
 
         /// <summary>Program kąta natarcia Burana α(M) z lotu 1K1: 39° w górnej atmosferze, 22° przy M = 5, 10° przy M = 2.</summary>
-        private static float AoAForMach(double m)
-        {
-            if (m >= 12) return 39f;
-            if (m >= 5) return (float)(22 + (39 - 22) * (m - 5) / 7.0);
-            if (m >= 2) return (float)(10 + (22 - 10) * (m - 2) / 3.0);
-            return 10f;
-        }
+        private static float AoAForMach(double m) { return VehicleProfile.Current.AoA(m); }   // tabela entryAoA z profilu statku
         private bool ldSeen;
 
         // Doskonałość Burana w KSP z łatką „BuranWing” – POMIAR z lotu 2026-11-19 21:20 (α wg programu, częściowo
         // zmniejszony przy oszczędzaniu energii): M 23 → 0,7–0,8, M 20–13 → 0,9–1,0, M 11 → 1,15, M 9–4 → 1,45–1,55,
         // M 3–2 → 1,7, M 1 → 1,4. Bieżący pomiar i tak skaluje tablicę.
-        private static readonly double[,] LdTab = { { 7600, 0.78 }, { 6500, 0.82 }, { 5700, 0.9 }, { 4900, 1.0 }, { 3900, 1.0 }, { 3400, 1.15 },
-                                                    { 3000, 1.45 }, { 2600, 1.55 }, { 1650, 1.52 }, { 1240, 1.54 }, { 900, 1.67 }, { 580, 1.73 }, { 320, 1.42 }, { 0, 1.4 } };
-        private static double LdTable(double v)
-        {
-            if (v >= LdTab[0, 0]) return LdTab[0, 1];
-            for (int i = 0; i < LdTab.GetLength(0) - 1; i++)
-                if (v <= LdTab[i, 0] && v >= LdTab[i + 1, 0])
-                    return LdTab[i + 1, 1] + (LdTab[i, 1] - LdTab[i + 1, 1]) * (v - LdTab[i + 1, 0]) / (LdTab[i, 0] - LdTab[i + 1, 0]);
-            return LdTab[LdTab.GetLength(0) - 1, 1];
-        }
+        // (tabela entryLD w profilu statku – PluginData/Vehicles)
+        private static double LdTable(double v) { return VehicleProfile.Current.EntryLD(v); }
 
         /// <summary>Zasięg lotu ślizgowego w równowadze z L/D zależną od prędkości: ∫ L/D(v) · r/2 · d ln(1/(1 − v²/gr)).</summary>
         // Koniec fazy wejścia jak w Buranie/Shuttle (TAEM): ~800 m/s (M 2,5), ~100 km przed lotniskiem, ~25–30 km wysokości.
@@ -3267,7 +3257,7 @@ namespace RSSBalancer
                 aoaBias = -(float)Math.Min(8, (0.6 - cosS) * 25);
             // Mała prędkość równoważna nisko: przechylenie zabiera nośność – ograniczamy je, żeby nie przeciągnąć
             double easG = Math.Sqrt(2 * v.dynamicPressurekPa * 1000 / 1.225);
-            double vStG = 70 * Math.Sqrt(Math.Max(10, v.totalMass) / 75.0);
+            double vStG = VehicleProfile.Current.StallEas(v.totalMass);
             gEas = easG; gVst = vStG; hudRMax = rMax; hudDpsi = dpsi; hudCos = cosS;
             // tylko przy małym Machu (< ~2,5) – wyżej kąt natarcia trzyma sterowanie, a przechylenie jest potrzebne do
             // wytracania energii i skrętu (lot 10:11: na 46 km przy M 4,5 EAS 53 m/s wyłączył przechylenie nad lotniskiem)
