@@ -308,10 +308,121 @@ namespace RSSBalancer
             return (north * Math.Cos(h) + east * Math.Sin(h)) * vh + up * vz;
         }
 
+        // ------------------------------------------------------------------ odejście od rdzenia po odłączeniu
+        // Lot 24.11 11:03: Buran odłączony od rdzenia (T+438), oba lecą obok siebie prawie bez prędkości względnej,
+        // manewr ОДУ-1 włączył warp „na szynach” do apogeum. Na szynach KSP nie liczy zderzeń, a przy wyjściu z warpa
+        // (T+722,7) oba statki „rozpakowały się” stykając się – wybuch, 6 części oderwanych, obroty 90°/s.
+        // Teraz, jak w prawdziwym locie (Buran odszedł od bloku Ц silnikami orientacji): dopóki jakiś statek jest
+        // bliżej niż SepSafeDist – trzymamy bieżące położenie (żadnych obrotów skrzydłem/ogonem w rdzeń), RCS pcha nas
+        // w kierunku „od niego” do prędkości rozejścia SepOpenSpeed, a warp jest zablokowany.
+        public const double SepSafeDist = 150.0, SepOpenSpeed = 1.0;
+        private bool sepOn; private Vessel sepVessel, sepFbwVessel; private Vector3d sepHold; private double sepStart;
+        public string SeparationInfo = "";
+
+        /// <summary>Najbliższy inny statek w zasięgu fizyki (m); +∞, gdy brak.</summary>
+        private double NearestNeighbour(out double dist, out Vessel near)
+        {
+            dist = double.PositiveInfinity; near = null;
+            if (vessel == null) return dist;
+            foreach (Vessel o in FlightGlobals.VesselsLoaded)
+            {
+                if (o == null || o == vessel || o.packed && !o.loaded) continue;
+                double d = (o.CoMD - vessel.CoMD).magnitude;
+                if (d < dist) { dist = d; near = o; }
+            }
+            return dist;
+        }
+
+        /// <summary>Prędkość rozejścia z innym statkiem: (v_my − v_on) wzdłuż kierunku „od niego” [m/s].</summary>
+        private double OpeningSpeed(Vessel o, out Vector3d away)
+        {
+            away = (vessel.CoMD - o.CoMD).normalized;
+            return Vector3d.Dot(vessel.obt_velocity - o.obt_velocity, away);
+        }
+
+        /// <summary>true = jeszcze odchodzimy od sąsiada (manewr czeka).</summary>
+        private bool SeparationGuard()
+        {
+            if (vessel.situation != Vessel.Situations.ORBITING && vessel.situation != Vessel.Situations.SUB_ORBITAL) return false;
+            double d; Vessel n;
+            NearestNeighbour(out d, out n);
+            double now = Planetarium.GetUniversalTime();
+            if (n == null || d >= SepSafeDist || (sepOn && now - sepStart > 240))
+            {
+                if (sepOn)
+                {
+                    FlightLogger.Event("Odejście od „" + (sepVessel != null ? sepVessel.vesselName : "?") + "”: " +
+                                       (n == null || d >= SepSafeDist ? "odległość " + (n == null ? "> zasięg" : d.ToString("F0", Inv) + " m") : "limit czasu 240 s, odległość " + d.ToString("F0", Inv) + " m") + " – dalej manewr");
+                    EndSeparation();
+                }
+                return false;
+            }
+            if (!sepOn)
+            {
+                sepOn = true; sepVessel = n; sepStart = now;
+                sepHold = (Vector3d)vessel.ReferenceTransform.up;          // nos tam, gdzie jest – bez obrotów przy rdzeniu
+                vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, true);
+                if (sepFbwVessel != vessel) { if (sepFbwVessel != null) sepFbwVessel.OnFlyByWire -= SepFbw; vessel.OnFlyByWire += SepFbw; sepFbwVessel = vessel; }
+                Vector3d aw0; double op0 = OpeningSpeed(n, out aw0);
+                FlightLogger.Event("Odejście od „" + n.vesselName + "”: odległość " + d.ToString("F0", Inv) + " m, rozejście " + op0.ToString("F2", Inv) + " m/s – RCS od niego, warp zablokowany");
+            }
+            sepVessel = n;
+            holdDir = sepHold; holdMode = Hold.Inertial; holdAttitude = true;
+            FlightInputHandler.state.mainThrottle = 0f;
+            Vector3d aw; double op = OpeningSpeed(n, out aw);
+            SeparationInfo = "odejście od „" + n.vesselName + "”: " + d.ToString("F0", Inv) + " m, " + op.ToString("F2", Inv) + " m/s";
+            ManeuverInfo = SeparationInfo;
+            return true;
+        }
+
+        // Ciąg RCS: wg ModuleRCS (Assembly-CSharp) inputLin = R·(X, Z, Y), dysza pali, gdy jej oś ma dodatni rzut na inputLin,
+        // a siła działa PRZECIWNIE do osi dyszy ⇒ przyspieszenie statku ∝ −R·(X, Z, Y). Żeby przyspieszać wzdłuż „away”:
+        // (X, Z, Y) = −R⁻¹·away.
+        private void SepFbw(FlightCtrlState s)
+        {
+            if (!sepOn || sepVessel == null || vessel == null) return;
+            Vector3d aw; double op = OpeningSpeed(sepVessel, out aw);
+            if (op >= SepOpenSpeed) return;
+            float k = (float)Math.Max(0.2, Math.Min(1.0, (SepOpenSpeed - op) / 0.3));
+            Vector3 l = vessel.ReferenceTransform.InverseTransformDirection((Vector3)aw);
+            Vector3 c = LinCmd(l) * k;
+            s.X = c.x; s.Y = c.y; s.Z = c.z;
+        }
+
+        /// <summary>Wejście (X, Y, Z) w FlightCtrlState dające przyspieszenie wzdłuż wektora l (w układzie ReferenceTransform).</summary>
+        public static Vector3 LinCmd(Vector3 l)
+        {
+            // inputLin = (X, Z, Y) = −l  ⇒  X = −l.x, Z = −l.y, Y = −l.z ; normujemy do największej składowej = 1
+            float m = Mathf.Max(Mathf.Abs(l.x), Mathf.Max(Mathf.Abs(l.y), Mathf.Abs(l.z)));
+            if (m < 1e-6f) return Vector3.zero;
+            return new Vector3(-l.x / m, -l.z / m, -l.y / m);   // (X, Y, Z)
+        }
+
+        private void EndSeparation()
+        {
+            sepOn = false; sepVessel = null; SeparationInfo = "";
+            if (sepFbwVessel != null) { sepFbwVessel.OnFlyByWire -= SepFbw; sepFbwVessel = null; }
+        }
+
+        /// <summary>Warp ręczny/inny przy statku obok – zatrzymaj, zanim do niego „wskoczymy” po wyjściu z warpa.</summary>
+        private void WarpNeighbourGuard()
+        {
+            if (vessel == null || TimeWarp.CurrentRateIndex == 0 || TimeWarp.WarpMode != TimeWarp.Modes.HIGH) return;
+            double d; Vessel n;
+            if (NearestNeighbour(out d, out n) < SepSafeDist)
+            {
+                TimeWarp.SetRate(0, true);
+                LastMessage += "\nWarp zatrzymany: obok jest „" + n.vesselName + "” (" + d.ToString("F0") + " m).";
+                FlightLogger.Event("Warp zatrzymany – obok „" + n.vesselName + "” " + d.ToString("F0", Inv) + " m");
+            }
+        }
+
         private void ManeuverWarp(double burnStart)
         {
             double now = Planetarium.GetUniversalTime();
             if (mWarpedFor == burnStart) return;
+            double nd; Vessel nv;
+            if (NearestNeighbour(out nd, out nv) < SepSafeDist) return;   // obok wisi rdzeń – bez warpa (spróbujemy, gdy się oddalimy)
             mWarpedFor = burnStart;
             if (burnStart - now > 120 && TimeWarp.CurrentRateIndex == 0) TimeWarp.fetch.WarpTo(burnStart - 60);
         }
@@ -343,6 +454,7 @@ namespace RSSBalancer
         private void Maneuver()
         {
             if (mph == MPh.None || mph == MPh.Done || vessel == null) return;
+            if (SeparationGuard()) return;
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
             double now = Planetarium.GetUniversalTime(), R = b.Radius;
             double a = AccelNow();
@@ -668,7 +780,7 @@ namespace RSSBalancer
             HudText(new Rect(x, y + 46, w, 26), small, hudSmall, hudShadowSmall, Color.white);
         }
 
-        private void OnDestroy() { if (Instance == this) Instance = null; RestoreWarpLimits(); ReleaseAttitude(); if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw; }
+        private void OnDestroy() { if (Instance == this) Instance = null; EndSeparation(); RestoreWarpLimits(); ReleaseAttitude(); if (steerVessel != null) steerVessel.OnFlyByWire -= SteerFbw; }
 
         public bool Active { get { return Running != null && Current >= 0 && Current < Running.steps.Count; } }
 
@@ -735,6 +847,7 @@ namespace RSSBalancer
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             if (mph != MPh.None && mph != MPh.Done) FlightInputHandler.state.mainThrottle = 0f;
             mph = MPh.None;
+            EndSeparation();
             Running = null;
             Current = -1;
         }
@@ -927,6 +1040,7 @@ namespace RSSBalancer
             if (approachOn) Approach();
             if (aoPhase == AO.Ascent || aoPhase == AO.Finish) AutoOrbitTick();
             if (mph != MPh.None && mph != MPh.Done) Maneuver();
+            WarpNeighbourGuard();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
             // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
             // – przy warpie ×100 000 to wypadało godziny przed impulsem, a nagłe zrzucenie warpa z takiej prędkości
@@ -1395,6 +1509,7 @@ namespace RSSBalancer
                         // warpto = deorbit <ile sekund przed impulsem>
                         string[] w = val.ToLowerInvariant().Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
                         double lead = w.Length > 1 ? Num(w[1], 300) : 300;
+                        { double nd; Vessel nv; if (NearestNeighbour(out nd, out nv) < SepSafeDist) throw new Exception("obok jest „" + nv.vesselName + "” (" + nd.ToString("F0") + " m) – warp zablokowany, żeby po wyjściu z warpa nie zderzyć się z nim"); }
                         if (w.Length > 0 && (w[0] == "ap" || w[0] == "pe"))
                         {
                             // warpto = ap <s przed apogeum> / pe <s przed perygeum>
