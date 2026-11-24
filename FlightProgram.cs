@@ -2267,6 +2267,21 @@ namespace RSSBalancer
             if (ap == null) { LastMessage += "\nMechJeb: brak Aircraft Autopilot."; return; }
             ReleaseAttitude();
             ChooseRunwayEnd();
+            HacInit();
+            {
+                // już na prostej (OK-GLI po kręgu, albo Buran na osi pasa): od razu końcówka; inaczej tor przez HAC
+                Vector3d pos0 = vessel.CoMD - vessel.mainBody.position, rel0 = pos0 - thrPos;
+                double d0 = -Vector3d.Dot(rel0, rwyDir), y0 = Vector3d.Dot(rel0, Vector3d.Cross(pos0.normalized, rwyDir).normalized * -1);
+                Vector3d vel0 = vessel.srf_velocity; double psi0 = Mod(Math.Atan2(Vector3d.Dot(vel0, hacE), Vector3d.Dot(vel0, hacN)) * 180 / Math.PI, 360);
+                hacFinal = d0 > 0 && d0 < 25000 && Math.Abs(y0) < 1500 && Math.Abs(W180(psi0 - rwyHeading)) < 30;
+                if (!hacFinal)
+                {
+                    double h0 = vessel.altitude - rwyAlt;
+                    HacOpt o = HacPick(HacP(pos0), psi0, vessel.srfSpeed, h0);
+                    HacApply(o);
+                    FlightLogger.Event("Podejście (HAC): pas kurs " + rwyHeading.ToString("F0", Inv) + "°, okrąg " + (hacSide > 0 ? "w prawo" : "w lewo") + ", wyjście " + (hacXa / 1000).ToString("F0", Inv) + " km przed progiem, tor " + (o.L / 1000).ToString("F0", Inv) + " km, zapas energii " + o.exc.ToString("F0", Inv) + " m");
+                }
+            }
             jetsAvail = HasJets(); jetAssist = false; vsCmdPrev = double.NaN;
             object pool = Users(ap);
             if (pool != null) PoolCall(pool, "Add");
@@ -2748,6 +2763,173 @@ namespace RSSBalancer
             return lvl;
         }
 
+        // ------------------------------------------------------------------ HAC – okrąg wyrównania kursu (1.41.3)
+        // Lot 24.11 22:14 (lądowanie po 2 okrążeniach jak 1K1): Buran przejął podejście 10 km ZA pasem, lecąc od niego.
+        // Stare podejście: koniec pasa „bliższy kursowi”, cel 12 km przed progiem po drugiej stronie, przy nadmiarze
+        // krążenie, a w dolocie nurkowanie do EAS 150 m/s przy M 0,7–0,85 (doskonałość tylko ~2,6) → zjadło energię,
+        // przyziemienie 2,7 km przed progiem i 3 km w bok. Teraz jak w Buranie/Shuttle: tor przez okrąg HAC stycznie do
+        // osi pasa (wyjście na osi 12 km przed progiem, w razie braku energii 8 albo 5 km), wybór końca pasa i strony
+        // okręgu po najkrótszym wystarczającym torze, energia z wysokości i prędkości: za mało – najlepsze szybowanie
+        // (EAS ~1,4× przeciągnięcia), nadmiar – szybciej, hamulec, esowanie przed HAC, dodatkowe okrążenie na HAC.
+        // Sprawdzone offline (model aerodynamiki z logów 18:34 i 22:14, ten sam autopilot): stare podejście odtwarza oba loty
+        // (22:14: 2,1 km przed progiem; 18:34: na pasie), nowe ląduje w obu; przejęcie ≤ 15 km od pasa w losowym kursie:
+        // 76/80 na pasie (stare 25/80), przy doskonałości −15%: 75/80 (stare 9/80).
+        private bool hacFinal, hacOnH, hacSturn;
+        private int hacSide = 1, hacLap, hacSsgn = 1;
+        private double hacXa = 12000, hacPrevArc = double.NaN, hacExc;
+        private Vector3d hacC0, hacE, hacN;              // płaski układ przy pasie: początek, wschód, północ
+        private const double HacBank = 28, HacLDP = 4.0, HacEM = 600;
+        private static readonly double[] HacXas = { 12000, 8000, 5000 };
+
+        private Vector2d HacP(Vector3d pos) { Vector3d r = pos - hacC0; return new Vector2d(Vector3d.Dot(r, hacE), Vector3d.Dot(r, hacN)); }
+        private Vector2d HacD(Vector3d dir) { Vector2d d = new Vector2d(Vector3d.Dot(dir, hacE), Vector3d.Dot(dir, hacN)); return d / d.magnitude; }
+        private static double Mod(double a, double m) { a %= m; return a < 0 ? a + m : a; }
+        private static double W180(double a) { return Mod(a + 180, 360) - 180; }
+        /// <summary>Doskonałość Burana w locie poddźwiękowym z logów 18:34 i 22:14: zależy od EAS i Macha (M 0,6–0,9 tylko ~0,7×).</summary>
+        private static double HacLD(double eas, double M)
+        {
+            double lde = Interp(eas, new[] { 70.0, 90, 130, 170, 220 }, new[] { 4.6, 5.2, 3.8, 3.0, 2.3 });
+            double mf = Interp(M, new[] { 0.5, 0.55, 0.6, 0.9, 0.95, 1.05, 1.3 }, new[] { 1.0, 0.97, 0.75, 0.7, 0.5, 0.4, 0.4 });
+            return lde * mf;
+        }
+        private static double Interp(double x, double[] xs, double[] ys)
+        {
+            if (x <= xs[0]) return ys[0];
+            for (int i = 1; i < xs.Length; i++) if (x <= xs[i]) return ys[i - 1] + (ys[i] - ys[i - 1]) * (x - xs[i - 1]) / (xs[i] - xs[i - 1]);
+            return ys[ys.Length - 1];
+        }
+        private static double HacRh(double v) { return Math.Max(5000, Math.Min(9000, v * v / (9.81 * Math.Tan(HacBank * Math.PI / 180)))); }
+        private static double HacRv(double v) { return v * v / (9.81 * Math.Tan(30 * Math.PI / 180)); }
+        private double HacEreq(double L, double xa) { double vS = StallEas; return SteepPathHeight(xa) + HacEM + L / HacLDP + (1.6 * vS) * (1.6 * vS) / (2 * 9.81); }
+
+        /// <summary>Długość toru: zakręt na styczną + prosta do okręgu + łuk do wyjścia na osi pasa (xa przed progiem).
+        /// side = +1: środek okręgu na prawo od osi – obieg w prawo.</summary>
+        private static double HacPath(Vector2d p, double psi, Vector2d thr, Vector2d dir, int side, double Rh, double Rv, double xa,
+                                      out double tbDeg, out Vector2d C, out double arc)
+        {
+            Vector2d right = new Vector2d(dir.y, -dir.x);
+            Vector2d X = thr - dir * xa; C = X + right * (side * Rh);
+            bool cw = side > 0;
+            Vector2d PC = C - p; double dc = PC.magnitude; if (dc < Rh * 1.02) dc = Rh * 1.02;
+            double a = Math.Asin(Rh / dc), bC = Math.Atan2(PC.x, PC.y);
+            double tb = cw ? bC - a : bC + a;
+            double L1 = Math.Sqrt(Math.Max(0, dc * dc - Rh * Rh));
+            Vector2d T = p + new Vector2d(Math.Sin(tb), Math.Cos(tb)) * L1;
+            Vector2d tc = T - C, xc = X - C;
+            double a0 = Math.Atan2(tc.x, tc.y), a1 = Math.Atan2(xc.x, xc.y);
+            arc = cw ? Mod(a1 - a0, 2 * Math.PI) : Mod(a0 - a1, 2 * Math.PI);
+            tbDeg = Mod(tb * 180 / Math.PI, 360);
+            return Rv * Math.Abs(W180(tbDeg - psi)) * Math.PI / 180 + L1 + Rh * arc;
+        }
+
+        private struct HacOpt { public double exc, L, xa; public bool endA; public int side; }
+
+        private HacOpt HacPick(Vector2d p, double psi, double v, double h)
+        {
+            Vector3d a3 = Surf(rwyLatA, rwyLonA, rwyAlt), b3 = Surf(rwyLatB, rwyLonB, rwyAlt);
+            Vector2d A = HacP(a3), B = HacP(b3), ab = HacD(b3 - a3);
+            double Rh = HacRh(v), Eh = h + v * v / (2 * 9.81), tb, arc; Vector2d C;
+            HacOpt best = new HacOpt { exc = double.NegativeInfinity }; bool feas = false;
+            for (int e = 0; e < 2; e++)
+                for (int sd = 1; sd >= -1; sd -= 2)
+                    foreach (double xa in HacXas)
+                    {
+                        double L = HacPath(p, psi, e == 0 ? A : B, e == 0 ? ab : -ab, sd, Rh, HacRv(v), xa, out tb, out C, out arc);
+                        HacOpt o = new HacOpt { exc = Eh - HacEreq(L, xa), L = L, xa = xa, endA = e == 0, side = sd };
+                        bool f = o.exc >= 0;
+                        // wystarczające: najdalsze wyjście (12 km), z nich najmniejszy nadmiar; brak – największa energia
+                        if (f && (!feas || o.xa > best.xa || (o.xa == best.xa && o.exc < best.exc))) { best = o; feas = true; }
+                        else if (!f && !feas && o.exc > best.exc) best = o;
+                    }
+            return best;
+        }
+
+        private void HacApply(HacOpt o)
+        {
+            Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt), b = Surf(rwyLatB, rwyLonB, rwyAlt);
+            Vector3d ab = (b - a).normalized;
+            if (o.endA) { thrPos = a; rwyDir = ab; } else { thrPos = b; rwyDir = -ab; }
+            rwyHeading = Mod(Math.Atan2(Vector3d.Dot(rwyDir, hacE), Vector3d.Dot(rwyDir, hacN)) * 180 / Math.PI, 360);
+            hacSide = o.side; hacXa = o.xa;
+        }
+
+        private void HacInit()
+        {
+            Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt);
+            hacC0 = a; Vector3d up = a.normalized;
+            hacN = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized; hacE = Vector3d.Cross(up, hacN).normalized;
+            hacOnH = hacSturn = false; hacLap = 0; hacSsgn = 1; hacPrevArc = double.NaN;
+        }
+
+        /// <summary>Krok HAC: kurs, prędkość pionowa, limit przechylenia, hamulec. false – czas na końcówkę (stroma ścieżka).</summary>
+        private bool HacStep(Vector3d pos, double h, double eas, double y, out double hdg, out double vs, out double roll, out bool brake)
+        {
+            double vSt = StallEas, v = vessel.srfSpeed, M = vessel.mach;
+            Vector2d p = HacP(pos);
+            Vector3d vel = vessel.srf_velocity;
+            double psi = Mod(Math.Atan2(Vector3d.Dot(vel, hacE), Vector3d.Dot(vel, hacN)) * 180 / Math.PI, 360);
+            Vector2d thr = HacP(thrPos), dir = HacD(rwyDir);
+            double Rh = HacRh(v), tb, arc; Vector2d C;
+            double L = HacPath(p, psi, thr, dir, hacSide, Rh, HacRv(v), hacXa, out tb, out C, out arc);
+            bool cw = hacSide > 0;
+            double dist = (p - C).magnitude;
+            bool onHac = dist < Rh * 1.25 && Math.Abs(W180(tb - psi)) < 40;
+            double Eh = h + v * v / (2 * 9.81);
+            double exc = Eh - HacEreq(L + hacLap * 2 * Math.PI * Rh, hacXa);
+            if (!onHac && hacLap == 0)
+            {
+                // ponowny wybór (koniec pasa / strona okręgu / bliższe wyjście), gdy obecny tor nie wystarcza
+                HacOpt bst = HacPick(p, psi, v, h);
+                if ((exc < -300 && bst.exc >= 0) || (bst.exc >= 0 && bst.xa > hacXa) || (exc < -300 && bst.exc > exc + 500))
+                {
+                    bool chg = bst.side != hacSide || bst.xa != hacXa || (bst.endA != (thrPos - Surf(rwyLatA, rwyLonA, rwyAlt)).magnitude < 1);
+                    HacApply(bst);
+                    if (chg) FlightLogger.Event("Podejście (HAC): nowy wybór – pas kurs " + rwyHeading.ToString("F0", Inv) + "°, okrąg " + (hacSide > 0 ? "w prawo" : "w lewo") + ", wyjście " + (hacXa / 1000).ToString("F0", Inv) + " km przed progiem, tor " + (bst.L / 1000).ToString("F0", Inv) + " km, zapas energii " + bst.exc.ToString("F0", Inv) + " m");
+                    thr = HacP(thrPos); dir = HacD(rwyDir);
+                    L = HacPath(p, psi, thr, dir, hacSide, Rh, HacRv(v), hacXa, out tb, out C, out arc); cw = hacSide > 0;
+                    dist = (p - C).magnitude; exc = bst.exc;
+                }
+            }
+            if (onHac)
+            {
+                if (!double.IsNaN(hacPrevArc) && arc > hacPrevArc + Math.PI && hacLap > 0) hacLap--;   // minął wyjście – koniec dodatkowego okrążenia
+                hacPrevArc = arc;
+                Vector2d r = p - C; double ang = Math.Atan2(r.x, r.y);
+                double tang = Mod((ang + (cw ? Math.PI / 2 : -Math.PI / 2)) * 180 / Math.PI, 360);
+                double corr = Math.Atan(2.0 * (dist - Rh) / Rh) * 180 / Math.PI;
+                hdg = Mod(tang + (cw ? corr : -corr), 360);
+                if (exc > 2 * Math.PI * Rh / 3.0 && hacLap == 0 && arc < Math.PI) { hacLap = 1; FlightLogger.Event("Podejście (HAC): nadmiar energii " + exc.ToString("F0", Inv) + " m – dodatkowe okrążenie"); }
+                approachPhase = "HAC: " + (arc * 180 / Math.PI + 360 * hacLap).ToString("F0", Inv) + "° łuku do wyjścia" + (hacLap > 0 ? " (+okrążenie)" : "");
+                if (hacLap == 0 && (arc < 8 * Math.PI / 180 || arc > 352 * Math.PI / 180) && Math.Abs(y) < 1500)
+                {
+                    hacFinal = true;
+                    FlightLogger.Event("Podejście (HAC): wyjście na oś pasa " + (hacXa / 1000).ToString("F0", Inv) + " km przed progiem, h " + h.ToString("F0", Inv) + " m (stroma ścieżka na " + SteepPathHeight(hacXa).ToString("F0", Inv) + " m), EAS " + eas.ToString("F0", Inv) + " m/s");
+                }
+            }
+            else
+            {
+                hdg = tb; approachPhase = "lot do HAC, tor " + (L / 1000).ToString("F0", Inv) + " km";
+                // nadmiar większy, niż zje tor (szybciej + hamulec): esowanie
+                double cap = L * (1 / 2.3 - 1 / HacLDP);
+                if (exc > cap + 800 || (hacSturn && exc > cap))
+                {
+                    if (!hacSturn) { hacSturn = true; Vector2d pc = C - p; hacSsgn = W180(Math.Atan2(pc.x, pc.y) * 180 / Math.PI - psi) < 0 ? 1 : -1; }
+                    if (W180(psi - tb) * hacSsgn >= 60) hacSsgn = -hacSsgn;
+                    hdg = Mod(tb + hacSsgn * 75, 360);
+                    approachPhase = "esowanie – nadmiar energii " + exc.ToString("F0", Inv) + " m";
+                }
+                else hacSturn = false;
+            }
+            hacOnH = onHac; hacExc = exc;
+            lowEnergy = exc < 0;
+            double easT = exc < 0 ? 1.4 * vSt : Math.Max(1.4 * vSt, Math.Min(170, 1.4 * vSt + exc / 40));
+            brake = exc > 1500;
+            vs = -v / Math.Max(2, HacLD(easT, M) * 0.9) - 1.0 * (easT - eas);
+            roll = eas < 1.3 * vSt ? 20 : eas < 1.6 * vSt ? 30 : HacBank + 5;
+            approachPhase += ", zapas energii " + exc.ToString("F0", Inv) + " m, EAS " + eas.ToString("F0", Inv) + "/" + easT.ToString("F0", Inv) + " m/s";
+            return !hacFinal;
+        }
+
         private void Approach()
         {
             object ap = Airplane();
@@ -2813,36 +2995,14 @@ namespace RSSBalancer
             // „za blisko / za progiem” tylko wysoko – lot 2026-11-20 16:19: Buran był idealnie na osi 3,6 km przed progiem
             // na 950 m, a przy d < 3 km warunek „d < 3000” przełączył go na dolot do punktu 12 km przed pasem – odbił w bok
             // i usiadł 4 km od pasa. Nisko na krótkiej prostej zostajemy na ścieżce.
-            bool farAway = dThr > 30000 || Math.Abs(y) > 8000 || (d < 3000 && h > 1500) || d < -1500;
-
-            if (farAway && hr >= 20)
+            if (!hacFinal && hr < 450) { hacFinal = true; FlightLogger.Event("Podejście (HAC): poniżej 450 m nad terenem – końcówka"); }
+            double easH = Math.Sqrt(2 * vessel.dynamicPressurekPa * 1000 / 1.225);
+            double hacRoll = 45; bool hacBrake = false;
+            bool farAway = !hacFinal;
+            if (!hacFinal && HacStep(pos, h, easH, y, out hdg, out vs, out hacRoll, out hacBrake))
             {
-                // DOLOT: lecimy na punkt 12 km przed progiem na osi pasa (jak wejście w okrąg HAC w Buranie/Shuttle),
-                // kąt schodzenia z energii – tak, żeby dolecieć, nie wytracając prędkości (wcześniej Buran 150 km
-                // obok pasa „wyrównywał” na 500 m nad stepem, aż przeciągnął).
-                Vector3d aim = thrPos - rwyDir * 12000;
-                Vector3d to = aim - pos; to -= up * Vector3d.Dot(to, up);
-                hdg = (Math.Atan2(Vector3d.Dot(to, east), Vector3d.Dot(to, north)) * 180 / Math.PI + 360) % 360;
-                double togo = to.magnitude + 12000;
-                double gNeed = Math.Atan2(Math.Max(h, 0), togo) * 180 / Math.PI;
-                double gamma = Math.Max(4, Math.Min(14, gNeed));
-                vs = -vh * Math.Tan(gamma * Math.PI / 180);
-                approachPhase = "dolot do pasa " + (togo / 1000).ToString("F0", Inv) + " km, schodzenie " + gamma.ToString("F0", Inv) + "°" +
-                                (gNeed < 4 ? " (za mało wysokości – nie doleci)" : "");
-                lowEnergy = gNeed < 8;
-                // NADMIAR ENERGII (jest wyżej, niż trzeba): krąży wokół punktu dolotu jak Buran/Shuttle na okręgu HAC,
-                // aż kąt potrzebny do dolotu spadnie; do tego hamulec aerodynamiczny (ster kierunku), gdy za szybko.
-                // wejście w krążenie przy > 20°, wyjście przy < 16° (lot 2026-11-20 12:29: wyjście dopiero przy 10° zostawiło
-                // za mało energii – Buran usiadł 6 km przed progiem); resztę nadmiaru zjada stroma ścieżka i hamulec
-                if (gNeed > 20 || (excessTurn && gNeed > 16))
-                {
-                    excessTurn = true;
-                    hdg = (hdg + 75) % 360;
-                    approachPhase = "NADMIAR ENERGII – krążę nad punktem dolotu (" + gNeed.ToString("F0", Inv) + "° potrzeba), " + (togo / 1000).ToString("F0", Inv) + " km";
-                }
-                else excessTurn = false;
-            }
-            else
+                excessTurn = false;
+            }            else
             {
                 // kurs: punkt na osi pasa przed nami (marchewka)
                 double L = Math.Max(1500, Math.Min(8000, Math.Max(d, 0) * 0.4));
@@ -2896,6 +3056,7 @@ namespace RSSBalancer
                 // przy braku energii – prędkość najlepszego szybowania (~1,4× przeciągnięcia), nie nurkowanie po 140 m/s EAS
                 // (lot 12:29: trzymanie 140 m/s dawało opadanie 25–30 m/s i Buran zjadł zapas wysokości)
                 double easT = flare ? 1.15 * vSt : lowEnergy ? 1.4 * vSt : farAway ? Math.Max(150, 1.8 * vSt) : Math.Max(140, 1.6 * vSt);
+                if (farAway) easT = 1.25 * vSt;   // HAC ma własne sterowanie prędkością – tu tylko ochrona przed przeciągnięciem
                 if (easNow < easT)
                 {
                     vs = Math.Min(vs, -vh * Math.Tan(4 * Math.PI / 180) - 1.5 * (easT - easNow));
@@ -2904,6 +3065,7 @@ namespace RSSBalancer
                 // Przechylenie zabiera nośność – przy małej prędkości ostrożne zakręty (lot 18:25: zakręt 45° na 17 km
                 // przy EAS ~85 m/s skończył się korkociągiem).
                 double rollLim = easNow < 1.3 * vSt ? 10 : easNow < 1.6 * vSt ? 20 : easNow < 2.0 * vSt ? 30 : 45;
+                if (farAway) rollLim = hacRoll;
                 // Wspomaganie silnikami (OK-GLI ma AL-31): za mało energii albo blisko przeciągnięcia wysoko nad ziemią –
                 // pełny ciąg; po odzyskaniu prędkości i powrocie na ścieżkę – znów szybowanie jak Buran.
                 if (jetsAvail && !flare)
@@ -2926,7 +3088,7 @@ namespace RSSBalancer
                 SetF(ap, "RollLimit", rollLim);
                 // hamulec aerodynamiczny przy nadmiarze prędkości
                 // hamulec (rozchylony ster kierunku w Buranie) trzyma prędkość na stromej ścieżce
-                bool wantBrakes = easNow > (farAway ? 200 : 155) || (excessTurn && easNow > 170) || (flare && easNow > 1.25 * vSt && hr > 15);
+                bool wantBrakes = farAway ? hacBrake : easNow > 155 || (flare && easNow > 1.25 * vSt && hr > 15);
                 if (wantBrakes != brakesOut) { brakesOut = wantBrakes; vessel.ActionGroups.SetGroup(KSPActionGroup.Brakes, wantBrakes); }
             }
             vs = Math.Max(-250, Math.Min(0, vs));
