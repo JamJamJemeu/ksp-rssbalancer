@@ -667,7 +667,12 @@ namespace RSSBalancer
         // jak planer (wejście na entryRange, odejście boczne z kierunku toru, lądowanie = wejście + 1900 s) i z zapasem:
         // odejście ≤ 90 % maxCrossRange, Słońce ≥ 12°. Sprawdzone offline: model 281 km vs log 289 km dla tego przelotu.
         private const double LwLag = 18, LwLandAfterEntry = 1900, LwSun = 12, LwMaxH = 30;
-        private double lwEntryKm = 7000, lwMaxXrKm = 200;
+        private double lwEntryKm = 7000, lwMaxXrKm = 200, lwMaxXrLeftKm = 200, lwMinEntryS = 3600;
+        // 1.41.2 (lot 24.11 18:34 – „za dużo orbit, 1K1 zrobił dwie”): prawdziwy 1K1 wszedł w atmosferę na 2. okrążeniu
+        // (impuls T+2:20, lądowanie T+3:25). Ten przelot mija lotnisko o ~820 km w prawo, więc limit 200 km go odrzucał.
+        // Symulacja wejścia offline (model aerodynamiki z logu 18:34: F/q i L/D od Macha, US76, obracająca się Ziemia,
+        // to samo naprowadzanie co w grze): w prawo osiągalne ≥ 1000 km (siła Coriolisa na półkuli płn. znosi tor w prawo),
+        // w lewo tylko ~400 km – stąd osobne limity. Przelot 1. okrążenia (~760 km w prawo) wycina minEntryMET.
         private double launchHoldUT = double.NaN;
 
         private double SunElevationAt(CelestialBody b, double lat, double lon, double ut)
@@ -749,13 +754,16 @@ namespace RSSBalancer
                     double rel = brg - trk; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI;
                     if (Math.Abs(rel) < Math.PI / 2)
                     {
-                        double xrKm = Math.Abs(Math.Asin(Math.Max(-1, Math.Min(1, Math.Sin(ang) * Math.Sin(rel))))) * R / 1000;
-                        if (xrKm <= 0.9 * lwMaxXrKm) { passT.Add(t); passX.Add(xrKm); }
+                        double xrKm = Math.Asin(Math.Max(-1, Math.Min(1, Math.Sin(ang) * Math.Sin(rel)))) * R / 1000;   // + = w prawo
+                        if (t >= lwMinEntryS && (xrKm >= 0 ? xrKm <= 0.9 * lwMaxXrKm : -xrKm <= 0.9 * lwMaxXrLeftKm)) { passT.Add(t); passX.Add(xrKm); }
                     }
                 }
                 dPrev = d;
             }
             if (passT.Count == 0) return false;
+            // tylko pierwszy pasujący przelot – ten sam, który weźmie planer (jak w 1K1: lądowanie na 2. okrążeniu),
+            // a nie późniejszy, który akurat wypada w dzień
+            passT.RemoveRange(1, passT.Count - 1); passX.RemoveRange(1, passX.Count - 1);
             double now = Planetarium.GetUniversalTime();
             bool inWin = false; double bestEl = -99;
             for (double L = now + 300; L < now + 2 * 86400; L += 300)
@@ -789,7 +797,7 @@ namespace RSSBalancer
                 if (ll.Length >= 2) { sLat = Num(ll[0], double.NaN); sLon = Num(ll[1], double.NaN); }
             }
             double pe = 251, ap = 263, inc = 51.6;
-            if (rp != null && rp.node != null) { lwEntryKm = Num(rp.node.GetValue("entryRange"), 7000); lwMaxXrKm = Num(rp.node.GetValue("maxCrossRange"), 200); }
+            if (rp != null && rp.node != null) { lwEntryKm = Num(rp.node.GetValue("entryRange"), 7000); lwMaxXrKm = Num(rp.node.GetValue("maxCrossRange"), 200); lwMaxXrLeftKm = Num(rp.node.GetValue("maxCrossRangeLeft"), lwMaxXrKm); lwMinEntryS = Math.Max(3600, Num(rp.node.GetValue("minEntryMET"), 0)); }
             foreach (FlightPrograms.Step st in p.steps)
             {
                 string ot = st.node.GetValue("orbittarget");
@@ -814,7 +822,7 @@ namespace RSSBalancer
             string msg = head + "Lądowanie w dzień na „" + (rp.name) + "” wymaga startu za " +
                          KSPUtil.PrintTimeCompact(L - now, false) + " – ok. " + HourText(startH) + " czasu słonecznego Bajkonuru.\n" +
                          "Lądowanie po ok. " + (landT / 3600).ToString("F1", Inv) + " h, ok. " + HourText(landH) + ", Słońce " + el.ToString("F0", Inv) + "° nad lotniskiem" +
-                         " (odejście boczne " + xr.ToString("F0", Inv) + " km).\n\nPrzyspieszyć czas do okna startowego?";
+                         " (odejście boczne " + XrText(xr) + ").\n\nPrzyspieszyć czas do okna startowego?";
             FlightLogger.Event("Okno startowe: start za " + KSPUtil.PrintTimeCompact(L - now, false) + " (" + HourText(startH) + "), lądowanie ok. " + HourText(landH) + ", Słońce " + el.ToString("F0", Inv) + "° – pytanie");
             launchHoldUT = double.PositiveInfinity;     // kroki stoją do odpowiedzi
             double Lc = L;
@@ -1066,6 +1074,8 @@ namespace RSSBalancer
             siteLead = p.node != null ? Num(p.node.GetValue("siteLead"), 3900) : 3900;
             planAngle = p.node != null ? Num(p.node.GetValue("deorbitAngle"), 185) : 185;
             planMaxXr = p.node != null ? Num(p.node.GetValue("maxCrossRange"), 1000) : 1000;
+            planMaxXrLeft = p.node != null ? Num(p.node.GetValue("maxCrossRangeLeft"), planMaxXr) : planMaxXr;
+            planMinEntryMet = p.node != null ? Num(p.node.GetValue("minEntryMET"), 0) : 0;
             entryRangeKm = p.node != null ? Num(p.node.GetValue("entryRange"), 0) : 0;
             deorbitPeriKm = p.node != null ? Num(p.node.GetValue("deorbitPeri"), 30) : 30;
             entryAltKm = p.node != null ? Num(p.node.GetValue("entryAlt"), 120) : 120;
@@ -1565,6 +1575,7 @@ namespace RSSBalancer
             loggedPlan = key;
             FlightLogger.Event("Plan zejścia: " + PlanInfo);
         }
+        private double planMaxXrLeft = 1000, planMinEntryMet = 0;
         private double planAngle = 185, planMaxXr = 1000, planApA = double.NaN, planPeA = double.NaN;
         public bool RequireDaylight;
         public void Replan() { planUT = double.NaN; nextPlan = 0; planApA = double.NaN; PlanInfo = "przeliczam…"; }
@@ -1650,7 +1661,7 @@ namespace RSSBalancer
             GreatCircle(lat1, lon1, lat2, lon2, out trk);
             double ang = GreatCircle(lat1, lon1, siteLat, siteLon, out brg);
             double rel = ((brg - trk + 540) % 360) - 180;
-            xrKm = Math.Abs(Math.Asin(Math.Max(-1, Math.Min(1, Math.Sin(ang) * Math.Sin(rel * Math.PI / 180))))) * b.Radius / 1000;
+            xrKm = Math.Asin(Math.Max(-1, Math.Min(1, Math.Sin(ang) * Math.Sin(rel * Math.PI / 180)))) * b.Radius / 1000;   // + = lotnisko w prawo
             distKm = ang * b.Radius / 1000;
             if (Math.Abs(rel) > 90) distKm = -distKm;          // lotnisko za plecami
             return true;
@@ -1665,21 +1676,26 @@ namespace RSSBalancer
             return t;
         }
 
+        /// <summary>Odejście boczne ze znakiem (+ = lotnisko w prawo) w limicie: w prawo maxCrossRange, w lewo maxCrossRangeLeft.</summary>
+        private bool XrOk(double xr) { return xr >= 0 ? xr <= planMaxXr : -xr <= planMaxXrLeft; }
+        private static string XrText(double xr) { return Math.Abs(xr).ToString("F0", Inv) + " km " + (xr >= 0 ? "w prawo" : "w lewo"); }
+
         private void PlanDeorbitPhysical()
         {
             planUT = double.NaN; planXr = double.NaN;
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
             if (o.eccentricity >= 1 || o.PeA < (b.atmosphere ? b.atmosphereDepth : 0)) { PlanInfo = "orbita nie jest zamknięta nad atmosferą"; return; }
             double incl = o.inclination > 90 ? 180 - o.inclination : o.inclination;
-            double reachDeg = incl + planMaxXr / (b.Radius / 1000) * 180 / Math.PI;
+            double reachDeg = incl + Math.Max(planMaxXr, planMaxXrLeft) / (b.Radius / 1000) * 180 / Math.PI;
             if (reachDeg < Math.Abs(siteLat))
             {
                 PlanInfo = "nachylenie orbity " + o.inclination.ToString("F1") + "° – orbita nigdy nie przechodzi bliżej niż " + ((Math.Abs(siteLat) - incl) * b.Radius / 1000 * Math.PI / 180).ToString("F0") +
-                           " km od lotniska (szer. " + siteLat.ToString("F1") + "°); potrzeba nachylenia ≥ " + (Math.Abs(siteLat) - planMaxXr / (b.Radius / 1000) * 180 / Math.PI).ToString("F1") + "° (1K1: 51,6°)";
+                           " km od lotniska (szer. " + siteLat.ToString("F1") + "°); potrzeba nachylenia ≥ " + (Math.Abs(siteLat) - Math.Max(planMaxXr, planMaxXrLeft) / (b.Radius / 1000) * 180 / Math.PI).ToString("F1") + "° (1K1: 51,6°)";
                 return;
             }
             double now = Planetarium.GetUniversalTime(), step = 30, horizon = 6 * 86400;
-            double bestXr = double.MaxValue; int nightSkips = 0;
+            double bestXr = double.MaxValue; int nightSkips = 0, earlySkips = 0;
+            double launchUT = vessel.missionTime > 0 ? now - vessel.missionTime : double.NaN;
             double tPrev = double.NaN, dPrev = double.NaN;
             for (double t = now + 120; t < now + horizon; t += step)
             {
@@ -1692,8 +1708,10 @@ namespace RSSBalancer
                     double lo = tPrev, hi = t;
                     for (int i = 0; i < 12; i++) { double m = 0.5 * (lo + hi), dm, xm, tm, vm; if (PredictEntry(o, b, m, out dm, out xm, out tm, out vm) && dm > entryRangeKm) lo = m; else hi = m; }
                     PredictEntry(o, b, hi, out d, out xr, out tI, out dv);
-                    if (xr < bestXr) bestXr = xr;
-                    if (xr <= planMaxXr)
+                    if (Math.Abs(xr) < bestXr) bestXr = Math.Abs(xr);
+                    bool early = planMinEntryMet > 0 && !double.IsNaN(launchUT) && tI - launchUT < planMinEntryMet;
+                    if (early && XrOk(xr)) earlySkips++;
+                    if (!early && XrOk(xr))
                     {
                         double tLand = tI + 1900;
                         double sunEl = SunElevationAtSite(b, tLand);
@@ -1712,10 +1730,10 @@ namespace RSSBalancer
             if (double.IsNaN(planUT))
                 PlanInfo = nightSkips > 0 && bestXr <= planMaxXr
                     ? "brak okna w dzień w 6 dobach – " + nightSkips + " przelotów pasowało (odejście ≥ " + bestXr.ToString("F0") + " km), ale lądowanie wypadało przy Słońcu < 10°; wyłącz „lądowanie w dzień” albo startuj w oknie startowym"
-                    : "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")";
+                    : "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km; limit w prawo " + planMaxXr.ToString("F0") + ", w lewo " + planMaxXrLeft.ToString("F0") + " km)";
             else
                 PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", Δv " + planDv.ToString("F0") + " m/s, wejście (" + entryAltKm.ToString("F0") + " km) " +
-                           planDist.ToString("F0") + " km od lotniska, odejście boczne " + planXr.ToString("F0") + " km, Słońce przy lądowaniu " + planSun.ToString("F0") + "° (" +
+                           planDist.ToString("F0") + " km od lotniska, odejście boczne " + XrText(planXr) + (planMinEntryMet > 0 && !double.IsNaN(launchUT) ? ", wejście T+" + KSPUtil.PrintTimeCompact(planEntryUT - launchUT, false) + (earlySkips > 0 ? " (pominięto " + earlySkips + " wcześniejszy przelot – minEntryMET)" : "") : "") + ", Słońce przy lądowaniu " + planSun.ToString("F0") + "° (" +
                            (planSun >= 10 ? "dzień" : planSun > -6 ? "zmierzch/świt" : "noc") + ")" + (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych przelotów" : "");
         }
 
