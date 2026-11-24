@@ -1098,16 +1098,8 @@ namespace RSSBalancer
             // – przy warpie ×100 000 to wypadało godziny przed impulsem, a nagłe zrzucenie warpa z takiej prędkości
             // (powtarzane, bo warp znów ruszał) psuło orbitę: lot 22:11 155×155 → 173×136 km, lot 23:14 251×263 → 484×42 km.
             // Teraz: przy dużym warpie oddajemy hamowanie stockowemu WarpTo (zwalnia stopniowo), a natychmiast stop dopiero < 20 s.
-            if (!double.IsNaN(planUT) && !burnOn && TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH)
-            {
-                double tin = planUT - Planetarium.GetUniversalTime();
-                if (tin > 0 && tin < 20) { TimeWarp.SetRate(0, false); LastMessage += "\nZatrzymano przyspieszenie przed impulsem."; }
-                else if (tin > 0 && tin < 60 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime && Planetarium.GetUniversalTime() > warpGuardUT)
-                {
-                    warpGuardUT = planUT;                       // raz na plan
-                    TimeWarp.fetch.WarpTo(planUT - 30);
-                }
-            }
+            WarpEventGuard();
+            LogPlanInfo();
 
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
             for (int guard = 0; guard < 8 && Active; guard++)
@@ -1233,6 +1225,61 @@ namespace RSSBalancer
 
         private double planUT = double.NaN, planXr = double.NaN, nextPlan, planSun;
         private double warpGuardUT = double.NegativeInfinity;
+        private string warpGuardName = "";
+
+        /// <summary>Najbliższy przewidywalny moment lotu (UT), przed którym trzeba zwolnić czas: impuls hamujący z planu,
+        /// impuls manewru orbitalnego, wejście w atmosferę. NaN = nic w zasięgu.</summary>
+        private double NextFlightEvent(out string name)
+        {
+            name = ""; double best = double.NaN, now = Planetarium.GetUniversalTime();
+            if (vessel == null) return best;
+            CelestialBody b = vessel.mainBody;
+            double atmTop = b.atmosphere ? b.atmosphereDepth : 0;
+            if (!double.IsNaN(planUT) && !burnOn && planUT > now && vessel.orbit.PeA > atmTop) { best = planUT; name = "impuls hamujący"; }
+            if (mph != MPh.None && mph != MPh.Done && !IsBurnPhase(mph) && !double.IsNaN(mBurnUT) && mBurnUT > now && (double.IsNaN(best) || mBurnUT < best))
+            { best = mBurnUT; name = "impuls manewru (" + ManeuverInfo + ")"; }
+            if (b.atmosphere && vessel.altitude > atmTop && vessel.orbit.PeA < atmTop)
+            {
+                double t = NextDescentToRadius(vessel.orbit, now, b.Radius + atmTop);
+                if (!double.IsNaN(t) && t > now && (double.IsNaN(best) || t < best)) { best = t; name = "granica atmosfery"; }
+            }
+            return best;
+        }
+
+        // Przyspieszenie czasu (także ręczne) przed momentem lotu: przy dużym warpie oddajemy hamowanie stockowemu WarpTo
+        // (zwalnia stopniowo – nagłe zrzucenie z ×100 000 psuło orbitę, loty 19.11 22:11 i 23:14), < 20 s – stop.
+        private void WarpEventGuard()
+        {
+            if (TimeWarp.CurrentRateIndex == 0 || TimeWarp.WarpMode != TimeWarp.Modes.HIGH) return;
+            string name; double ev = NextFlightEvent(out name);
+            if (double.IsNaN(ev)) return;
+            double now = Planetarium.GetUniversalTime(), tin = ev - now;
+            if (tin < 20)
+            {
+                TimeWarp.SetRate(0, false);
+                if (warpGuardName != name + ev.ToString("F0")) { warpGuardName = name + ev.ToString("F0"); FlightLogger.Event("Przyspieszenie zatrzymane – za " + tin.ToString("F0", Inv) + " s " + name); }
+                LastMessage = "Przyspieszenie zatrzymane: za " + tin.ToString("F0") + " s " + name + ".";
+            }
+            else if (tin < 60 + 3 * TimeWarp.CurrentRate * TimeWarp.fixedDeltaTime && TimeWarp.CurrentRate > 10 && Math.Abs(warpGuardUT - ev) > 1)
+            {
+                warpGuardUT = ev;                       // raz na moment
+                warpGuardName = name + ev.ToString("F0");
+                TimeWarp.fetch.WarpTo(ev - 30);
+                FlightLogger.Event("Przyspieszenie: zwalniam przed – " + name + " (za " + KSPUtil.PrintTimeCompact(tin, false) + ")");
+                LastMessage = "Zwalniam przyspieszenie: za " + KSPUtil.PrintTimeCompact(tin, false) + " " + name + ".";
+            }
+        }
+
+        private string loggedPlan = "";
+        private void LogPlanInfo()
+        {
+            if (string.IsNullOrEmpty(PlanInfo) || PlanInfo == "przeliczam…") return;
+            // do logu tylko gdy zmienił się sens (bez odliczania „impuls za …”)
+            string key = PlanInfo.StartsWith("impuls za") ? "plan:" + (double.IsNaN(planUT) ? "-" : planUT.ToString("F0")) : PlanInfo;
+            if (key == loggedPlan) return;
+            loggedPlan = key;
+            FlightLogger.Event("Plan zejścia: " + PlanInfo);
+        }
         private double planAngle = 185, planMaxXr = 1000, planApA = double.NaN, planPeA = double.NaN;
         public bool RequireDaylight;
         public void Replan() { planUT = double.NaN; nextPlan = 0; planApA = double.NaN; PlanInfo = "przeliczam…"; }
@@ -1379,7 +1426,7 @@ namespace RSSBalancer
             }
             if (double.IsNaN(planUT))
                 PlanInfo = "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")" +
-                           (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych" : "");
+                           (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych – wyłącz „lądowanie w dzień” w zakładce Program" : "");
             else
                 PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", Δv " + planDv.ToString("F0") + " m/s, wejście (" + entryAltKm.ToString("F0") + " km) " +
                            planDist.ToString("F0") + " km od lotniska, odejście boczne " + planXr.ToString("F0") + " km, Słońce przy lądowaniu " + planSun.ToString("F0") + "° (" +

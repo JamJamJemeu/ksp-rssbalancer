@@ -874,11 +874,13 @@ namespace RSSBalancer
                 if (run != null && run.Active && run.Running == p && i >= run.Current && st.activatedAt == -1)
                 {
                     bool tgt = run.PhysWarpTarget == i;
-                    if (GUILayout.Button(tgt ? "⏩×3" : "⏩", GUILayout.Width(44f))) status = run.WarpToStep(i);
+                    if (GUILayout.Button(new GUIContent(tgt ? ">> ×3" : ">>", "Przyspiesz czas do tego kroku"), GUILayout.Width(50f))) status = run.WarpToStep(i);
                 }
                 GUILayout.EndHorizontal();
             }
             GUILayout.EndScrollView();
+            // wynik przycisku „>>” widać od razu pod listą (wcześniej tylko na górze okna – wyglądało, jakby przycisk nie działał)
+            if (run != null && run.Active && !string.IsNullOrEmpty(status)) GUILayout.Label("→ " + status);
 
             if (FlightPrograms.HasAutoOrbit(p) && !(run != null && run.Active)) DrawAutoOrbitFields(p);
 
@@ -895,13 +897,13 @@ namespace RSSBalancer
             else
             {
                 if (GUILayout.Button("Pomiń krok")) run.Skip();
-                if (GUILayout.Button("⏩ Następny")) status = run.WarpToStep(run.Current);
+                if (GUILayout.Button(">> Następny krok")) status = run.WarpToStep(run.Current);
                 if (GUILayout.Button("Zatrzymaj")) { run.Stop(); status = "Program zatrzymany."; }
             }
             GUILayout.EndHorizontal();
             if (run != null)
             {
-                bool day = GUILayout.Toggle(run.RequireDaylight, " ☀ Lądowanie w dzień (Słońce ≥ 10° nad lotniskiem)");
+                bool day = GUILayout.Toggle(run.RequireDaylight, " Lądowanie w dzień (Słońce ≥ 10° nad lotniskiem)");
                 if (day != run.RequireDaylight) { run.RequireDaylight = day; run.Replan(); status = day ? "Szukam przelotu z lądowaniem w dzień…" : "Najbliższy przelot, bez względu na porę dnia."; }
             }
             bool hud = GUILayout.Toggle(FlightProgramRunner.BigHud, " Duży licznik na ekranie (odległość, zasięg, manewr)");
