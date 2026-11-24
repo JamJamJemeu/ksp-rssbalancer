@@ -93,6 +93,13 @@ namespace RSSBalancer
         // ================================================================== API dla reszty moda
 
         /// <summary>Zapala lampkę i dopisuje zdarzenie na taśmę (tylko za pierwszym razem).</summary>
+        /// <summary>Tekstury pulpitu w rozmiarach tego okna – inne okna rozciągają te same (różne rozmiary = generowanie co klatkę).</summary>
+        public static void EnsureSkin()
+        {
+            SovietSkin.Ensure((int)W, (int)H, (int)CrtRect.width, (int)CrtRect.height,
+                              (int)AmberRect.width, (int)AmberRect.height, (int)PlateRect.width, (int)PlateRect.height);
+        }
+
         public static void Lamp(LampId id)
         {
             if (instance != null) instance.SetLamp(id);

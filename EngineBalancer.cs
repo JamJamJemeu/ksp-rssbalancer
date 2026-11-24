@@ -910,6 +910,8 @@ namespace RSSBalancer
             if (hud != FlightProgramRunner.BigHud) FlightProgramRunner.BigHud = hud;
             bool crt = GUILayout.Toggle(BuranCrt.Show, " Wyświetlacz Burana (CRT) – ekrany wejścia, podejścia i lądowania jak w kabinie");
             if (crt != BuranCrt.Show) BuranCrt.Show = crt;
+            bool cdw = GUILayout.Toggle(CountdownWindow.Show, " Pulpit odliczania – na co program czeka i ile zostało (start, impuls, wejście w atmosferę)");
+            if (cdw != CountdownWindow.Show) CountdownWindow.Show = cdw;
             bool pa3 = GUILayout.Toggle(Pa3Plotter.Show, " Planszet ПА-3 – mapa: pas, krąg, ścieżka 19° i ślad lotu");
             if (pa3 != Pa3Plotter.Show) Pa3Plotter.Show = pa3;
             if (GUILayout.Button("Pomiar terenu Bajkonuru (zapis do Logs)"))

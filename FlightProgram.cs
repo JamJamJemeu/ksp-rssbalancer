@@ -1116,6 +1116,37 @@ namespace RSSBalancer
         private int physWarpTarget = -1;
         public int PhysWarpTarget { get { return physWarpTarget; } }
 
+        // ---- dla pulpitu odliczania (CountdownWindow)
+        public enum CdKind { None, Launch, StepDelay, Met, Deorbit, Maneuver, Atmosphere }
+        /// <summary>Najbliższy przewidywalny moment programu: UT i rodzaj. false = nic do odliczania (czekamy na warunek bez prognozy).</summary>
+        public bool Countdown(out double ut, out CdKind kind)
+        {
+            ut = double.NaN; kind = CdKind.None;
+            if (!Active || vessel == null) return false;
+            double now = Planetarium.GetUniversalTime();
+            if (!double.IsNaN(launchHoldUT))
+            {
+                if (double.IsPositiveInfinity(launchHoldUT)) return false;
+                ut = launchHoldUT; kind = CdKind.Launch; return true;
+            }
+            FlightPrograms.Step st = Running.steps[Current];
+            double delay = Num(st.node.GetValue("delay"), 0);
+            if (delay > 0 && now - lastActivation < delay) { ut = lastActivation + delay; kind = CdKind.StepDelay; return true; }
+            string when = st.node.GetValue("when") ?? "always";
+            string op; double met = FirstNumberAfter(when, "met", out op);
+            if (!double.IsNaN(met) && op.StartsWith(">") && vessel.missionTime < met && vessel.situation != Vessel.Situations.PRELAUNCH)
+            { ut = now + (met - vessel.missionTime); kind = CdKind.Met; return true; }
+            string name; double ev = NextFlightEvent(out name);
+            if (double.IsNaN(ev)) return false;
+            ut = ev;
+            kind = name.StartsWith("okno") ? CdKind.Launch : name.StartsWith("impuls hamujący") ? CdKind.Deorbit : name.StartsWith("impuls manewru") ? CdKind.Maneuver : CdKind.Atmosphere;
+            return true;
+        }
+        public string CurrentWhen { get { return Active ? (Running.steps[Current].node.GetValue("when") ?? "always") : ""; } }
+        public bool LaunchHold { get { return !double.IsNaN(launchHoldUT); } }
+        public bool ManeuverActive { get { return mph != MPh.None && mph != MPh.Done; } }
+        public bool SeparationActive { get { return sepOn; } }
+
         private static double FirstNumberAfter(string when, string key, out string op)
         {
             op = "";
