@@ -1053,6 +1053,21 @@ namespace RSSBalancer
             Current = 0;
             burnOn = false;
             {
+                string sch = p.node != null ? p.node.GetValue("scheme") : null;
+                s1k1 = sch != null && sch.Split(new[] { "//" }, StringSplitOptions.None)[0].Trim().ToUpperInvariant() == "1K1";
+                if (p.node != null)
+                {
+                    s1k1Course = Num(p.node.GetValue("landingCourse"), 246.6);
+                    s1k1CreD = Num(p.node.GetValue("creDistance"), 24) * 1000;
+                    s1k1CreR = Num(p.node.GetValue("creRadius"), 25) * 1000;
+                    s1k1TaemOff = Num(p.node.GetValue("creTaemOffset"), 160) * 1000;
+                    string cs = p.node.GetValue("creSide");
+                    s1k1CreSide = cs != null && cs.Trim().ToLowerInvariant().StartsWith("l") ? -1 : 1;
+                }
+                creOn = false;
+                if (s1k1) FlightLogger.Event("Program lotu: schemat podejścia jak 1K1 – kurs lądowania " + s1k1Course.ToString("F1", Inv) + "°, ЦРЭ " + (s1k1CreR / 1000).ToString("F0", Inv) + " km w odl. " + (s1k1CreD / 1000).ToString("F0", Inv) + " km, styczna " + (s1k1CreSide > 0 ? "prawa" : "lewa"));
+            }
+            {
                 bool vf; string vn = p.node != null ? p.node.GetValue("vehicle") : null;
                 VehicleProfile.Current = VehicleProfile.Find(vn, out vf);
                 if (!vf) { LastMessage = "Brak profilu statku „" + vn.Trim() + "” w PluginData/Vehicles – używam Burana."; FlightLogger.Event("Program lotu: " + LastMessage); }
@@ -2281,6 +2296,7 @@ namespace RSSBalancer
                 double d0 = -Vector3d.Dot(rel0, rwyDir), y0 = Vector3d.Dot(rel0, Vector3d.Cross(pos0.normalized, rwyDir).normalized * -1);
                 Vector3d vel0 = vessel.srf_velocity; double psi0 = Mod(Math.Atan2(Vector3d.Dot(vel0, hacE), Vector3d.Dot(vel0, hacN)) * 180 / Math.PI, 360);
                 hacFinal = d0 > 0 && d0 < 25000 && Math.Abs(y0) < 1500 && Math.Abs(W180(psi0 - rwyHeading)) < 30;
+                if (s1k1 && Math.Abs(W180(rwyHeading - s1k1Course)) > 90) hacFinal = false;   // 1K1: kurs lądowania z programu
                 if (!hacFinal)
                 {
                     double h0 = vessel.altitude - rwyAlt;
@@ -2783,6 +2799,17 @@ namespace RSSBalancer
         // (22:14: 2,1 km przed progiem; 18:34: na pasie), nowe ląduje w obu; przejęcie ≤ 15 km od pasa w losowym kursie:
         // 76/80 na pasie (stare 25/80), przy doskonałości −15%: 75/80 (stare 9/80).
         private bool hacFinal, hacOnH, hacSturn;
+        // ---- schemat podejścia jak w 1K1 („scheme = 1K1” w programie powrotu; 1.42.0) ----
+        // Źródła: buran.ru (landing.htm, algoritm.htm), MOKB „Марс” (Буран.pdf), ru.wikipedia (Полёт 1K1).
+        // Na 20 km Buran ma lecieć stycznie do cylindra rozpraszania energii (ЦРЭ, promień 25 km, środek na przedłużeniu
+        // osi pasa 24 km od jego środka, po stronie podejścia), 32 ± 13 km przed punktem styczności, z prędkością 520 ± 60 m/s;
+        // ЦРЭ i kierunek lądowania wybiera wiatr (w 1K1 kurs 246° – pas 24, wschodni ЦРЭ, prawa styczna). Dalej okrąg
+        // wyrównania kursu (ЦВК, północny albo południowy), punkt kluczowy 4 km ~14,5 km od środka pasa, stroma ścieżka.
+        // W KSP nie ma wiatru – kurs lądowania podaje program (landingCourse).
+        private bool s1k1, hacLatchOn, hacCommitted;
+        private double s1k1Course = 246.6, s1k1CreD = 24000, s1k1CreR = 25000, s1k1TaemOff = 160000;
+        private int s1k1CreSide = 1;      // +1: ЦРЭ po prawej stronie toru (prawa styczna, obieg w prawo – jak 1K1)
+        private bool creOn;               // wejście: już na okręgu ЦРЭ
         private int hacSide = 1, hacLap, hacSsgn = 1;
         private double hacXa = 12000, hacPrevArc = double.NaN, hacExc;
         private Vector3d hacC0, hacE, hacN;              // płaski układ przy pasie: początek, wschód, północ
@@ -2834,7 +2861,10 @@ namespace RSSBalancer
             Vector2d A = HacP(a3), B = HacP(b3), ab = HacD(b3 - a3);
             double Rh = HacRh(v), Eh = h + v * v / (2 * 9.81), tb, arc; Vector2d C;
             HacOpt best = new HacOpt { exc = double.NegativeInfinity }; bool feas = false;
+            Vector2d crs1 = new Vector2d(Math.Sin(s1k1Course * Math.PI / 180), Math.Cos(s1k1Course * Math.PI / 180));
             for (int e = 0; e < 2; e++)
+            {
+                if (s1k1 && Vector2d.Dot(e == 0 ? ab : -ab, crs1) < 0) continue;   // 1K1: tylko kurs lądowania z programu (wiatr)
                 for (int sd = 1; sd >= -1; sd -= 2)
                     foreach (double xa in HacXas)
                     {
@@ -2845,6 +2875,7 @@ namespace RSSBalancer
                         if (f && (!feas || o.xa > best.xa || (o.xa == best.xa && o.exc < best.exc))) { best = o; feas = true; }
                         else if (!f && !feas && o.exc > best.exc) best = o;
                     }
+            }
             return best;
         }
 
@@ -2862,7 +2893,7 @@ namespace RSSBalancer
             Vector3d a = Surf(rwyLatA, rwyLonA, rwyAlt);
             hacC0 = a; Vector3d up = a.normalized;
             hacN = Vector3d.Exclude(up, vessel.mainBody.transform.up).normalized; hacE = Vector3d.Cross(up, hacN).normalized;
-            hacOnH = hacSturn = false; hacLap = 0; hacSsgn = 1; hacPrevArc = double.NaN;
+            hacOnH = hacSturn = false; hacLap = 0; hacSsgn = 1; hacPrevArc = double.NaN; hacLatchOn = hacCommitted = false;
         }
 
         /// <summary>Krok HAC: kurs, prędkość pionowa, limit przechylenia, hamulec. false – czas na końcówkę (stroma ścieżka).</summary>
@@ -2878,13 +2909,23 @@ namespace RSSBalancer
             bool cw = hacSide > 0;
             double dist = (p - C).magnitude;
             bool onHac = dist < Rh * 1.25 && Math.Abs(W180(tb - psi)) < 40;
+            // 1K1: zatrzask – przy okręgu (≤1,6 R) albo po wejściu na niego bez ponownego wyboru; po wejściu na okrąg bez
+            // przeskoku na drugą stronę osi (lot 24.11 23:35: przeskok w połowie zakrętu, wyjście 2,3 km nad ścieżką)
+            bool near = false;
+            if (s1k1)
+            {
+                if (onHac) { hacLatchOn = true; if (!hacCommitted) { hacCommitted = true; FlightLogger.Event("Podejście (1K1): na ЦВК " + (hacSide > 0 ? "w prawo" : "w lewo") + " – wybór zablokowany"); } }
+                if (dist > 2 * Rh) hacLatchOn = false;
+                near = hacLatchOn || dist < 1.6 * Rh;
+            }
             double Eh = h + v * v / (2 * 9.81);
             double exc = Eh - HacEreq(L + hacLap * 2 * Math.PI * Rh, hacXa);
-            if (!onHac && hacLap == 0)
+            if (!onHac && hacLap == 0 && !near)
             {
                 // ponowny wybór (koniec pasa / strona okręgu / bliższe wyjście), gdy obecny tor nie wystarcza
                 HacOpt bst = HacPick(p, psi, v, h);
-                if ((exc < -300 && bst.exc >= 0) || (bst.exc >= 0 && bst.xa > hacXa) || (exc < -300 && bst.exc > exc + 500))
+                if (((exc < -300 && bst.exc >= 0) || (bst.exc >= 0 && bst.xa > hacXa) || (exc < -300 && bst.exc > exc + 500)) &&
+                    !(s1k1 && hacCommitted && bst.side != hacSide))
                 {
                     bool chg = bst.side != hacSide || bst.xa != hacXa || (bst.endA != (thrPos - Surf(rwyLatA, rwyLonA, rwyAlt)).magnitude < 1);
                     HacApply(bst);
@@ -3186,6 +3227,32 @@ namespace RSSBalancer
             return ang;
         }
 
+        /// <summary>Schemat 1K1: cel wejścia = punkt styczności ЦРЭ (płaski rzut wokół środka pasa). Na okręgu – kurs styczny.</summary>
+        private void S1k1EntryTarget(Vessel v, ref double rgo, ref double brg, ref double taemDist)
+        {
+            double cLat = (rwyLatA + rwyLatB) / 2, cLon = (rwyLonA + rwyLonB) / 2, bb;
+            double dd = GreatCircle(cLat, cLon, v.latitude, v.longitude, out bb) * v.mainBody.Radius;
+            Vector2d p = new Vector2d(dd * Math.Sin(bb * Math.PI / 180), dd * Math.Cos(bb * Math.PI / 180));
+            Vector2d crs = new Vector2d(Math.Sin(s1k1Course * Math.PI / 180), Math.Cos(s1k1Course * Math.PI / 180));
+            Vector2d cre = crs * (-s1k1CreD);
+            Vector2d pc = cre - p; double dc = pc.magnitude;
+            if (!creOn && dc < s1k1CreR * 1.03) { creOn = true; FlightLogger.Event("Wejście (1K1): na okręgu ЦРЭ, h " + (v.altitude / 1000).ToString("F1", Inv) + " km, V " + v.srfSpeed.ToString("F0", Inv) + " m/s"); }
+            if (creOn)
+            {
+                Vector2d rr = p - cre; double a = Math.Atan2(rr.x, rr.y);
+                double tang = Mod((a + (s1k1CreSide > 0 ? Math.PI / 2 : -Math.PI / 2)) * 180 / Math.PI, 360);
+                double corr = Math.Atan(3.0 * (dc - s1k1CreR) / s1k1CreR) * 180 / Math.PI;
+                brg = Mod(tang + (s1k1CreSide > 0 ? corr : -corr), 360); rgo = 0;
+            }
+            else
+            {
+                double aa = Math.Asin(s1k1CreR / dc), bc = Math.Atan2(pc.x, pc.y);
+                double tb = s1k1CreSide > 0 ? bc - aa : bc + aa;
+                brg = Mod(tb * 180 / Math.PI, 360); rgo = Math.Sqrt(Math.Max(0, dc * dc - s1k1CreR * s1k1CreR));
+            }
+            taemDist = s1k1TaemOff;
+        }
+
         private void EntryGuidance()
         {
             Vessel v = vessel; CelestialBody b = v.mainBody;
@@ -3199,6 +3266,8 @@ namespace RSSBalancer
             double brg;
             double ang = GreatCircle(v.latitude, v.longitude, siteLat, siteLon, out brg);
             double rgo = ang * b.Radius;                                            // m do lotniska po powierzchni
+            double taemDist = TaemDist;
+            if (s1k1 && rwySet) S1k1EntryTarget(v, ref rgo, ref brg, ref taemDist);
             double dpsi = ((brg - hdg + 540) % 360) - 180;                          // + = lotnisko na prawo
 
             double cl = FarCall("ActiveVesselLiftCoeff"), cd = FarCall("ActiveVesselDragCoeff");
@@ -3221,7 +3290,7 @@ namespace RSSBalancer
             // przeskalowaną bieżącym pomiarem (ldF / tablica przy obecnej prędkości).
             double calib = ldSeen ? Math.Max(0.3, Math.Min(2.5, ldF / LdTable(V))) : 1.0;
             double rMax = RangeIntegral(V, r, g) * calib;
-            double rgoEff = Math.Max(0, rgo - TaemDist);
+            double rgoEff = Math.Max(0, rgo - taemDist);
             double cosS = rMax > 1 ? rgoEff / rMax : (rgoEff > 0 ? 2 : 0);
 
             double mag;
@@ -3241,11 +3310,20 @@ namespace RSSBalancer
             // Wyrównanie kursu: gdy lotnisko ucieka w bok (duży błąd kursu przy małej odległości), kurs ma pierwszeństwo
             // przed zasięgiem – inaczej Buran przelatuje obok lotniska z wystarczającą energią, ale w złą stronę.
             double headLimit = V < 3000 ? 20 : V < 5000 ? 30 : 45;
-            if (v.dynamicPressurekPa >= 0.05 && (Math.Abs(dpsi) > headLimit || V < 1500))
+            if (v.dynamicPressurekPa >= 0.05 && (Math.Abs(dpsi) > headLimit || V < 1500 || (s1k1 && creOn)))
             {
-                mag = Math.Max(mag, Math.Min(V < 1500 ? 45 : 60, Math.Abs(dpsi) * 1.5));
+                if (s1k1 && creOn)
+                {
+                    // na ЦРЭ: stałe przechylenie w stronę obiegu (~30°) + poprawka kursu, do 50° (1K1: do 50° na ЦРЭ)
+                    mag = Math.Min(50, Math.Max(0, Math.Abs(dpsi) * 1.5 + ((dpsi > 0) == (s1k1CreSide > 0) ? 30 : 0)));
+                    note = "ЦРЭ – rozpraszanie energii";
+                }
+                else
+                {
+                    mag = Math.Max(mag, Math.Min(V < 1500 ? 45 : 60, Math.Abs(dpsi) * 1.5));
+                    note = note.StartsWith("ZA MAŁO") ? note + ", wyrównuję kurs" : "wyrównuję kurs";
+                }
                 side = dpsi >= 0 ? 1 : -1;
-                note = note.StartsWith("ZA MAŁO") ? note + ", wyrównuję kurs" : "wyrównuję kurs";
             }
             // Za mało energii przy dużej prędkości: zmniejsz kąt natarcia (większa doskonałość) – do 12° mniej, min. 22°.
             aoaBias = 0;
@@ -3263,7 +3341,7 @@ namespace RSSBalancer
             // wytracania energii i skrętu (lot 10:11: na 46 km przy M 4,5 EAS 53 m/s wyłączył przechylenie nad lotniskiem)
             if (V < 800 && easG < 1.7 * vStG)
             {
-                mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : 20);
+                mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : (s1k1 && creOn && easG >= 1.5 * vStG) ? 45 : 20);
                 note += (note.Length > 0 ? ", " : "") + "mała prędkość – ograniczam przechylenie";
             }
             double target = side * mag;
