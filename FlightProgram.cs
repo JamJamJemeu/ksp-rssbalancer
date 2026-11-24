@@ -660,8 +660,14 @@ namespace RSSBalancer
         // przy Słońcu ≤ 6° (wieczór) albo nocą, więc plan zejścia „w dzień” nie znalazł okna w 6 dobach (sprawdzone offline:
         // model toru poniżej odtwarza tor z tego lotu z błędem ~10 km przez 15 h). Prawdziwy 1K1: start rano, lądowanie po 3,4 h.
         // Model: orbita kołowa w płaszczyźnie przez wyrzutnię (nachylenie z programu, lot na północny wschód), Buran w punkcie
-        // wyrzutni LwLag s po starcie (dopasowane do logu), bez J2 (KSP go nie ma). Lądowanie ≈ przelot nad lotniskiem + LwGlide.
-        private const double LwLag = 18, LwGlide = 850, LwXr = 120, LwSun = 12, LwMaxH = 8;
+        // wyrzutni LwLag s po starcie (dopasowane do logu), bez J2 (KSP go nie ma).
+        // 1.40.3 (lot 24.11 18:34): przelot 4,7 h po starcie mijał lotnisko o 117 km, ale planer zejścia liczy odejście
+        // boczne inaczej – od punktu wejścia 7000 km przed lotniskiem, wzdłuż kierunku toru w tym punkcie – i wychodziło
+        // mu 289 km (> 200), więc go odrzucił, a pozostałe przeloty były nocne. Okno liczy teraz przeloty dokładnie tak
+        // jak planer (wejście na entryRange, odejście boczne z kierunku toru, lądowanie = wejście + 1900 s) i z zapasem:
+        // odejście ≤ 90 % maxCrossRange, Słońce ≥ 12°. Sprawdzone offline: model 281 km vs log 289 km dla tego przelotu.
+        private const double LwLag = 18, LwLandAfterEntry = 1900, LwSun = 12, LwMaxH = 30;
+        private double lwEntryKm = 7000, lwMaxXrKm = 200;
         private double launchHoldUT = double.NaN;
 
         private double SunElevationAt(CelestialBody b, double lat, double lon, double ut)
@@ -726,16 +732,28 @@ namespace RSSBalancer
             double a = R + 0.5 * (peKm + apKm) * 1000, period = 2 * Math.PI * Math.Sqrt(a * a * a / b.gravParameter);
             LwPlane pl = LwMakePlane(padLat, incDeg, period, b.rotates ? b.rotationPeriod : 0);
             double sla = sLat * Math.PI / 180, slo = (sLon - padLon) * Math.PI / 180;
-            // przeloty modelu nie zależą od chwili startu (tor względem wyrzutni) – liczymy je raz
+            // przeloty modelu nie zależą od chwili startu (tor względem wyrzutni) – liczymy je raz, tak jak planer zejścia:
+            // chwila, gdy odległość do lotniska spada przez entryRange, i odejście boczne lotniska od kierunku toru w tym punkcie
             var passT = new List<double>(); var passX = new List<double>();
-            double dPrev2 = double.NaN, dPrev = double.NaN, tPrev = 0;
-            for (double t = 3600; t <= LwMaxH * 3600; t += 20)
+            double dPrev = double.NaN;
+            for (double t = 3600; t <= LwMaxH * 3600; t += 10)
             {
                 double la, dl; LwTrack(pl, t, out la, out dl);
                 double c = Math.Sin(la) * Math.Sin(sla) + Math.Cos(la) * Math.Cos(sla) * Math.Cos(dl - slo);
-                double d = Math.Acos(Math.Max(-1, Math.Min(1, c))) * R / 1000;
-                if (!double.IsNaN(dPrev2) && dPrev < dPrev2 && dPrev <= d && dPrev < LwXr) { passT.Add(tPrev); passX.Add(dPrev); }
-                dPrev2 = dPrev; dPrev = d; tPrev = t;
+                double ang = Math.Acos(Math.Max(-1, Math.Min(1, c)));
+                double d = ang * R / 1000;
+                if (!double.IsNaN(dPrev) && dPrev > lwEntryKm && d <= lwEntryKm)
+                {
+                    double la2, dl2; LwTrack(pl, t + 10, out la2, out dl2);
+                    double trk = Bearing(la, dl, la2, dl2), brg = Bearing(la, dl, sla, slo);
+                    double rel = brg - trk; while (rel > Math.PI) rel -= 2 * Math.PI; while (rel < -Math.PI) rel += 2 * Math.PI;
+                    if (Math.Abs(rel) < Math.PI / 2)
+                    {
+                        double xrKm = Math.Abs(Math.Asin(Math.Max(-1, Math.Min(1, Math.Sin(ang) * Math.Sin(rel))))) * R / 1000;
+                        if (xrKm <= 0.9 * lwMaxXrKm) { passT.Add(t); passX.Add(xrKm); }
+                    }
+                }
+                dPrev = d;
             }
             if (passT.Count == 0) return false;
             double now = Planetarium.GetUniversalTime();
@@ -745,8 +763,8 @@ namespace RSSBalancer
                 double el = double.NaN, lt = double.NaN, x = double.NaN;
                 for (int i = 0; i < passT.Count; i++)
                 {
-                    double e = SunElevationAt(b, sLat, sLon, L + passT[i] + LwGlide);
-                    if (e >= LwSun) { el = e; lt = passT[i] + LwGlide; x = passX[i]; break; }
+                    double e = SunElevationAt(b, sLat, sLon, L + passT[i] + LwLandAfterEntry);
+                    if (e >= LwSun) { el = e; lt = passT[i] + LwLandAfterEntry; x = passX[i]; break; }
                 }
                 if (!double.IsNaN(el))
                 {
@@ -771,6 +789,7 @@ namespace RSSBalancer
                 if (ll.Length >= 2) { sLat = Num(ll[0], double.NaN); sLon = Num(ll[1], double.NaN); }
             }
             double pe = 251, ap = 263, inc = 51.6;
+            if (rp != null && rp.node != null) { lwEntryKm = Num(rp.node.GetValue("entryRange"), 7000); lwMaxXrKm = Num(rp.node.GetValue("maxCrossRange"), 200); }
             foreach (FlightPrograms.Step st in p.steps)
             {
                 string ot = st.node.GetValue("orbittarget");
@@ -792,10 +811,10 @@ namespace RSSBalancer
                 return;
             }
             double startH = SolarTimeAt(b, vessel.latitude, vessel.longitude, L), landH = SolarTimeAt(b, sLat, sLon, L + landT);
-            string msg = head + "Lądowanie w dzień na „" + (rp.name) + "” (jak 1K1: start rano, lądowanie po ~3,5 h) wymaga startu za " +
+            string msg = head + "Lądowanie w dzień na „" + (rp.name) + "” wymaga startu za " +
                          KSPUtil.PrintTimeCompact(L - now, false) + " – ok. " + HourText(startH) + " czasu słonecznego Bajkonuru.\n" +
                          "Lądowanie po ok. " + (landT / 3600).ToString("F1", Inv) + " h, ok. " + HourText(landH) + ", Słońce " + el.ToString("F0", Inv) + "° nad lotniskiem" +
-                         " (przelot " + xr.ToString("F0", Inv) + " km od lotniska).\n\nPrzyspieszyć czas do okna startowego?";
+                         " (odejście boczne " + xr.ToString("F0", Inv) + " km).\n\nPrzyspieszyć czas do okna startowego?";
             FlightLogger.Event("Okno startowe: start za " + KSPUtil.PrintTimeCompact(L - now, false) + " (" + HourText(startH) + "), lądowanie ok. " + HourText(landH) + ", Słońce " + el.ToString("F0", Inv) + "° – pytanie");
             launchHoldUT = double.PositiveInfinity;     // kroki stoją do odpowiedzi
             double Lc = L;
@@ -816,6 +835,12 @@ namespace RSSBalancer
                         FlightLogger.Event("Okno startowe: pominięte – start teraz, lądowanie o dowolnej porze");
                     })),
                 false, HighLogic.UISkin);
+        }
+
+        private static double Bearing(double la1, double lo1, double la2, double lo2)
+        {
+            double y = Math.Sin(lo2 - lo1) * Math.Cos(la2), x = Math.Cos(la1) * Math.Sin(la2) - Math.Sin(la1) * Math.Cos(la2) * Math.Cos(lo2 - lo1);
+            return Math.Atan2(y, x);
         }
 
         private static string HourText(double h)
@@ -1685,8 +1710,9 @@ namespace RSSBalancer
                 tPrev = t; dPrev = d;
             }
             if (double.IsNaN(planUT))
-                PlanInfo = "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")" +
-                           (nightSkips > 0 ? ", pominięto " + nightSkips + " nocnych – wyłącz „lądowanie w dzień” w zakładce Program" : "");
+                PlanInfo = nightSkips > 0 && bestXr <= planMaxXr
+                    ? "brak okna w dzień w 6 dobach – " + nightSkips + " przelotów pasowało (odejście ≥ " + bestXr.ToString("F0") + " km), ale lądowanie wypadało przy Słońcu < 10°; wyłącz „lądowanie w dzień” albo startuj w oknie startowym"
+                    : "brak okna w 6 dób (najmniejsze odejście boczne " + (bestXr < 1e9 ? bestXr.ToString("F0") : "?") + " km > " + planMaxXr.ToString("F0") + ")";
             else
                 PlanInfo = "impuls za " + KSPUtil.PrintTimeCompact(planUT - now, false) + ", Δv " + planDv.ToString("F0") + " m/s, wejście (" + entryAltKm.ToString("F0") + " km) " +
                            planDist.ToString("F0") + " km od lotniska, odejście boczne " + planXr.ToString("F0") + " km, Słońce przy lądowaniu " + planSun.ToString("F0") + "° (" +
