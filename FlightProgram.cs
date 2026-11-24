@@ -195,7 +195,7 @@ namespace RSSBalancer
         {
             CelestialBody b = vessel.mainBody; Orbit o = vessel.orbit;
             if (apKm < peKm) { double t = apKm; apKm = peKm; peKm = t; }
-            mPe = peKm; mAp = apKm; mInc = incDeg;
+            mPe = peKm; mAp = apKm; mInc = incDeg; mEnginesChecked = false;
             double R = b.Radius, r0 = o.semiMajorAxis, rt = R + 0.5 * (peKm + apKm) * 1000;
             double di = incDeg - o.inclination;
             // Δv wariantu A (przybliżenie orbit kołowych)
@@ -336,8 +336,57 @@ namespace RSSBalancer
         /// <summary>Prędkość rozejścia z innym statkiem: (v_my − v_on) wzdłuż kierunku „od niego” [m/s].</summary>
         private double OpeningSpeed(Vessel o, out Vector3d away)
         {
-            away = (vessel.CoMD - o.CoMD).normalized;
+            away = PushDir(o);
             return Vector3d.Dot(vessel.obt_velocity - o.obt_velocity, away);
+        }
+
+        // Lot 24.11 12:05: odejście 150 m „po prostu od rdzenia” zostawiło rdzeń prawie na linii lotu; ОДУ-1 (wzdłuż
+        // prędkości) poprowadził Burana prosto na niego (zbliżanie 8 m/s przy 150 m). Teraz odchodzimy W BOK od kierunku
+        // lotu (składowa „od rdzenia” prostopadła do prędkości), a manewr czeka, aż odsunięcie w bok ≥ SepLateral.
+        public const double SepLateral = 100.0;
+        private Vector3d PushDir(Vessel o)
+        {
+            Vector3d rel = vessel.CoMD - o.CoMD, vdir = vessel.obt_velocity.normalized;
+            Vector3d side = Vector3d.Exclude(vdir, rel);
+            if (side.magnitude > 0.3 * rel.magnitude && side.magnitude > 1) return side.normalized;
+            // rdzeń prawie dokładnie przed/za nami: w górę (od Ziemi) albo w dół – w stronę, w którą już jesteśmy od niego
+            Vector3d upv = (vessel.CoMD - vessel.mainBody.position).normalized;
+            Vector3d radial = Vector3d.Exclude(vdir, upv).normalized;
+            return Vector3d.Dot(rel, radial) >= 0 ? radial : -radial;
+        }
+
+        /// <summary>Odległość od statku w kierunku prostopadłym do naszej prędkości [m].</summary>
+        private double LateralDist(Vessel o)
+        {
+            return Vector3d.Exclude(vessel.obt_velocity.normalized, vessel.CoMD - o.CoMD).magnitude;
+        }
+
+        private static bool IsBurnPhase(MPh p)
+        {
+            return p == MPh.BurnPlane || p == MPh.BurnA || p == MPh.BurnP || p == MPh.BurnRaise || p == MPh.BurnCombo || p == MPh.BurnLower || p == MPh.BurnApRaiseAp;
+        }
+
+        // Lot 24.11 12:05: po odłączeniu (stage 2) silniki ОДУ (17D12, stage 1) nie były zapalone – „impuls” robiły tylko
+        // silniki orientacji (~12 kN zamiast 2×86 kN). Przy pierwszym impulsie manewru: jeśli żaden silnik rakietowy nie
+        // pracuje, zapal wszystkie nieodpalone silniki rakietowe (nie powietrzne) – na Buranie to właśnie ОДУ.
+        private bool mEnginesChecked;
+        private void EnsureBurnEngines()
+        {
+            if (mEnginesChecked || vessel == null) return;
+            mEnginesChecked = true;
+            var idle = new List<ModuleEngines>(); bool running = false;
+            foreach (Part p in vessel.parts)
+                foreach (PartModule pm in p.Modules)
+                {
+                    ModuleEngines e = pm as ModuleEngines;
+                    if (e == null || e.propellants.Exists(pr => pr.name == "IntakeAir")) continue;
+                    if (e.EngineIgnited && !e.flameout) running = true;
+                    else if (!e.EngineIgnited) idle.Add(e);
+                }
+            if (running || idle.Count == 0) return;
+            var names = new List<string>();
+            foreach (ModuleEngines e in idle) { e.Activate(); names.Add(e.part.partInfo != null ? e.part.partInfo.title : e.part.name); }
+            FlightLogger.Event("Manewr orbitalny: zapłon " + idle.Count + " siln. (" + string.Join(", ", names.ToArray()) + ")");
         }
 
         /// <summary>true = jeszcze odchodzimy od sąsiada (manewr czeka).</summary>
@@ -347,12 +396,13 @@ namespace RSSBalancer
             double d; Vessel n;
             NearestNeighbour(out d, out n);
             double now = Planetarium.GetUniversalTime();
-            if (n == null || d >= SepSafeDist || (sepOn && now - sepStart > 240))
+            double lat = n == null ? double.PositiveInfinity : LateralDist(n);
+            if (n == null || (d >= SepSafeDist && lat >= SepLateral) || (sepOn && now - sepStart > 300))
             {
                 if (sepOn)
                 {
                     FlightLogger.Event("Odejście od „" + (sepVessel != null ? sepVessel.vesselName : "?") + "”: " +
-                                       (n == null || d >= SepSafeDist ? "odległość " + (n == null ? "> zasięg" : d.ToString("F0", Inv) + " m") : "limit czasu 240 s, odległość " + d.ToString("F0", Inv) + " m") + " – dalej manewr");
+                                       (n == null ? "poza zasięgiem" : (now - sepStart > 300 ? "limit czasu 300 s, " : "") + "odległość " + d.ToString("F0", Inv) + " m, w bok od kierunku lotu " + lat.ToString("F0", Inv) + " m") + " – dalej manewr");
                     EndSeparation();
                 }
                 return false;
@@ -370,7 +420,7 @@ namespace RSSBalancer
             holdDir = sepHold; holdMode = Hold.Inertial; holdAttitude = true;
             FlightInputHandler.state.mainThrottle = 0f;
             Vector3d aw; double op = OpeningSpeed(n, out aw);
-            SeparationInfo = "odejście od „" + n.vesselName + "”: " + d.ToString("F0", Inv) + " m, " + op.ToString("F2", Inv) + " m/s";
+            SeparationInfo = "odejście od „" + n.vesselName + "”: " + d.ToString("F0", Inv) + " m (w bok " + lat.ToString("F0", Inv) + " m), " + op.ToString("F2", Inv) + " m/s";
             ManeuverInfo = SeparationInfo;
             return true;
         }
@@ -434,6 +484,7 @@ namespace RSSBalancer
             holdDir = dv.normalized; holdMode = Hold.Inertial; holdAttitude = true;
             if (m < 0.3 || (m > mLastDv + 0.05 && mLastDv < 3)) return true;
             mLastDv = Math.Min(mLastDv, m);
+            EnsureBurnEngines();
             double a = AccelNow();
             float thr = (float)Math.Max(0.02, Math.Min(1, m / (a * 1.5)));
             FlightInputHandler.state.mainThrottle = attError < 3 ? thr : 0f;
@@ -446,6 +497,7 @@ namespace RSSBalancer
             holdDir = raises ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
             double err = (target - cur) * (raises ? 1 : -1);
             if (err <= 0) return true;
+            EnsureBurnEngines();
             double a = AccelNow();
             FlightInputHandler.state.mainThrottle = attError < 3 ? (float)Math.Max(0.02, Math.Min(1, err / 5000.0)) : 0f;   // err w m
             return false;
@@ -454,7 +506,7 @@ namespace RSSBalancer
         private void Maneuver()
         {
             if (mph == MPh.None || mph == MPh.Done || vessel == null) return;
-            if (SeparationGuard()) return;
+            if (!IsBurnPhase(mph) && SeparationGuard()) return;   // w trakcie impulsu nie przerywamy (lot 24.11 12:05)
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
             double now = Planetarium.GetUniversalTime(), R = b.Radius;
             double a = AccelNow();
