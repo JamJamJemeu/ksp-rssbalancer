@@ -64,6 +64,8 @@ namespace RSSBalancer
 
         /// <summary>Orbita wpisana w zakładce Program („pe-ap nachylenie”, puste = jak w pliku) – zastępuje wartość „autoOrbit” z pliku.</summary>
         public static string AutoOrbitOverride = "";
+        /// <summary>Start w oknie startowym pod lądowanie w dzień – program powrotu wtedy szuka przelotu w dzień.</summary>
+        public static bool DaylightMission;
 
         public static bool HasAutoOrbit(Program p)
         {
@@ -651,6 +653,175 @@ namespace RSSBalancer
             if (dv.magnitude > 0.1) { holdDir = dv.normalized; holdMode = Hold.Inertial; holdAttitude = true; }
         }
 
+        // ------------------------------------------------------------------ okno startowe pod lądowanie w dzień
+        // Lot 24.11 15:45: start ok. 15:50 czasu słonecznego Bajkonuru (grudzień w grze) – orbita mijała Jubilejnyj tylko
+        // przy Słońcu ≤ 6° (wieczór) albo nocą, więc plan zejścia „w dzień” nie znalazł okna w 6 dobach (sprawdzone offline:
+        // model toru poniżej odtwarza tor z tego lotu z błędem ~10 km przez 15 h). Prawdziwy 1K1: start rano, lądowanie po 3,4 h.
+        // Model: orbita kołowa w płaszczyźnie przez wyrzutnię (nachylenie z programu, lot na północny wschód), Buran w punkcie
+        // wyrzutni LwLag s po starcie (dopasowane do logu), bez J2 (KSP go nie ma). Lądowanie ≈ przelot nad lotniskiem + LwGlide.
+        private const double LwLag = 18, LwGlide = 850, LwXr = 120, LwSun = 12, LwMaxH = 8;
+        private double launchHoldUT = double.NaN;
+
+        private double SunElevationAt(CelestialBody b, double lat, double lon, double ut)
+        {
+            CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
+            if (sun == null || sun == b) return 90;
+            double dLon = b.rotates && b.rotationPeriod > 0 ? 360.0 * (ut - Planetarium.GetUniversalTime()) / b.rotationPeriod : 0;
+            Vector3d up = (b.GetWorldSurfacePosition(lat, lon + dLon, 0) - b.position).normalized;
+            return 90 - Vector3d.Angle(up, (sun.position - b.position).normalized);
+        }
+
+        /// <summary>Lokalny czas słoneczny [h] w punkcie (lat, lon) w chwili ut.</summary>
+        private double SolarTimeAt(CelestialBody b, double lat, double lon, double ut)
+        {
+            CelestialBody sun = Planetarium.fetch != null ? Planetarium.fetch.Sun : null;
+            if (sun == null || sun == b) return 12;
+            double dLon = b.rotates && b.rotationPeriod > 0 ? 360.0 * (ut - Planetarium.GetUniversalTime()) / b.rotationPeriod : 0;
+            Vector3d k = b.RotationAxis.normalized;
+            Vector3d up = (b.GetWorldSurfacePosition(lat, lon + dLon, 0) - b.position).normalized;
+            Vector3d east = (b.GetWorldSurfacePosition(lat, lon + dLon + 0.01, 0) - b.GetWorldSurfacePosition(lat, lon + dLon, 0)).normalized;
+            Vector3d s = (sun.position - b.position).normalized;
+            Vector3d ue = Vector3d.Exclude(k, up).normalized, ee = Vector3d.Exclude(k, east).normalized, se = Vector3d.Exclude(k, s);
+            double hEast = Math.Atan2(Vector3d.Dot(se, ee), Vector3d.Dot(se, ue)) * 180 / Math.PI;   // Słońce na wschód od południka = rano
+            double t = 12 - hEast / 15.0;
+            return (t % 24 + 24) % 24;
+        }
+
+        /// <summary>Tor modelowy: (szer., dług.) punktu podsatelitarnego t s po starcie [rad]. Układ inercjalny z osią z = oś Ziemi,
+        /// długości liczone od położenia wyrzutni w chwili startu.</summary>
+        private struct LwPlane { public Vector3d r0, v; public double n, w; }
+        private static LwPlane LwMakePlane(double padLatDeg, double incDeg, double period, double rotPeriod)
+        {
+            double la = padLatDeg * Math.PI / 180;
+            Vector3d r0 = new Vector3d(Math.Cos(la), 0, Math.Sin(la)), k = new Vector3d(0, 0, 1);
+            Vector3d kp = k - Vector3d.Dot(k, r0) * r0; double nk = kp.magnitude; kp = kp / nk;
+            Vector3d e2 = Vector3d.Cross(r0, k).normalized;
+            double al = Math.Min(1, Math.Cos(incDeg * Math.PI / 180) / nk);
+            LwPlane pl = new LwPlane();
+            foreach (double sg in new[] { 1.0, -1.0 })
+            {
+                Vector3d h = al * kp + sg * Math.Sqrt(Math.Max(0, 1 - al * al)) * e2;
+                Vector3d v = Vector3d.Cross(h, r0);
+                if (v.z > 0) { pl.r0 = r0; pl.v = v.normalized; break; }
+            }
+            pl.n = 2 * Math.PI / period; pl.w = rotPeriod > 0 ? 2 * Math.PI / rotPeriod : 0;
+            return pl;
+        }
+        private static void LwTrack(LwPlane pl, double t, out double lat, out double dlon)
+        {
+            double a = pl.n * (t - LwLag);
+            Vector3d p = Math.Cos(a) * pl.r0 + Math.Sin(a) * pl.v;
+            lat = Math.Asin(Math.Max(-1, Math.Min(1, p.z)));
+            dlon = Math.Atan2(p.y, p.x) - pl.w * t;      // względem długości wyrzutni
+        }
+
+        /// <summary>Najbliższa chwila startu (UT) z lądowaniem w dzień przy pierwszym przelocie (≤ LwMaxH h po starcie).</summary>
+        private bool FindLaunchWindow(CelestialBody b, double sLat, double sLon, double incDeg, double peKm, double apKm,
+                                      out double bestL, out double landT, out double sunEl, out double xr)
+        {
+            bestL = landT = sunEl = xr = double.NaN;
+            double padLat = vessel.latitude, padLon = vessel.longitude, R = b.Radius;
+            double a = R + 0.5 * (peKm + apKm) * 1000, period = 2 * Math.PI * Math.Sqrt(a * a * a / b.gravParameter);
+            LwPlane pl = LwMakePlane(padLat, incDeg, period, b.rotates ? b.rotationPeriod : 0);
+            double sla = sLat * Math.PI / 180, slo = (sLon - padLon) * Math.PI / 180;
+            // przeloty modelu nie zależą od chwili startu (tor względem wyrzutni) – liczymy je raz
+            var passT = new List<double>(); var passX = new List<double>();
+            double dPrev2 = double.NaN, dPrev = double.NaN, tPrev = 0;
+            for (double t = 3600; t <= LwMaxH * 3600; t += 20)
+            {
+                double la, dl; LwTrack(pl, t, out la, out dl);
+                double c = Math.Sin(la) * Math.Sin(sla) + Math.Cos(la) * Math.Cos(sla) * Math.Cos(dl - slo);
+                double d = Math.Acos(Math.Max(-1, Math.Min(1, c))) * R / 1000;
+                if (!double.IsNaN(dPrev2) && dPrev < dPrev2 && dPrev <= d && dPrev < LwXr) { passT.Add(tPrev); passX.Add(dPrev); }
+                dPrev2 = dPrev; dPrev = d; tPrev = t;
+            }
+            if (passT.Count == 0) return false;
+            double now = Planetarium.GetUniversalTime();
+            bool inWin = false; double bestEl = -99;
+            for (double L = now + 300; L < now + 2 * 86400; L += 300)
+            {
+                double el = double.NaN, lt = double.NaN, x = double.NaN;
+                for (int i = 0; i < passT.Count; i++)
+                {
+                    double e = SunElevationAt(b, sLat, sLon, L + passT[i] + LwGlide);
+                    if (e >= LwSun) { el = e; lt = passT[i] + LwGlide; x = passX[i]; break; }
+                }
+                if (!double.IsNaN(el))
+                {
+                    inWin = true;
+                    if (el > bestEl) { bestEl = el; bestL = L; landT = lt; sunEl = el; xr = x; }
+                }
+                else if (inWin) break;           // koniec pierwszego okna – bierzemy w nim start z najwyżej stojącym Słońcem
+            }
+            return !double.IsNaN(bestL);
+        }
+
+        /// <summary>Na wyrzutni: pytanie, czy przyspieszyć czas do okna startowego pod lądowanie w dzień.</summary>
+        private void AskLaunchWindow(FlightPrograms.Program p, string returnProgram)
+        {
+            FlightPrograms.DaylightMission = false;
+            FlightPrograms.Program rp = FlightPrograms.Programs.Find(x => x.name == returnProgram.Trim());
+            string site = rp != null && rp.node != null ? rp.node.GetValue("site") : null;
+            double sLat = double.NaN, sLon = double.NaN;
+            if (site != null)
+            {
+                string[] ll = site.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (ll.Length >= 2) { sLat = Num(ll[0], double.NaN); sLon = Num(ll[1], double.NaN); }
+            }
+            double pe = 251, ap = 263, inc = 51.6;
+            foreach (FlightPrograms.Step st in p.steps)
+            {
+                string ot = st.node.GetValue("orbittarget");
+                if (string.IsNullOrEmpty(ot)) continue;
+                string[] w = ot.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+                if (w.Length >= 3) { pe = Num(w[0], pe); ap = Num(w[1], ap); inc = Num(w[2], inc); }
+            }
+            if (double.IsNaN(sLat)) { FlightLogger.Event("Okno startowe: brak lotniska w „" + returnProgram + "” – start bez okna"); return; }
+            CelestialBody b = vessel.mainBody;
+            double L, landT, el, xr;
+            double now = Planetarium.GetUniversalTime();
+            double padNow = SolarTimeAt(b, vessel.latitude, vessel.longitude, now);
+            string head = "Teraz na wyrzutni: " + HourText(padNow) + " czasu słonecznego.\n\n";
+            if (!FindLaunchWindow(b, sLat, sLon, inc, pe, ap, out L, out landT, out el, out xr))
+            {
+                FlightLogger.Event("Okno startowe: nie znaleziono w 2 dobach – start bez okna, lądowanie o dowolnej porze");
+                PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), "RSSBalancerLaunchWindow",
+                    "Okno startowe", head + "Nie znalazłem w 2 dobach startu z lądowaniem w dzień. Start teraz – lądowanie o dowolnej porze.", "OK", false, HighLogic.UISkin);
+                return;
+            }
+            double startH = SolarTimeAt(b, vessel.latitude, vessel.longitude, L), landH = SolarTimeAt(b, sLat, sLon, L + landT);
+            string msg = head + "Lądowanie w dzień na „" + (rp.name) + "” (jak 1K1: start rano, lądowanie po ~3,5 h) wymaga startu za " +
+                         KSPUtil.PrintTimeCompact(L - now, false) + " – ok. " + HourText(startH) + " czasu słonecznego Bajkonuru.\n" +
+                         "Lądowanie po ok. " + (landT / 3600).ToString("F1", Inv) + " h, ok. " + HourText(landH) + ", Słońce " + el.ToString("F0", Inv) + "° nad lotniskiem" +
+                         " (przelot " + xr.ToString("F0", Inv) + " km od lotniska).\n\nPrzyspieszyć czas do okna startowego?";
+            FlightLogger.Event("Okno startowe: start za " + KSPUtil.PrintTimeCompact(L - now, false) + " (" + HourText(startH) + "), lądowanie ok. " + HourText(landH) + ", Słońce " + el.ToString("F0", Inv) + "° – pytanie");
+            launchHoldUT = double.PositiveInfinity;     // kroki stoją do odpowiedzi
+            double Lc = L;
+            PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog("RSSBalancerLaunchWindow", msg, "Okno startowe", HighLogic.UISkin,
+                    new DialogGUIButton("Tak – przyspiesz do okna", () =>
+                    {
+                        FlightPrograms.DaylightMission = true;
+                        launchHoldUT = Lc;
+                        FlightLogger.Event("Okno startowe: wybrano – czekam do startu, lądowanie w dzień");
+                        if (Lc - Planetarium.GetUniversalTime() > 60) TimeWarp.fetch.WarpTo(Lc - 15);
+                    }),
+                    new DialogGUIButton("Nie – start teraz", () =>
+                    {
+                        FlightPrograms.DaylightMission = false;
+                        launchHoldUT = double.NaN;
+                        lastActivation = Planetarium.GetUniversalTime();
+                        FlightLogger.Event("Okno startowe: pominięte – start teraz, lądowanie o dowolnej porze");
+                    })),
+                false, HighLogic.UISkin);
+        }
+
+        private static string HourText(double h)
+        {
+            int m = (int)Math.Round(h * 60) % 1440; if (m < 0) m += 1440;
+            return (m / 60).ToString("00") + ":" + (m % 60).ToString("00");
+        }
+
         /// <summary>„askProgram = nazwa” – okno: kontynuować lot programem „nazwa” czy zostać na orbicie.</summary>
         private void AskProgram(string name)
         {
@@ -872,6 +1043,8 @@ namespace RSSBalancer
             deorbitPeriKm = p.node != null ? Num(p.node.GetValue("deorbitPeri"), 30) : 30;
             entryAltKm = p.node != null ? Num(p.node.GetValue("entryAlt"), 120) : 120;
             if (p.node != null && p.node.HasValue("daylight")) RequireDaylight = p.node.GetValue("daylight").Trim().ToLowerInvariant() == "true";
+            if (FlightPrograms.DaylightMission && siteSet) RequireDaylight = true;      // start był w oknie pod lądowanie w dzień
+            launchHoldUT = double.NaN;
             planUT = double.NaN; nextPlan = 0; PlanInfo = "";
             approachOn = false; rwySet = false;
             string rwy = rwyCfg;
@@ -887,6 +1060,8 @@ namespace RSSBalancer
             FlightLogger.StartFor(vessel);
             FlightLogger.Event("Program lotu: start „" + p.name + "”");
             Debug.Log("[RSSBalancer] Program lotu: start " + p.name);
+            if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("launchWindow"))
+                AskLaunchWindow(p, p.node.GetValue("launchWindow"));
         }
 
         public void Stop()
@@ -1101,6 +1276,20 @@ namespace RSSBalancer
             WarpEventGuard();
             LogPlanInfo();
 
+            // okno startowe: czekamy (warp) do chwili startu, kroki programu stoją
+            if (!double.IsNaN(launchHoldUT))
+            {
+                double nowL = Planetarium.GetUniversalTime();
+                if (nowL < launchHoldUT)
+                {
+                    LastMessage = double.IsPositiveInfinity(launchHoldUT) ? "Okno startowe: czekam na odpowiedź." : "Okno startowe: start za " + KSPUtil.PrintTimeCompact(launchHoldUT - nowL, false) + ".";
+                    return;
+                }
+                FlightLogger.Event("Okno startowe – start");
+                launchHoldUT = double.NaN;
+                lastActivation = nowL;
+            }
+
             // kilka kroków może się wykonać w jednej klatce (np. „always”)
             for (int guard = 0; guard < 8 && Active; guard++)
             {
@@ -1235,7 +1424,8 @@ namespace RSSBalancer
             if (vessel == null) return best;
             CelestialBody b = vessel.mainBody;
             double atmTop = b.atmosphere ? b.atmosphereDepth : 0;
-            if (!double.IsNaN(planUT) && !burnOn && planUT > now && vessel.orbit.PeA > atmTop) { best = planUT; name = "impuls hamujący"; }
+            if (!double.IsNaN(launchHoldUT) && !double.IsPositiveInfinity(launchHoldUT) && launchHoldUT > now) { best = launchHoldUT; name = "okno startowe"; }
+            if (!double.IsNaN(planUT) && !burnOn && planUT > now && vessel.orbit.PeA > atmTop && (double.IsNaN(best) || planUT < best)) { best = planUT; name = "impuls hamujący"; }
             if (mph != MPh.None && mph != MPh.Done && !IsBurnPhase(mph) && !double.IsNaN(mBurnUT) && mBurnUT > now && (double.IsNaN(best) || mBurnUT < best))
             { best = mBurnUT; name = "impuls manewru (" + ManeuverInfo + ")"; }
             if (b.atmosphere && vessel.altitude > atmTop && vessel.orbit.PeA < atmTop)
