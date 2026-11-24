@@ -317,8 +317,8 @@ namespace RSSBalancer
         // Teraz, jak w prawdziwym locie (Buran odszedł od bloku Ц silnikami orientacji): dopóki jakiś statek jest
         // bliżej niż SepSafeDist – trzymamy bieżące położenie (żadnych obrotów skrzydłem/ogonem w rdzeń), RCS pcha nas
         // w kierunku „od niego” do prędkości rozejścia SepOpenSpeed, a warp jest zablokowany.
-        public const double SepSafeDist = 150.0, SepOpenSpeed = 1.0;
-        private bool sepOn; private Vessel sepVessel, sepFbwVessel; private Vector3d sepHold; private double sepStart;
+        public const double SepSafeDist = 50.0, SepOpenSpeed = 1.0;   // 1.40.2: 150 → 50 m (symulacja: po 50 m prędkość rozejścia dalej rośnie odstęp – w ОДУ-1 ≥ 337 m tak samo jak przy 150 m)
+        private bool sepOn, warpAfterSep; private Vessel sepVessel, sepFbwVessel; private Vector3d sepHold; private double sepStart;
         public string SeparationInfo = "";
 
         /// <summary>Najbliższy inny statek w zasięgu fizyki (m); +∞, gdy brak.</summary>
@@ -345,7 +345,7 @@ namespace RSSBalancer
         // Lot 24.11 12:05: odejście 150 m „po prostu od rdzenia” zostawiło rdzeń prawie na linii lotu; ОДУ-1 (wzdłuż
         // prędkości) poprowadził Burana prosto na niego (zbliżanie 8 m/s przy 150 m). Teraz odchodzimy W BOK od kierunku
         // lotu (składowa „od rdzenia” prostopadła do prędkości), a manewr czeka, aż odsunięcie w bok ≥ SepLateral.
-        public const double SepLateral = 100.0;
+        public const double SepLateral = 40.0;
         private Vector3d PushDir(Vessel o)
         {
             Vector3d rel = vessel.CoMD - o.CoMD, vdir = vessel.obt_velocity.normalized;
@@ -406,6 +406,8 @@ namespace RSSBalancer
                     FlightLogger.Event("Odejście od „" + (sepVessel != null ? sepVessel.vesselName : "?") + "”: " +
                                        (n == null ? "poza zasięgiem" : (now - sepStart > 300 ? "limit czasu 300 s, " : "") + "odległość " + d.ToString("F0", Inv) + " m, w bok od kierunku lotu " + lat.ToString("F0", Inv) + " m") + " – dalej manewr");
                     EndSeparation();
+                    if (warpAfterSep && !double.IsNaN(mBurnUT) && mBurnUT - now > 90) ProgWarpTo(mBurnUT - 60);
+                    warpAfterSep = false;
                 }
                 return false;
             }
@@ -1196,6 +1198,19 @@ namespace RSSBalancer
             bool inAtm = b.atmosphere && vessel.altitude < atmTop;
             string when = Running.steps[k].node.GetValue("when") ?? "always";
             string op;
+
+            // 0) trwa manewr orbitalny – przyspieszamy tylko do jego impulsu (zrzut 24.11 18:43: przycisk proponował
+            //    „do granicy atmosfery”, czyli przez impuls ОДУ-1; na szynach impuls by przepadł)
+            if (mph != MPh.None && mph != MPh.Done)
+            {
+                if (IsBurnPhase(mph)) return "Trwa impuls – bez przyspieszania.";
+                if (sepOn) { warpAfterSep = true; return "Najpierw odejście od rdzenia (do " + SepSafeDist.ToString("F0") + " m) – potem sam przyspieszę do impulsu."; }
+                if (double.IsNaN(mBurnUT)) return "Impuls jeszcze nie policzony – spróbuj za chwilę.";
+                double tb = mBurnUT - now;
+                if (tb <= 90) return "Do impulsu " + tb.ToString("F0") + " s – nie ma czego przeskakiwać.";
+                ProgWarpTo(mBurnUT - 60);
+                return "Przyspieszam do 1 min przed impulsem (" + ManeuverInfo + ").";
+            }
 
             if (!inAtm)
             {
