@@ -4,26 +4,41 @@ using UnityEngine;
 namespace RSSBalancer
 {
     /// <summary>
-    /// Smuga dymu/pary za silnikiem – tylko w atmosferze. Stockowe efekty silnika znają jedno wejście (moc 0–1),
-    /// nie znają gęstości powietrza, więc ten moduł sam podaje moc efektu: ciąg × współczynnik gęstości.
-    /// Współczynnik: logarytm gęstości między ρ = 1,225 kg/m³ (1,0) a ρ = minDensity (0,0); w RSS: 10 km ≈ 0,88,
-    /// 30 km ≈ 0,52, 50 km ≈ 0,2, 60 km ≈ 0,05 – smuga gęsta przy starcie, zanika w górnych warstwach.
+    /// Smuga za silnikiem – tylko tam, gdzie w prawdziwym locie ją widać. Rakiety na paliwo ciekłe nie dymią jak
+    /// rakiety na paliwo stałe: biała „chmura” to skroplona para wodna ze spalin. Przy starcie robi ją woda z systemu
+    /// tłumienia dźwięku i spaliny przy wyrzutni (chmura przy ziemi); w ciepłym powietrzu nisko ślad jest słaby;
+    /// prawdziwa smuga kondensacyjna powstaje w zimnym powietrzu górnej troposfery (jak u samolotów: ~7,5–12 km)
+    /// i ciągnie się wyżej, rzednąc w suchej stratosferze; wyżej spaliny rozpraszają się w próżni (to rysuje
+    /// Waterfall – rozszerzający się płomień). Profil (współczynnik × ciąg):
+    ///   przy ziemi (≤ 300 m nad terenem) 1,0 – chmura startowa; 1–6 km 0,2; 6→9 km narasta do 1,0;
+    ///   9–18 km 1,0; 18→35 km spada do 0,3; 35→50 km do 0; wyżej 0.
     /// Dodawany łatką (Patches/Energia_Waterfall.cfg) do RD-170 i RD-0120; efekt „rssbSmoke” w EFFECTS części.
     /// </summary>
     public class ModuleRssbSmoke : PartModule
     {
         [KSPField] public string effectName = "rssbSmoke";
         [KSPField] public string engineID = "";
-        [KSPField] public float minDensity = 0.0002f;
-        [KSPField] public float maxDensity = 1.225f;
 
         private ModuleEngines engine;
         private float last = -1f;
 
-        public static float DensityFactor(double rho, double minRho, double maxRho)
+        private static readonly double[] AltKm = { 0, 1, 6, 9, 18, 35, 50 };
+        private static readonly double[] AltF  = { 0.2, 0.2, 0.2, 1.0, 1.0, 0.3, 0.0 };
+
+        /// <summary>Współczynnik widoczności smugi od wysokości (n.p.m. [m]) i wysokości nad terenem [m].</summary>
+        public static float TrailFactor(double altAsl, double altAgl)
         {
-            if (rho <= minRho || minRho <= 0) return 0f;
-            double f = (Math.Log(rho) - Math.Log(minRho)) / (Math.Log(maxRho) - Math.Log(minRho));
+            double km = altAsl / 1000.0, f;
+            if (km <= AltKm[0]) f = AltF[0];
+            else if (km >= AltKm[AltKm.Length - 1]) f = AltF[AltF.Length - 1];
+            else
+            {
+                int i = 1; while (km > AltKm[i]) i++;
+                double u = (km - AltKm[i - 1]) / (AltKm[i] - AltKm[i - 1]);
+                f = AltF[i - 1] + u * (AltF[i] - AltF[i - 1]);
+            }
+            // chmura startowa przy wyrzutni: do 300 m nad terenem pełna, do 1000 m zanika do profilu
+            if (altAgl < 1000) f = Math.Max(f, altAgl <= 300 ? 1.0 : 1.0 - (altAgl - 300) / 700.0 * (1.0 - f));
             return (float)Math.Max(0, Math.Min(1, f));
         }
 
@@ -40,7 +55,7 @@ namespace RSSBalancer
             if (!HighLogic.LoadedSceneIsFlight || engine == null || vessel == null) return;
             float p = 0f;
             if (engine.EngineIgnited && !engine.flameout && engine.finalThrust > 0.01f)
-                p = Mathf.Clamp01(engine.currentThrottle) * DensityFactor(vessel.atmDensity, minDensity, maxDensity);
+                p = vessel.mainBody.atmosphere ? Mathf.Clamp01(engine.currentThrottle) * TrailFactor(vessel.altitude, vessel.heightFromTerrain >= 0 ? vessel.heightFromTerrain : vessel.altitude) : 0f;
             if (Math.Abs(p - last) < 0.005f) return;
             last = p;
             part.Effect(effectName, p);
