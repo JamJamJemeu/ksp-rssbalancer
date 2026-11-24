@@ -63,5 +63,6 @@ Projekt `RSSBalancer.csproj` (.NET Framework 4.7.2) korzysta z bibliotek KSP z `
 |---|---|---|
 | `baza-buran-1.33` | 1.33 | Buran 1K1: zejście z orbity i automatyczne lądowanie na Jubilejnym |
 | `baza-okgli-1.38.1` | 1.38.1 | OK-GLI z Jubilejnego: start z pasa, krąg prostokątny (4 zakręty po 90°), prosta z silnikami, ścieżka 19° i lądowanie; Energia–Buran z prawdziwymi silnikami (RD-170, RD-0120 bez mnożników); planszet ПА-3 |
+| `baza-1k1-1.41.3` | 1.41.3 | Pełna misja Energia–Buran 1K1: okno startowe, wynoszenie, ОДУ-1/ОДУ-2 na 251 × 263 km, impuls hamujący i wejście w atmosferę na 2. okrążeniu, podejście przez okrąg HAC (własny projekt, nie jak w oryginale) i lądowanie na pasie 24 Jubilejnego – lot 24.11 23:35: T+3:22:19, na osi, 1690 m za progiem, 449 km/h; profile statków `PluginData/Vehicles` |
 
 Gotowy `RSSBalancer.dll` wersji bazowej leży w `kopie/<wersja>/` – wystarczy skopiować go do `GameData/RSSBalancer/` (przy zamkniętym KSP). Statki do tej wersji: `crafts/` (do `saves/<zapis>/Ships/VAB` albo `SPH`).
