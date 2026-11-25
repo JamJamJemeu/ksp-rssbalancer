@@ -1060,11 +1060,12 @@ namespace RSSBalancer
                     s1k1Course = Num(p.node.GetValue("landingCourse"), 246.6);
                     s1k1CreD = Num(p.node.GetValue("creDistance"), 24) * 1000;
                     s1k1CreR = Num(p.node.GetValue("creRadius"), 25) * 1000;
-                    s1k1TaemOff = Num(p.node.GetValue("creTaemOffset"), 160) * 1000;
+                    s1k1TaemOff = Num(p.node.GetValue("creTaemOffset"), 100) * 1000;
+                    s1k1Aim = Num(p.node.GetValue("creAim"), 20) * 1000;
                     string cs = p.node.GetValue("creSide");
                     s1k1CreSide = cs != null && cs.Trim().ToLowerInvariant().StartsWith("l") ? -1 : 1;
                 }
-                creOn = false;
+                creOn = creDone = creFrozen = false;
                 if (s1k1) FlightLogger.Event("Program lotu: schemat podejścia jak 1K1 – kurs lądowania " + s1k1Course.ToString("F1", Inv) + "°, ЦРЭ " + (s1k1CreR / 1000).ToString("F0", Inv) + " km w odl. " + (s1k1CreD / 1000).ToString("F0", Inv) + " km, styczna " + (s1k1CreSide > 0 ? "prawa" : "lewa"));
             }
             {
@@ -2807,7 +2808,9 @@ namespace RSSBalancer
         // wyrównania kursu (ЦВК, północny albo południowy), punkt kluczowy 4 km ~14,5 km od środka pasa, stroma ścieżka.
         // W KSP nie ma wiatru – kurs lądowania podaje program (landingCourse).
         private bool s1k1, hacLatchOn, hacCommitted;
-        private double s1k1Course = 246.6, s1k1CreD = 24000, s1k1CreR = 25000, s1k1TaemOff = 160000;
+        private double s1k1Course = 246.6, s1k1CreD = 24000, s1k1CreR = 25000, s1k1TaemOff = 100000, s1k1Aim = 20000;
+        private bool creDone, creFrozen;
+        private Vector2d creAimPt, creAimDir;   // zamrożony cel wejścia (creAim przed punktem styczności ЦРЭ) i kierunek stycznej
         private int s1k1CreSide = 1;      // +1: ЦРЭ po prawej stronie toru (prawa styczna, obieg w prawo – jak 1K1)
         private bool creOn;               // wejście: już na okręgu ЦРЭ
         private int hacSide = 1, hacLap, hacSsgn = 1;
@@ -3230,14 +3233,34 @@ namespace RSSBalancer
         /// <summary>Schemat 1K1: cel wejścia = punkt styczności ЦРЭ (płaski rzut wokół środka pasa). Na okręgu – kurs styczny.</summary>
         private void S1k1EntryTarget(Vessel v, ref double rgo, ref double brg, ref double taemDist)
         {
+            // 1.42.1 (lot 25.11 10:43): kurs liczony w płaskim rzucie wokół pasa był zły z daleka (błąd kursu 59° przy
+            // 5700 km zamiast ~9°) → przechylenie 60° na „wyrównanie kursu” zjadło energię. Teraz cel zamieniamy na
+            // szer./dł. i kurs oraz odległość liczymy po wielkim kole z miejsca statku.
+            // Cel jak dotychczasowy „środek lotniska”, z tym samym TaemDist 100 km (w grze: V ≈ 510 m/s ~12 km przed celem),
+            // ale przesunięty: creAim (20 km) PRZED punktem styczności ЦРЭ na stycznej → V ≈ 510 m/s ~12 + 20 = 32 km przed
+            // punktem styczności (1K1: 520 ± 60 m/s, 32 ± 13 km). Punkt zamrażamy 400 km przed nim.
+            CelestialBody b = v.mainBody;
             double cLat = (rwyLatA + rwyLatB) / 2, cLon = (rwyLonA + rwyLonB) / 2, bb;
-            double dd = GreatCircle(cLat, cLon, v.latitude, v.longitude, out bb) * v.mainBody.Radius;
+            double dd = GreatCircle(cLat, cLon, v.latitude, v.longitude, out bb) * b.Radius;
             Vector2d p = new Vector2d(dd * Math.Sin(bb * Math.PI / 180), dd * Math.Cos(bb * Math.PI / 180));
             Vector2d crs = new Vector2d(Math.Sin(s1k1Course * Math.PI / 180), Math.Cos(s1k1Course * Math.PI / 180));
-            Vector2d cre = crs * (-s1k1CreD);
+            Vector2d cre = crs * (-s1k1CreD), kt = crs * (-14500.0);
             Vector2d pc = cre - p; double dc = pc.magnitude;
-            if (!creOn && dc < s1k1CreR * 1.03) { creOn = true; FlightLogger.Event("Wejście (1K1): na okręgu ЦРЭ, h " + (v.altitude / 1000).ToString("F1", Inv) + " km, V " + v.srfSpeed.ToString("F0", Inv) + " m/s"); }
+            if (!creOn && !creDone && dc < s1k1CreR * 1.03) { creOn = true; FlightLogger.Event("Wejście (1K1): na okręgu ЦРЭ, h " + (v.altitude / 1000).ToString("F1", Inv) + " km, V " + v.srfSpeed.ToString("F0", Inv) + " m/s"); }
             if (creOn)
+            {
+                // zejście z ЦРЭ, gdy energia wystarcza już tylko na dolot do punktu kluczowego (spirala tylko dla nadmiaru)
+                double hr = v.altitude - rwyAlt, V = v.srfSpeed;
+                double Eh = hr + V * V / (2 * 9.81);
+                double ldS = Math.Max(1.0, (ldSeen ? ldF : 1.5) * 0.85);
+                double ereq = 4000 + 170.0 * 170.0 / (2 * 9.81) + ((p - kt).magnitude + 8000) / ldS;
+                if (Eh < ereq + 2000) { creOn = false; creDone = true; FlightLogger.Event("Wejście (1K1): zejście z ЦРЭ – energia " + (Eh / 1000).ToString("F1", Inv) + " km wystarcza na dolot do punktu kluczowego (" + (ereq / 1000).ToString("F1", Inv) + " km)"); }
+            }
+            if (creDone)
+            {
+                Vector2d dk = kt - p; brg = Mod(Math.Atan2(dk.x, dk.y) * 180 / Math.PI, 360); rgo = 0;
+            }
+            else if (creOn)
             {
                 Vector2d rr = p - cre; double a = Math.Atan2(rr.x, rr.y);
                 double tang = Mod((a + (s1k1CreSide > 0 ? Math.PI / 2 : -Math.PI / 2)) * 180 / Math.PI, 360);
@@ -3246,9 +3269,33 @@ namespace RSSBalancer
             }
             else
             {
-                double aa = Math.Asin(s1k1CreR / dc), bc = Math.Atan2(pc.x, pc.y);
-                double tb = s1k1CreSide > 0 ? bc - aa : bc + aa;
-                brg = Mod(tb * 180 / Math.PI, 360); rgo = Math.Sqrt(Math.Max(0, dc * dc - s1k1CreR * s1k1CreR));
+                Vector2d aim;
+                if (creFrozen) aim = creAimPt;
+                else
+                {
+                    double aa = Math.Asin(Math.Min(1, s1k1CreR / dc)), bc = Math.Atan2(pc.x, pc.y);
+                    double tb = s1k1CreSide > 0 ? bc - aa : bc + aa;
+                    double L = Math.Sqrt(Math.Max(0, dc * dc - s1k1CreR * s1k1CreR));
+                    Vector2d u = new Vector2d(Math.Sin(tb), Math.Cos(tb));
+                    aim = p + u * Math.Max(0, L - s1k1Aim);
+                    if (L < 400000) { creFrozen = true; creAimPt = aim; creAimDir = u; FlightLogger.Event("Wejście (1K1): cel zamrożony – " + (s1k1Aim / 1000).ToString("F0", Inv) + " km przed punktem styczności ЦРЭ, kurs styczny " + Mod(tb * 180 / Math.PI, 360).ToString("F0", Inv) + "°"); }
+                }
+                if (creFrozen && Vector2d.Dot(creAimPt - p, creAimDir) < 5000)
+                {
+                    // przy celu / za nim: dalej po stycznej do ЦРЭ (inaczej kurs na minięty cel zawróciłby Burana)
+                    brg = Mod(Math.Atan2(creAimDir.x, creAimDir.y) * 180 / Math.PI, 360);
+                    rgo = Math.Max(0, Vector2d.Dot(creAimPt - p, creAimDir));
+                    taemDist = s1k1TaemOff;
+                    return;
+                }
+                // rzut odwrotny (azymutalny równoodległościowy) → szer./dł. celu, potem kurs i odległość po wielkim kole
+                double dA = aim.magnitude / b.Radius, bA = Math.Atan2(aim.x, aim.y);
+                double f1 = cLat * Math.PI / 180, l1 = cLon * Math.PI / 180;
+                double fA = Math.Asin(Math.Sin(f1) * Math.Cos(dA) + Math.Cos(f1) * Math.Sin(dA) * Math.Cos(bA));
+                double lA = l1 + Math.Atan2(Math.Sin(bA) * Math.Sin(dA) * Math.Cos(f1), Math.Cos(dA) - Math.Sin(f1) * Math.Sin(fA));
+                double bA2;
+                rgo = GreatCircle(v.latitude, v.longitude, fA * 180 / Math.PI, lA * 180 / Math.PI, out bA2) * b.Radius;
+                brg = bA2;
             }
             taemDist = s1k1TaemOff;
         }
@@ -3341,7 +3388,7 @@ namespace RSSBalancer
             // wytracania energii i skrętu (lot 10:11: na 46 km przy M 4,5 EAS 53 m/s wyłączył przechylenie nad lotniskiem)
             if (V < 800 && easG < 1.7 * vStG)
             {
-                mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : (s1k1 && creOn && easG >= 1.5 * vStG) ? 45 : 20);
+                mag = Math.Min(mag, easG < 1.4 * vStG ? 0 : (s1k1 && easG >= 1.5 * vStG) ? 45 : 20);   // 1K1: do 45° (ЦРЭ, R 25 km przy ~500 m/s)
                 note += (note.Length > 0 ? ", " : "") + "mała prędkość – ograniczam przechylenie";
             }
             double target = side * mag;
