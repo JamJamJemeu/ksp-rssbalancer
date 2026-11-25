@@ -64,6 +64,45 @@ namespace RSSBalancer
 
         /// <summary>Orbita wpisana w zakładce Program („pe-ap nachylenie”, puste = jak w pliku) – zastępuje wartość „autoOrbit” z pliku.</summary>
         public static string AutoOrbitOverride = "";
+        /// <summary>Ostatni stage rakiety wpisany w zakładce Program (−1 = jak w pliku programu / zapamiętany dla statku).</summary>
+        public static int LastStageOverride = -1;
+
+        // Ostatni stage rakiety zapamiętany dla każdego statku (nazwa) – PluginData/rakiety.cfg, zapisywany sam przy starcie.
+        // Nie da się go wykryć automatycznie: Blok L pod Mołnią i silnik Sojuza pod kapsułą wyglądają w drzewie części tak samo,
+        // a pierwszy jest rakietą, drugi statkiem. Dlatego wpisuje się raz w oknie, bez plików i bez restartu.
+        private static string ShipsFile { get { return Path.Combine(Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), "RSSBalancer"), Path.Combine("PluginData", "rakiety.cfg")); } }
+
+        public static int SavedLastStage(string ship)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(ship) || !File.Exists(ShipsFile)) return -1;
+                ConfigNode root = ConfigNode.Load(ShipsFile);
+                if (root == null) return -1;
+                foreach (ConfigNode n in root.GetNodes("RAKIETA"))
+                {
+                    int v;
+                    if (n.GetValue("ship") == ship && int.TryParse((n.GetValue("lastStage") ?? "").Trim(), out v)) return Math.Max(0, v);
+                }
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
+            return -1;
+        }
+
+        public static void SaveLastStage(string ship, int stage)
+        {
+            if (string.IsNullOrEmpty(ship)) return;
+            try
+            {
+                ConfigNode root = File.Exists(ShipsFile) ? (ConfigNode.Load(ShipsFile) ?? new ConfigNode()) : new ConfigNode();
+                ConfigNode hit = null;
+                foreach (ConfigNode n in root.GetNodes("RAKIETA")) if (n.GetValue("ship") == ship) hit = n;
+                if (hit == null) { hit = root.AddNode("RAKIETA"); hit.AddValue("ship", ship); }
+                hit.SetValue("lastStage", stage.ToString(CultureInfo.InvariantCulture), true);
+                root.Save(ShipsFile);
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
+        }
         /// <summary>Start w oknie startowym pod lądowanie w dzień – program powrotu wtedy szuka przelotu w dzień.</summary>
         public static bool DaylightMission;
 
@@ -72,6 +111,18 @@ namespace RSSBalancer
             if (p == null) return false;
             foreach (Step s in p.steps) if (s.node.HasValue("autoOrbit") || s.node.HasValue("autoorbit")) return true;
             return false;
+        }
+
+        /// <summary>„lastStage = N” przy autoOrbit: rakieta to stage'e ≥ N (MechJeb nie odpali niższych, Δv liczone bez statku).</summary>
+        public static int LastStageFromFile(Program p)
+        {
+            if (p == null) return 0;
+            foreach (Step s in p.steps)
+            {
+                string v = s.node.GetValue("lastStage") ?? s.node.GetValue("laststage");
+                int n; if (v != null && int.TryParse(v.Trim(), out n) && n > 0) return n;
+            }
+            return 0;
         }
 
         public static string AutoOrbitFromFile(Program p)
@@ -1955,6 +2006,11 @@ namespace RSSBalancer
                     else if (key == "askProgram" || key == "askprogram") AskProgram(val.Trim());
                     else if (key == "autoOrbit" || key == "autoorbit")
                     {
+                        string ls = n.GetValue("lastStage") ?? n.GetValue("laststage");
+                        int saved = FlightPrograms.SavedLastStage(vessel.vesselName);
+                        aoLastStage = FlightPrograms.LastStageOverride >= 0 ? FlightPrograms.LastStageOverride
+                                    : saved >= 0 ? saved : ls != null ? Math.Max(0, (int)Num(ls, 0)) : 0;
+                        if (FlightPrograms.LastStageOverride >= 0) FlightPrograms.SaveLastStage(vessel.vesselName, aoLastStage);
                         LastMessage += "\n" + StartAutoOrbit(val);
                     }
                     else if (key == "orbittarget")
@@ -2062,6 +2118,7 @@ namespace RSSBalancer
         private enum AO { None, Ascent, Finish, Done, Failed }
         private AO aoPhase = AO.None;
         private double aoAlt, aoAp, aoInc, aoStartUT, nextAoLog;
+        private int aoLastStage;
         public string AutoOrbitInfo = "";
 
         private string StartAutoOrbit(string val)
@@ -2082,11 +2139,12 @@ namespace RSSBalancer
 
             // --- analiza
             double need = DeltaVPlanner.ToOrbit(b, peKm * 1000, apKm * 1000, inc);
-            double vac; StockDeltaV.TotalVac(out vac);
+            double vac; StockDeltaV.TotalVacFrom(aoLastStage, out vac);
             double twr = StockDeltaV.LiftoffTwr();
             List<string> rep = new List<string>();
             rep.Add("Cel: orbita " + OrbitLabel(peKm, apKm) + (fromUi ? " (wpisana w zakładce)" : "") + ", nachylenie " + inc.ToString("F1", Inv) + "°" + incNote + "; potrzeba ≈ " + need.ToString("F0", Inv) + " m/s");
-            rep.Add("Rakieta: Δv (próżnia) " + vac.ToString("F0", Inv) + " m/s, TWR na starcie " + twr.ToString("F2", Inv));
+            rep.Add("Rakieta: Δv (próżnia) " + vac.ToString("F0", Inv) + " m/s, TWR na starcie " + twr.ToString("F2", Inv) +
+                    (aoLastStage > 0 ? " (stage'e ≥ " + aoLastStage + "; niższe to statek – MechJeb ich nie odpali)" : ""));
             VesselDeltaV vdv = StockDeltaV.Current();
             string weak = "";
             if (vdv != null && vdv.OperatingStageInfo != null)
@@ -2096,7 +2154,7 @@ namespace RSSBalancer
                 bool first = true;
                 foreach (DeltaVStageInfo si in st)
                 {
-                    if (si == null || si.deltaVinVac < 1) continue;
+                    if (si == null || si.deltaVinVac < 1 || si.stage < aoLastStage) continue;
                     string line = "  stopień " + si.stage + ": Δv " + si.deltaVinVac.ToString("F0", Inv) + " m/s, TWR " + (first ? si.TWRASL.ToString("F2", Inv) + " (ziemia)" : si.TWRVac.ToString("F2", Inv)) +
                                   ", czas pracy " + si.stageBurnTime.ToString("F0", Inv) + " s";
                     if (first && si.TWRASL < 1.15) { line += "  ← za mały ciąg na start"; weak += "stopień " + si.stage + " (TWR startowy " + si.TWRASL.ToString("F2", Inv) + "); "; }
@@ -2121,12 +2179,12 @@ namespace RSSBalancer
             string[][] asc = {
                 new[] { "AscentTypeInteger", "1" }, new[] { "DesiredOrbitAltitude", (altKm * 1000).ToString("F0", Inv) },
                 new[] { "DesiredApoapsis", (apKm * 1000).ToString("F0", Inv) }, new[] { "AttachAltFlag", "False" },
-                new[] { "DesiredInclination", inc.ToString("F2", Inv) }, new[] { "LastStage", "0" }, new[] { "OptimizeStageFlag", "False" },
+                new[] { "DesiredInclination", inc.ToString("F2", Inv) }, new[] { "LastStage", aoLastStage.ToString(Inv) }, new[] { "OptimizeStageFlag", "False" },
                 new[] { "CoastStageFlag", "False" }, new[] { "UnguidedStagesFlag", "False" }, new[] { "SkipCircularization", "False" },
                 new[] { "PitchStartVelocity", pitchStart.ToString("F0", Inv) }, new[] { "PitchRate", "0.75" },
                 new[] { "Autostage", "True" }, new[] { "ForceRoll", "True" }, new[] { "VerticalRoll", "0" }, new[] { "TurnRoll", "0" } };
             string[][] thr = { new[] { "LimitAcceleration", "True" }, new[] { "MaxAcceleration", "39.2" } };
-            string[][] stg = { new[] { "AutostageLimit", "0" } };
+            string[][] stg = { new[] { "AutostageLimit", aoLastStage.ToString(Inv) } };
             int bad = 0;
             foreach (PartModule core in cores)
             {
@@ -2150,7 +2208,7 @@ namespace RSSBalancer
         }
 
         /// <summary>Sprawdzenie dla zakładki: ile Δv trzeba na orbitę i ile ma rakieta (bez startu, bez zmian w rakiecie).</summary>
-        public static string CheckAutoOrbit(string val)
+        public static string CheckAutoOrbit(string val, int lastStage = 0)
         {
             Vessel v = FlightGlobals.ActiveVessel;
             if (v == null) return "Brak statku.";
@@ -2159,11 +2217,11 @@ namespace RSSBalancer
             double lat = Math.Abs(v.latitude);
             if (double.IsNaN(inc) || inc < lat) inc = Math.Ceiling(lat * 10) / 10;
             double need = DeltaVPlanner.ToOrbit(b, pe * 1000, ap * 1000, inc);
-            double vac; bool ok = StockDeltaV.TotalVac(out vac);
+            double vac; bool ok = StockDeltaV.TotalVacFrom(lastStage, out vac);
             double twr = StockDeltaV.LiftoffTwr();
             string r = "Cel " + OrbitLabel(pe, ap) + ", " + inc.ToString("F1", Inv) + "°: potrzeba ≈ " + need.ToString("F0", Inv) + " m/s";
             if (!ok || vac <= 0) return r + ", rakieta: brak danych Δv.";
-            r += ", rakieta " + vac.ToString("F0", Inv) + " m/s (TWR " + twr.ToString("F2", Inv) + ") → ";
+            r += ", rakieta" + (lastStage > 0 ? " (stage'e ≥ " + lastStage + ")" : "") + " " + vac.ToString("F0", Inv) + " m/s (TWR " + twr.ToString("F2", Inv) + ") → ";
             r += vac >= need ? "zapas " + (vac - need).ToString("F0", Inv) + " m/s" : "BRAKUJE " + (need - vac).ToString("F0", Inv) + " m/s";
             if (twr > 0 && twr < 1.15) r += "; za mały ciąg na start";
             return r + " (szacunek ±5 %).";
@@ -2196,7 +2254,7 @@ namespace RSSBalancer
                 AutoOrbitInfo = "wznoszenie: apogeum " + (o.ApA / 1000).ToString("F0", Inv) + " km, perygeum " + (o.PeA / 1000).ToString("F0", Inv) + " km, cel " + aoAlt.ToString("F0", Inv) + " km";
                 if (now > nextAoLog) { nextAoLog = now + 20; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); }
                 bool mjOff = now - aoStartUT > 10 && !AscentEnabled();
-                bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= 0 && vessel.altitude > atmTop;
+                bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= aoLastStage && vessel.altitude > atmTop;
                 bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;
                 if (!(mjOff || fuelOut || inOrbit)) return;
                 MechJebAscent(false);
@@ -2204,7 +2262,7 @@ namespace RSSBalancer
                 if (good)
                 {
                     aoPhase = AO.Done; AutoOrbitInfo = "na orbicie " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km, " + o.inclination.ToString("F1", Inv) + "°";
-                    FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo + ", Δv zostało " + (StockDeltaV.TotalVac(out double rest) ? rest.ToString("F0", Inv) : "?") + " m/s");
+                    FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo + ", Δv zostało " + (StockDeltaV.TotalVacFrom(aoLastStage, out double rest) ? rest.ToString("F0", Inv) : "?") + " m/s");
                     ScreenMessages.PostScreenMessage("Na orbicie: " + AutoOrbitInfo, 6f, ScreenMessageStyle.UPPER_CENTER);
                     return;
                 }

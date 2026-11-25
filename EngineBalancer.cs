@@ -56,7 +56,12 @@ namespace RSSBalancer
         private Vector2 progScroll;
         private int progSel;
         private int aoFor = -1;
-        private string aoPe = "", aoAp = "", aoInc = "", aoCheck = "";
+        private string aoPe = "", aoAp = "", aoInc = "", aoCheck = "", aoLast = "";
+
+        private int AoLastStage(FlightPrograms.Program p)
+        {
+            int v; return int.TryParse(aoLast.Trim(), out v) && v >= 0 ? v : -1;
+        }
         private Preset pendingDelete;
 
         private string status;
@@ -831,6 +836,10 @@ namespace RSSBalancer
                     if (pa.Length > 1) aoAp = pa[1];
                 }
                 if (w.Length > 1 && w[1].ToLowerInvariant() != "auto") aoInc = w[1];
+                // ostatni stage rakiety: zapamiętany dla tego statku, inaczej z pliku programu, inaczej 0 (wszystkie)
+                int saved = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null ? FlightPrograms.SavedLastStage(FlightGlobals.ActiveVessel.vesselName) : -1;
+                int file = FlightPrograms.LastStageFromFile(p);
+                aoLast = (saved >= 0 ? saved : file).ToString();
             }
             GUILayout.Space(4f);
             GUILayout.Label("Orbita docelowa (puste = auto: niska orbita nad atmosferą, nachylenie = szerokość startu; apogeum puste = orbita kołowa):");
@@ -840,9 +849,14 @@ namespace RSSBalancer
             GUILayout.Label("  Nachylenie [°]", GUILayout.Width(100f)); aoInc = GUILayout.TextField(aoInc, GUILayout.Width(50f));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
+            GUILayout.Label(new GUIContent("Ostatni stage rakiety", "Najniższy numer stage'a, który jest jeszcze rakietą. Niższe stage'e (statek: oddzielenie, silnik statku, lądowanie) MechJeb pominie i nie odpali, Δv liczone bez nich. 0 = wszystkie. Zapamiętuje się dla tego statku przy starcie."), GUILayout.Width(150f));
+            aoLast = GUILayout.TextField(aoLast, GUILayout.Width(40f));
+            GUILayout.Label(AoLastStage(p) > 0 ? "  stage'e < " + AoLastStage(p) + " to statek – MechJeb ich nie odpali" : "  0 = MechJeb stage'uje do końca (np. Blok L + satelita)");
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
             if (GUILayout.Button("Sprawdź", GUILayout.Width(90f)))
-                aoCheck = HighLogic.LoadedSceneIsFlight ? FlightProgramRunner.CheckAutoOrbit(AutoOrbitText() == "" ? FlightPrograms.AutoOrbitFromFile(p) : AutoOrbitText()) : "Sprawdzenie działa w locie (rakieta na wyrzutni).";
-            if (GUILayout.Button("Jak w pliku", GUILayout.Width(100f))) aoFor = -1;
+                aoCheck = HighLogic.LoadedSceneIsFlight ? FlightProgramRunner.CheckAutoOrbit(AutoOrbitText() == "" ? FlightPrograms.AutoOrbitFromFile(p) : AutoOrbitText(), Math.Max(0, AoLastStage(p))) : "Sprawdzenie działa w locie (rakieta na wyrzutni).";
+            if (GUILayout.Button("Jak w pliku", GUILayout.Width(100f))) { aoFor = -1; }
             if (GUILayout.Button("Auto", GUILayout.Width(60f))) { aoPe = aoAp = aoInc = ""; aoCheck = ""; }
             GUILayout.EndHorizontal();
             if (aoCheck != "") GUILayout.Label(aoCheck);
@@ -890,7 +904,9 @@ namespace RSSBalancer
             {
                 if (GUILayout.Button("Start programu"))
                 {
-                    FlightPrograms.AutoOrbitOverride = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]) ? AutoOrbitText() : "";
+                    bool hasAo = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]);
+                    FlightPrograms.AutoOrbitOverride = hasAo ? AutoOrbitText() : "";
+                    FlightPrograms.LastStageOverride = hasAo ? AoLastStage(FlightPrograms.Programs[progSel]) : -1;
                     run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage;
                 }
             }

@@ -28,6 +28,18 @@ namespace RSSBalancer
             return dv > 0.0;
         }
 
+        /// <summary>Δv (próżnia) tylko stage'ów o numerze ≥ minStage – np. bez silników statku nad rakietą.</summary>
+        public static bool TotalVacFrom(int minStage, out double dv)
+        {
+            dv = 0.0;
+            if (minStage <= 0) return TotalVac(out dv);
+            VesselDeltaV v = Current();
+            if (v == null || v.OperatingStageInfo == null) return false;
+            foreach (DeltaVStageInfo s in v.OperatingStageInfo)
+                if (s != null && s.stage >= minStage) dv += s.deltaVinVac;
+            return dv > 0.0;
+        }
+
         public static bool TotalAsl(out double dv)
         {
             dv = 0.0;
