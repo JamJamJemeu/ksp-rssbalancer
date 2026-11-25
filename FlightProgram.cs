@@ -232,7 +232,7 @@ namespace RSSBalancer
 
     /// <summary>Wykonuje uzbrojony program lotu dla aktywnego statku.</summary>
     [KSPAddon(KSPAddon.Startup.Flight, false)]
-    public class FlightProgramRunner : MonoBehaviour
+    public partial class FlightProgramRunner : MonoBehaviour
     {
         public static FlightProgramRunner Instance;
         private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -480,7 +480,8 @@ namespace RSSBalancer
                 foreach (PartModule pm in p.Modules)
                 {
                     ModuleEngines e = pm as ModuleEngines;
-                    if (e == null || e.propellants.Exists(pr => pr.name == "IntakeAir")) continue;
+                    // bez silników na paliwo stałe: na Sojuzie to silniki miękkiego lądowania kapsuły (odpalone na orbicie = strata)
+                    if (e == null || e.propellants.Exists(pr => pr.name == "IntakeAir" || pr.name == "SolidFuel")) continue;
                     if (e.EngineIgnited && !e.flameout) running = true;
                     else if (!e.EngineIgnited) idle.Add(e);
                 }
@@ -1218,8 +1219,11 @@ namespace RSSBalancer
             FlightLogger.StartFor(vessel);
             FlightLogger.Event("Program lotu: start „" + p.name + "”");
             Debug.Log("[RSSBalancer] Program lotu: start " + p.name);
+            rdv = RDV.None; rdvTarget = null; rdvB3Orbit = 17; RendezvousInfo = "";
             if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("launchWindow"))
                 AskLaunchWindow(p, p.node.GetValue("launchWindow"));
+            else if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("rendezvousTarget"))
+                AskRendezvousWindow(p.node.GetValue("rendezvousTarget"));
         }
 
         public void Stop()
@@ -1232,6 +1236,7 @@ namespace RSSBalancer
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             if (mph != MPh.None && mph != MPh.Done) FlightInputHandler.state.mainThrottle = 0f;
             mph = MPh.None;
+            StopRendezvous();
             EndSeparation();
             Running = null;
             Current = -1;
@@ -1457,7 +1462,10 @@ namespace RSSBalancer
             if (patternOn && vessel != null && vessel == FlightGlobals.ActiveVessel) Pattern();
             if (approachOn && vessel != null && vessel == FlightGlobals.ActiveVessel && !Active) Approach();
             if (!Active) return;
-            if (vessel == null || vessel != FlightGlobals.ActiveVessel) { LastMessage = "Zmieniono statek – program zatrzymany."; Stop(); return; }
+            if (vessel == null || vessel != FlightGlobals.ActiveVessel)
+            {
+                if (!RendezvousAdopt(FlightGlobals.ActiveVessel)) { LastMessage = "Zmieniono statek – program zatrzymany."; Stop(); return; }
+            }
 
             qMax = Math.Max(qMax, vessel.dynamicPressurekPa);
             // Grupy silników rozpoznajemy RAZ przy starcie programu (na wyrzutni) – po odrzucie bloków
@@ -1469,6 +1477,7 @@ namespace RSSBalancer
             if (approachOn) Approach();
             if (aoPhase == AO.Ascent || aoPhase == AO.Finish) AutoOrbitTick();
             if (mph != MPh.None && mph != MPh.Done) Maneuver();
+            RendezvousTick();
             WarpNeighbourGuard();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
             // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
@@ -1572,6 +1581,7 @@ namespace RSSBalancer
                 case "sitexrange": return SiteAngle(true);
                 case "deorbitin": return DeorbitIn();
                 case "orbitdone": return mph == MPh.Done ? 1 : 0;
+                case "rendezvous": case "docked": return RendezvousState;
                 case "autoorbit": return aoPhase == AO.Done ? 1 : aoPhase == AO.Failed ? -1 : 0;
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
@@ -2050,6 +2060,7 @@ namespace RSSBalancer
                         }
                     }
                     else if (key == "program") pendingProgram = val.Trim();
+                    else if (key == "rendezvous") LastMessage += "\n" + StartRendezvous(val.Trim());
                     else if (key == "askProgram" || key == "askprogram") AskProgram(val.Trim());
                     else if (key == "autoOrbit" || key == "autoorbit")
                     {
