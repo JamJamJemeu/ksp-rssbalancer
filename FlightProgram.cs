@@ -66,6 +66,53 @@ namespace RSSBalancer
         public static string AutoOrbitOverride = "";
         /// <summary>Ostatni stage rakiety wpisany w zakładce Program (−1 = jak w pliku programu / zapamiętany dla statku).</summary>
         public static int LastStageOverride = -1;
+        /// <summary>Zdarzenia „stage o czasie” wpisane w zakładce Program, np. „114:8 157:6” (null = jak zapamiętane / w pliku).</summary>
+        public static string StageAtOverride = null;
+
+        public static string SavedStageAt(string ship)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(ship) || !File.Exists(ShipsFile)) return null;
+                ConfigNode root = ConfigNode.Load(ShipsFile);
+                if (root == null) return null;
+                foreach (ConfigNode n in root.GetNodes("RAKIETA"))
+                    if (n.GetValue("ship") == ship) return n.GetValue("stageAt");
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
+            return null;
+        }
+
+        public static void SaveStageAt(string ship, string stageAt)
+        {
+            if (string.IsNullOrEmpty(ship) || stageAt == null) return;
+            try
+            {
+                ConfigNode root = File.Exists(ShipsFile) ? (ConfigNode.Load(ShipsFile) ?? new ConfigNode()) : new ConfigNode();
+                ConfigNode hit = null;
+                foreach (ConfigNode n in root.GetNodes("RAKIETA")) if (n.GetValue("ship") == ship) hit = n;
+                if (hit == null) { hit = root.AddNode("RAKIETA"); hit.AddValue("ship", ship); }
+                hit.SetValue("stageAt", stageAt.Trim(), true);
+                root.Save(ShipsFile);
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
+        }
+
+        /// <summary>„114:8 157:6” → pary (czas lotu [s], numer stage'a). Błędne pozycje pomija.</summary>
+        public static List<KeyValuePair<double, int>> ParseStageAt(string txt)
+        {
+            var list = new List<KeyValuePair<double, int>>();
+            if (string.IsNullOrEmpty(txt)) return list;
+            foreach (string w in txt.Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] a = w.Split(':');
+                double t; int st;
+                if (a.Length == 2 && double.TryParse(a[0], NumberStyles.Float, CultureInfo.InvariantCulture, out t) && int.TryParse(a[1], out st) && t > 0 && st >= 0)
+                    list.Add(new KeyValuePair<double, int>(t, st));
+            }
+            list.Sort((x, y) => x.Key.CompareTo(y.Key));
+            return list;
+        }
 
         // Ostatni stage rakiety zapamiętany dla każdego statku (nazwa) – PluginData/rakiety.cfg, zapisywany sam przy starcie.
         // Nie da się go wykryć automatycznie: Blok L pod Mołnią i silnik Sojuza pod kapsułą wyglądają w drzewie części tak samo,
@@ -2011,6 +2058,9 @@ namespace RSSBalancer
                         aoLastStage = FlightPrograms.LastStageOverride >= 0 ? FlightPrograms.LastStageOverride
                                     : saved >= 0 ? saved : ls != null ? Math.Max(0, (int)Num(ls, 0)) : 0;
                         if (FlightPrograms.LastStageOverride >= 0) FlightPrograms.SaveLastStage(vessel.vesselName, aoLastStage);
+                        string sa = FlightPrograms.StageAtOverride ?? FlightPrograms.SavedStageAt(vessel.vesselName) ?? n.GetValue("stageAt");
+                        if (FlightPrograms.StageAtOverride != null) FlightPrograms.SaveStageAt(vessel.vesselName, FlightPrograms.StageAtOverride);
+                        aoStageAt = FlightPrograms.ParseStageAt(sa); aoStageAtIdx = 0;
                         LastMessage += "\n" + StartAutoOrbit(val);
                     }
                     else if (key == "orbittarget")
@@ -2129,6 +2179,8 @@ namespace RSSBalancer
         private AO aoPhase = AO.None;
         private double aoAlt, aoAp, aoInc, aoStartUT, nextAoLog;
         private int aoLastStage;
+        private List<KeyValuePair<double, int>> aoStageAt = new List<KeyValuePair<double, int>>();
+        private int aoStageAtIdx;
         public string AutoOrbitInfo = "";
 
         private string StartAutoOrbit(string val)
@@ -2266,6 +2318,18 @@ namespace RSSBalancer
             {
                 AutoOrbitInfo = "wznoszenie: apogeum " + (o.ApA / 1000).ToString("F0", Inv) + " km, perygeum " + (o.PeA / 1000).ToString("F0", Inv) + " km, cel " + aoAlt.ToString("F0", Inv) + " km";
                 if (now > nextAoLog) { nextAoLog = now + 20; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); }
+                // Stage o czasie (np. wieża SAS T+114 s, owiewka T+157 s – MechJeb ich nie odpali, bo nic się wtedy nie wypala).
+                // Odpala tylko, gdy NASTĘPNY stage to dokładnie ten z listy – jeśli już poszedł (MechJeb, ręcznie), pomija.
+                if (aoStageAtIdx < aoStageAt.Count && vessel.missionTime >= aoStageAt[aoStageAtIdx].Key)
+                {
+                    var ev = aoStageAt[aoStageAtIdx++];
+                    if (vessel.currentStage - 1 == ev.Value && ev.Value >= aoLastStage)
+                    {
+                        StageManager.ActivateNextStage();
+                        FlightLogger.Event("Start na orbitę: stage " + ev.Value + " o czasie T+" + ev.Key.ToString("F0", Inv) + " s");
+                    }
+                    else FlightLogger.Event("Start na orbitę: stage " + ev.Value + " (T+" + ev.Key.ToString("F0", Inv) + " s) pominięty – następny stage to " + (vessel.currentStage - 1));
+                }
                 bool mjOff = now - aoStartUT > 10 && !AscentEnabled();
                 bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= aoLastStage && vessel.altitude > atmTop;
                 bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;

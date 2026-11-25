@@ -56,7 +56,7 @@ namespace RSSBalancer
         private Vector2 progScroll;
         private int progSel;
         private int aoFor = -1;
-        private string aoPe = "", aoAp = "", aoInc = "", aoCheck = "", aoLast = "";
+        private string aoPe = "", aoAp = "", aoInc = "", aoCheck = "", aoLast = "", aoStageAtTxt = "";
 
         private int AoLastStage(FlightPrograms.Program p)
         {
@@ -840,6 +840,8 @@ namespace RSSBalancer
                 int saved = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null ? FlightPrograms.SavedLastStage(FlightGlobals.ActiveVessel.vesselName) : -1;
                 int file = FlightPrograms.LastStageFromFile(p);
                 aoLast = (saved >= 0 ? saved : file).ToString();
+                string sat = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null ? FlightPrograms.SavedStageAt(FlightGlobals.ActiveVessel.vesselName) : null;
+                aoStageAtTxt = sat ?? "";
             }
             GUILayout.Space(4f);
             GUILayout.Label("Orbita docelowa (puste = auto: niska orbita nad atmosferą, nachylenie = szerokość startu; apogeum puste = orbita kołowa):");
@@ -852,6 +854,12 @@ namespace RSSBalancer
             GUILayout.Label(new GUIContent("Ostatni stage rakiety", "Najniższy numer stage'a, który jest jeszcze rakietą. Niższe stage'e (statek: oddzielenie, silnik statku, lądowanie) MechJeb pominie i nie odpali, Δv liczone bez nich. 0 = wszystkie. Zapamiętuje się dla tego statku przy starcie."), GUILayout.Width(150f));
             aoLast = GUILayout.TextField(aoLast, GUILayout.Width(40f));
             GUILayout.Label(AoLastStage(p) > 0 ? "  stage'e < " + AoLastStage(p) + " to statek – MechJeb ich nie odpali" : "  0 = MechJeb stage'uje do końca (np. Blok L + satelita)");
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(new GUIContent("Stage o czasie", "Pary czas lotu [s]:numer stage'a, np. „114:8 157:6” – wieża SAS i owiewka Sojuza. Program odpala dany stage o czasie, tylko jeśli jest następny w kolejce. Zapamiętuje się dla tego statku."), GUILayout.Width(150f));
+            aoStageAtTxt = GUILayout.TextField(aoStageAtTxt, GUILayout.Width(160f));
+            int nEv = FlightPrograms.ParseStageAt(aoStageAtTxt).Count;
+            GUILayout.Label(nEv > 0 ? "  " + nEv + " zdarzeń" : "  puste = brak");
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Sprawdź", GUILayout.Width(90f)))
@@ -907,6 +915,7 @@ namespace RSSBalancer
                     bool hasAo = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]);
                     FlightPrograms.AutoOrbitOverride = hasAo ? AutoOrbitText() : "";
                     FlightPrograms.LastStageOverride = hasAo ? AoLastStage(FlightPrograms.Programs[progSel]) : -1;
+                    FlightPrograms.StageAtOverride = hasAo ? aoStageAtTxt : null;
                     run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage;
                 }
             }
