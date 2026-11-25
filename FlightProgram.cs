@@ -2095,6 +2095,16 @@ namespace RSSBalancer
             if (m != null) m.Invoke(pool, new object[] { this });
         }
 
+        // Gdy wiadomo, gdzie kończy się rakieta („Ostatni stage rakiety” > 0), po wejściu na orbitę program sam oddziela
+        // statek od ostatniego stopnia – jeden stage (np. Sojuz: stage 4 = oddzielenie od Bloku I). Dalej nic nie stage'uje.
+        private void SeparatePayload()
+        {
+            if (aoLastStage <= 0 || vessel == null || vessel.currentStage != aoLastStage) return;
+            StageManager.ActivateNextStage();
+            FlightLogger.Event("Start na orbitę: oddzielenie statku od rakiety (stage " + (aoLastStage - 1) + ")");
+            ScreenMessages.PostScreenMessage("Statek oddzielony od rakiety", 5f, ScreenMessageStyle.UPPER_CENTER);
+        }
+
         private string MechJebAscent(bool on)
         {
             object core = Core();
@@ -2262,7 +2272,9 @@ namespace RSSBalancer
                 // 1.42.2 (Sojuz 7K-T 25.11): MechJeb wszedł na orbitę 200 km i nie wyłączył silnika – Blok I palił do końca
                 // paliwa i zrobił 200 × 3079 km. Gdy perygeum jest już nad atmosferą, a apogeum doszło do celu – wyłączamy sami,
                 // resztę (podniesienie perygeum do celu) robi „domykanie orbity”.
-                bool overshoot = now - aoStartUT > 30 && o.PeA > atmTop && o.ApA >= aoAp * 1000 && EngineThrustKN() > 0.01;
+                // tylko awaryjnie: apogeum UCIEKA ponad cel (lot 16:20: 209 → 297 km w 2 s). Gdy apogeum stoi przy celu, MechJeb
+                // sam kończy (lot 17:13: wyłączenie przy 141 × 222 km było za wczesne – jemu brakowało 1–2 s).
+                bool overshoot = now - aoStartUT > 30 && o.PeA > atmTop && o.ApA >= aoAp * 1000 + Math.Max(10000, aoAp * 1000 * 0.05) && EngineThrustKN() > 0.01;
                 if (!(mjOff || fuelOut || inOrbit || overshoot)) return;
                 MechJebAscent(false);
                 if (overshoot)
@@ -2276,6 +2288,7 @@ namespace RSSBalancer
                     aoPhase = AO.Done; AutoOrbitInfo = "na orbicie " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km, " + o.inclination.ToString("F1", Inv) + "°";
                     FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo + ", Δv zostało " + (StockDeltaV.TotalVacFrom(aoLastStage, out double rest) ? rest.ToString("F0", Inv) : "?") + " m/s");
                     ScreenMessages.PostScreenMessage("Na orbicie: " + AutoOrbitInfo, 6f, ScreenMessageStyle.UPPER_CENTER);
+                    SeparatePayload();
                     return;
                 }
                 if (o.eccentricity >= 1 || vessel.altitude < atmTop * 0.6) { aoPhase = AO.Failed; AutoOrbitInfo = "wznoszenie przerwane nisko – rakieta nie dała rady"; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); return; }
@@ -2293,6 +2306,7 @@ namespace RSSBalancer
                     aoPhase = AO.Done; AutoOrbitInfo = "na orbicie " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km, " + o.inclination.ToString("F1", Inv) + "°";
                     FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo);
                     ScreenMessages.PostScreenMessage("Na orbicie: " + AutoOrbitInfo, 6f, ScreenMessageStyle.UPPER_CENTER);
+                    SeparatePayload();
                 }
             }
         }
