@@ -2179,6 +2179,9 @@ namespace RSSBalancer
             string[][] asc = {
                 new[] { "AscentTypeInteger", "1" }, new[] { "DesiredOrbitAltitude", (altKm * 1000).ToString("F0", Inv) },
                 new[] { "DesiredApoapsis", (apKm * 1000).ToString("F0", Inv) }, new[] { "AttachAltFlag", "False" },
+                // 1.42.3: MechJeb wstawiał na stałej wysokości 200 km (DesiredAttachAltFixed z jego zapisanych ustawień) mimo celu 220 –
+                // sprzeczny cel, PVG palił do końca paliwa (200 × 3079 km). Wysokość wstawienia = perygeum celu.
+                new[] { "DesiredAttachAltFixed", (altKm * 1000).ToString("F0", Inv) }, new[] { "DesiredAttachAlt", (altKm * 1000).ToString("F0", Inv) },
                 new[] { "DesiredInclination", inc.ToString("F2", Inv) }, new[] { "LastStage", aoLastStage.ToString(Inv) }, new[] { "OptimizeStageFlag", "False" },
                 new[] { "CoastStageFlag", "False" }, new[] { "UnguidedStagesFlag", "False" }, new[] { "SkipCircularization", "False" },
                 new[] { "PitchStartVelocity", pitchStart.ToString("F0", Inv) }, new[] { "PitchRate", "0.75" },
@@ -2256,8 +2259,17 @@ namespace RSSBalancer
                 bool mjOff = now - aoStartUT > 10 && !AscentEnabled();
                 bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= aoLastStage && vessel.altitude > atmTop;
                 bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;
-                if (!(mjOff || fuelOut || inOrbit)) return;
+                // 1.42.2 (Sojuz 7K-T 25.11): MechJeb wszedł na orbitę 200 km i nie wyłączył silnika – Blok I palił do końca
+                // paliwa i zrobił 200 × 3079 km. Gdy perygeum jest już nad atmosferą, a apogeum doszło do celu – wyłączamy sami,
+                // resztę (podniesienie perygeum do celu) robi „domykanie orbity”.
+                bool overshoot = now - aoStartUT > 30 && o.PeA > atmTop && o.ApA >= aoAp * 1000 && EngineThrustKN() > 0.01;
+                if (!(mjOff || fuelOut || inOrbit || overshoot)) return;
                 MechJebAscent(false);
+                if (overshoot)
+                {
+                    vessel.ctrlState.mainThrottle = 0f; FlightInputHandler.state.mainThrottle = 0f;
+                    FlightLogger.Event("Start na orbitę: apogeum doszło do celu przy perygeum nad atmosferą (" + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km) – wyłączam silnik, MechJeb nie wyłączył");
+                }
                 bool good = o.PeA > atmTop + 5000 && Math.Abs(o.ApA / 1000 - aoAp) < aoAp * 0.1 + 10 && Math.Abs(o.PeA / 1000 - aoAlt) < aoAlt * 0.1 + 10 && Math.Abs(o.inclination - aoInc) < 1.0;
                 if (good)
                 {
