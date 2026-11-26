@@ -204,17 +204,69 @@ namespace RSSBalancer
             return !double.IsNaN(L);
         }
 
+        static bool HasDockingPort(Vessel v)
+        {
+            if (v.loaded) { foreach (Part p in v.parts) if (p.FindModuleImplementing<ModuleDockingNode>() != null) return true; return false; }
+            if (v.protoVessel == null) return false;
+            foreach (ProtoPartSnapshot pp in v.protoVessel.protoPartSnapshots)
+                foreach (ProtoPartModuleSnapshot m in pp.modules) if (m.moduleName == "ModuleDockingNode") return true;
+            return false;
+        }
+
+        /// <summary>Statki, do których da się polecieć z tej wyrzutni: na orbicie wokół tego ciała, nachylenie ≥ szerokość startu,
+        /// 120–1000 km; bez odłamków, asteroid, EVA i własnych stopni. Najpierw cel z programu, potem z portem dokującym.</summary>
+        List<Vessel> RendezvousCandidates(string targetName)
+        {
+            var list = new List<Vessel>();
+            string own = vessel.vesselName.ToUpperInvariant(), key = (targetName ?? "").Trim().ToUpperInvariant();
+            double lat = Math.Abs(vessel.latitude);
+            foreach (Vessel o in FlightGlobals.Vessels)
+            {
+                if (o == null || o == vessel || o.mainBody != vessel.mainBody || o.situation != Vessel.Situations.ORBITING) continue;
+                if (o.vesselType == VesselType.Debris || o.vesselType == VesselType.SpaceObject || o.vesselType == VesselType.EVA || o.vesselType == VesselType.Flag || o.vesselType == VesselType.DroppedPart) continue;
+                if (o.vesselName.ToUpperInvariant().StartsWith(own)) continue;
+                Orbit ob = o.orbit;
+                if (ob.PeA < 120000 || ob.ApA > 1000000 || ob.eccentricity > 0.05) continue;
+                double inc = ob.inclination > 90 ? 180 - ob.inclination : ob.inclination;
+                if (inc < lat - 0.3) continue;
+                list.Add(o);
+            }
+            Func<Vessel, int> rank = o => (key.Length > 0 && o.vesselName.ToUpperInvariant() == key ? 0 : key.Length > 0 && o.vesselName.ToUpperInvariant().Contains(key) ? 1 : 2) * 2 + (HasDockingPort(o) ? 0 : 1);
+            list.Sort((a, b) => { int c = rank(a).CompareTo(rank(b)); return c != 0 ? c : string.Compare(a.vesselName, b.vesselName, StringComparison.Ordinal); });
+            if (list.Count > 14) list.RemoveRange(14, list.Count - 14);
+            return list;
+        }
+
         void AskRendezvousWindow(string targetName)
         {
-            Vessel tgt = FindTarget(targetName);
-            if (tgt == null)
+            launchHoldUT = double.PositiveInfinity;
+            List<Vessel> cands = RendezvousCandidates(targetName);
+            if (cands.Count == 0)
             {
-                FlightLogger.Event("Spotkanie: nie ma celu „" + targetName + "” na orbicie – start bez okna");
+                FlightLogger.Event("Spotkanie: na orbicie nie ma żadnego osiągalnego celu");
                 PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), "RSSBalancerRdvWindow", "Spotkanie na orbicie",
-                    "Nie znalazłem celu „" + targetName + "” na orbicie. Wybierz go jako cel (mapa → Set as Target) i uruchom program ponownie.", "OK", false, HighLogic.UISkin);
+                    "Na orbicie nie ma statku, do którego da się polecieć z tej wyrzutni (nachylenie co najmniej " + Math.Abs(vessel.latitude).ToString("F1", Inv) + "°, wysokość 120–1000 km).", "OK", false, HighLogic.UISkin);
                 launchHoldUT = double.NaN; Stop();
                 return;
             }
+            var opts = new List<DialogGUIBase>();
+            foreach (Vessel c in cands)
+            {
+                Vessel cc = c;
+                string lbl = c.vesselName + "  –  " + (c.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (c.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + c.orbit.inclination.ToString("F1", Inv) + "°" + (HasDockingPort(c) ? ", port dokujący" : ", bez portu");
+                opts.Add(new DialogGUIButton(lbl, () => RendezvousWindowFor(cc), 520f, 26f, true));
+            }
+            opts.Add(new DialogGUIButton("Anuluj", () => { launchHoldUT = double.NaN; Stop(); }, 520f, 26f, true));
+            PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog("RSSBalancerRdvTarget", "Do kogo lecimy? (na górze cel z programu i statki z portem dokującym)", "Spotkanie na orbicie – wybór celu", HighLogic.UISkin, 560f,
+                    new DialogGUIVerticalLayout(opts.ToArray())),
+                false, HighLogic.UISkin);
+        }
+
+        void RendezvousWindowFor(Vessel tgt)
+        {
+            FlightLogger.Event("Spotkanie: wybrany cel „" + tgt.vesselName + "” " + (tgt.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (tgt.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + tgt.orbit.inclination.ToString("F2", Inv) + "°");
+            FlightGlobals.fetch.SetVesselTarget(tgt, true);
             rdvTarget = tgt;
             double L, th, dv, td; int b3;
             if (!FindRendezvousWindow(tgt, 30, out L, out b3, out th, out dv, out td))

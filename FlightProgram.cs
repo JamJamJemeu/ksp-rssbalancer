@@ -2229,6 +2229,7 @@ namespace RSSBalancer
             double peKm, apKm, inc;
             FlightPrograms.ParseAutoOrbit(val, b, out peKm, out apKm, out inc);
             if (double.IsNaN(inc)) inc = Math.Ceiling(lat * 10) / 10;
+            if (rdvTarget != null && rdv == RDV.None && rdvTarget.state != Vessel.State.DEAD) inc = Math.Round(rdvTarget.orbit.inclination, 2);   // spotkanie: płaszczyzna celu
             double altKm = peKm;
             string incNote = "";
             if (inc < lat) { incNote = " (" + inc.ToString("F1", Inv) + "° niemożliwe ze startu na " + lat.ToString("F1", Inv) + "° – biorę " + Math.Ceiling(lat * 10) / 10 + "°)"; inc = Math.Ceiling(lat * 10) / 10; }
