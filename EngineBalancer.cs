@@ -912,6 +912,11 @@ namespace RSSBalancer
             {
                 if (GUILayout.Button("Start programu"))
                 {
+                    // plik programu czytany od nowa – zmiany w .cfg działają bez restartu KSP
+                    string selName = FlightPrograms.Programs[progSel].name;
+                    FlightPrograms.Reload();
+                    int ix = FlightPrograms.Programs.FindIndex(x => x.name == selName);
+                    if (ix >= 0) progSel = ix; else progSel = Math.Min(progSel, FlightPrograms.Programs.Count - 1);
                     bool hasAo = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]);
                     FlightPrograms.AutoOrbitOverride = hasAo ? AutoOrbitText() : "";
                     FlightPrograms.LastStageOverride = hasAo ? AoLastStage(FlightPrograms.Programs[progSel]) : -1;

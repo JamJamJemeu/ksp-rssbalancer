@@ -100,10 +100,33 @@ namespace RSSBalancer
     {
         // kalibracja wynoszenia Sojuza z lotu 25.11 17:13 (wyrzutnia 46,0083° N 63,3055° E → wstawienie T+497,7 s
         // 51,0864° N 85,9818° E); dla 51,6° z Bajkonuru
-        const double RdvAscT = 498.0, RdvInsDLat = 5.0781, RdvInsDLon = 22.6763;
-        const double RdvStop = 10000;          // przybycie 10 km za celem – dalej „Igła” (MechJeb)
-        const double RdvRMinAlt = 195000;
-        const double RdvPlaneMin = 0.1;        // [°] mniejszej różnicy płaszczyzn nie korygujemy osobnym impulsem (0,1° ≈ 14 m/s)      // orbita fazująca nie niżej (powyżej perygeum wstawienia)
+        // Ustawienia spotkania – domyślne jak 7K-T; każde można nadpisać w pliku programu (FLIGHT_PROGRAM { klucz = wartość }),
+        // pliki programów są czytane z dysku przy każdym „Start programu” – zmiana bez restartu KSP.
+        double RdvAscT = 498.0, RdvInsDLat = 5.0781, RdvInsDLon = 22.6763;   // rdv.ascentTime, rdv.insertionDLat, rdv.insertionDLon
+        double RdvStop = 10000;          // rdv.arriveBehindKm – przybycie za celem, dalej „Igła” (MechJeb)
+        double RdvRMinAlt = 195000;      // rdv.phasingMinKm – orbita fazująca nie niżej
+        double RdvPlaneMin = 0.1;        // rdv.planeMinDeg – mniejszej różnicy płaszczyzn nie korygujemy osobnym impulsem
+        int RdvWindowDays = 30;          // rdv.windowDays – jak daleko szukać okna startowego
+        int RdvB1Revs = 3;               // rdv.b1AfterRevs – impuls 1 po tylu obiegach (3 → 4. okrążenie)
+        int RdvB3Orbit1 = 17, RdvB3Orbit2 = 33;   // rdv.b3Orbit, rdv.b3OrbitSlow – okrążenie zbliżenia (profil 1- i 2-dobowy)
+        double RdvEngineDelay = 3;       // rdv.engineDelay – [s] po oddzieleniu: stage silnika statku (KTDU + panele); < 0 = wcale
+        string RdvMjDist = "100", RdvMjSpeed = "5";   // rdv.mechjebDistance [m], rdv.mechjebMaxSpeed [m/s]
+        double RdvDockStart = 200, RdvDockStartSpeed = 0.5;   // rdv.dockStartDistance [m], rdv.dockStartSpeed [m/s]
+        string RdvDockSpeed = "0.3";     // rdv.dockSpeed [m/s] – „Igła”: 0,1–0,35 m/s przy styku
+
+        void LoadRendezvousSettings(ConfigNode n)
+        {
+            Func<string, double, double> d = (k, def) => { string v = n != null ? n.GetValue(k) : null; double x; return v != null && double.TryParse(v.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out x) ? x : def; };
+            Func<string, string, string> t = (k, def) => { string v = n != null ? n.GetValue(k) : null; return string.IsNullOrEmpty(v) ? def : v.Trim().Replace(',', '.'); };
+            RdvAscT = d("rdv.ascentTime", 498.0); RdvInsDLat = d("rdv.insertionDLat", 5.0781); RdvInsDLon = d("rdv.insertionDLon", 22.6763);
+            RdvStop = d("rdv.arriveBehindKm", 10) * 1000; RdvRMinAlt = d("rdv.phasingMinKm", 195) * 1000; RdvPlaneMin = d("rdv.planeMinDeg", 0.1);
+            RdvWindowDays = (int)d("rdv.windowDays", 30); RdvB1Revs = (int)d("rdv.b1AfterRevs", 3);
+            RdvB3Orbit1 = (int)d("rdv.b3Orbit", 17); RdvB3Orbit2 = (int)d("rdv.b3OrbitSlow", 33);
+            RdvEngineDelay = d("rdv.engineDelay", 3);
+            RdvMjDist = t("rdv.mechjebDistance", "100"); RdvMjSpeed = t("rdv.mechjebMaxSpeed", "5");
+            RdvDockStart = d("rdv.dockStartDistance", 200); RdvDockStartSpeed = d("rdv.dockStartSpeed", 0.5); RdvDockSpeed = t("rdv.dockSpeed", "0.3");
+            sepFarDist = d("separationFar", 500);
+        }
 
         enum RDV { None, Plane, PlaneBurn, B1, B1Burn, B2, B2Burn, B3, B3Burn, B4, B4Burn, Mj, Dock, Done, Failed }
         RDV rdv = RDV.None;
@@ -184,22 +207,22 @@ namespace RSSBalancer
                 }
                 prev = cur;
             }
-            foreach (int prof in new[] { 17, 33 })
+            foreach (int prof in new[] { RdvB3Orbit1, RdvB3Orbit2 })
                 foreach (double Lc in cands)
                 {
                     Vector3d pIns = inert(insLat, insLon, Lc + RdvAscT);
                     Vector3d pT = RelPos(to, Lc + RdvAscT).normalized;
                     double th0 = RdvPlanner.Wrap2Pi(RdvPlanner.SignedAngle(pIns, pT, n));
-                    double th1 = th0 + nT * 3 * TI - 6 * Math.PI;
-                    double dtB3 = (prof - 1) * TI + RdvAscT - 3 * TI;
+                    double th1 = th0 + nT * RdvB1Revs * TI - 2 * Math.PI * RdvB1Revs;
+                    double dtB3 = (prof - 1) * TI + RdvAscT - RdvB1Revs * TI;
                     double d, te, thU;
                     double rph = RdvPlanner.SolveAnyPhase(mu, th1, rp, ra, rT, dtB3, RdvStop, R + RdvRMinAlt, out d, out te, out thU);
                     if (double.IsNaN(rph)) continue;
                     if (double.IsNaN(L) || Lc < L - 1)
                     {
                         // profil dwudobowy tylko, gdy jednodobowy jest dużo później (> 2 doby)
-                        if (prof == 33 && !double.IsNaN(L) && L - Lc < 2 * 86400) continue;
-                        L = Lc; b3 = prof; theta = th0; dv = d; tDock = te + 3 * TI + RdvAscT;
+                        if (prof == RdvB3Orbit2 && !double.IsNaN(L) && L - Lc < 2 * 86400) continue;
+                        L = Lc; b3 = prof; theta = th0; dv = d; tDock = te + RdvB1Revs * TI + RdvAscT;
                     }
                     break;      // dla danego profilu interesuje nas pierwsze dobre okno
                 }
@@ -271,11 +294,11 @@ namespace RSSBalancer
             FlightGlobals.fetch.SetVesselTarget(tgt, true);
             rdvTarget = tgt;
             double L, th, dv, td; int b3;
-            if (!FindRendezvousWindow(tgt, 30, out L, out b3, out th, out dv, out td))
+            if (!FindRendezvousWindow(tgt, RdvWindowDays, out L, out b3, out th, out dv, out td))
             {
-                FlightLogger.Event("Spotkanie: brak okna w 30 dobach dla „" + tgt.vesselName + "”");
+                FlightLogger.Event("Spotkanie: brak okna w " + RdvWindowDays + " dobach dla „" + tgt.vesselName + "”");
                 PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), "RSSBalancerRdvWindow", "Spotkanie na orbicie",
-                    "W ciągu 30 dób nie ma okna na spotkanie z „" + tgt.vesselName + "” (orbita celu ma ślad prawie powtarzalny – faza się nie przesuwa). Zmień wysokość celu o kilka km i spróbuj ponownie.", "OK", false, HighLogic.UISkin);
+                    "W ciągu " + RdvWindowDays + " dób nie ma okna na spotkanie z „" + tgt.vesselName + "” (orbita celu ma ślad prawie powtarzalny – faza się nie przesuwa). Zmień wysokość celu o kilka km i spróbuj ponownie.", "OK", false, HighLogic.UISkin);
                 launchHoldUT = double.NaN; Stop();
                 return;
             }
@@ -284,7 +307,7 @@ namespace RSSBalancer
             CelestialBody b = vessel.mainBody;
             string msg = "Cel: „" + tgt.vesselName + "” " + (tgt.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (tgt.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + tgt.orbit.inclination.ToString("F1", Inv) + "°.\n\n" +
                          "Najbliższe okno: start za " + KSPUtil.PrintTimeCompact(L - now, false) + " (ok. " + HourText(SolarTimeAt(b, vessel.latitude, vessel.longitude, L)) + " czasu słonecznego Bajkonuru).\n" +
-                         "Profil " + (b3 == 17 ? "jednodobowy (jak 7K-T): manewry na 4. i 5. okrążeniu, zbliżenie na 17." : "dwudobowy: manewry na 4. i 5. okrążeniu, zbliżenie na 33.") + "\n" +
+                         "Profil " + (b3 == RdvB3Orbit1 ? "jednodobowy (jak 7K-T): manewry na 4. i 5. okrążeniu, zbliżenie na 17." : "dwudobowy: manewry na 4. i 5. okrążeniu, zbliżenie na 33.") + "\n" +
                          "Cel w chwili wstawienia " + (th * 180 / Math.PI).ToString("F0", Inv) + "° przed nami, manewry ok. " + dv.ToString("F0", Inv) + " m/s, dokowanie ok. " + (td / 3600).ToString("F1", Inv) + " h po starcie.\n\n" +
                          "Przyspieszyć czas do okna startowego?";
             FlightLogger.Event("Spotkanie: okno za " + KSPUtil.PrintTimeCompact(L - now, false) + ", profil B3 na " + b3 + ". okr., faza " + (th * 180 / Math.PI).ToString("F1", Inv) + "°, Δv ≈ " + dv.ToString("F0", Inv) + " m/s");
@@ -311,13 +334,13 @@ namespace RSSBalancer
             FlightGlobals.fetch.SetVesselTarget(tgt, true);
             rdvLaunchUT = Planetarium.GetUniversalTime() - vessel.missionTime;
             rdvDvUsed = 0; rdvEngine = false;
-            rdvEngineAt = Planetarium.GetUniversalTime() + 3;   // KTDU i panele zaraz po oddzieleniu (w RendezvousTick)
+            rdvEngineAt = RdvEngineDelay < 0 ? double.NaN : Planetarium.GetUniversalTime() + RdvEngineDelay;   // KTDU i panele zaraz po oddzieleniu (w RendezvousTick)
             Orbit me = vessel.orbit, to = tgt.orbit;
             double relInc = Vector3d.Angle(Vector3d.Cross(RelPos(me, 0 + Planetarium.GetUniversalTime()), RelVel(me, Planetarium.GetUniversalTime())),
                                            Vector3d.Cross(RelPos(to, Planetarium.GetUniversalTime()), RelVel(to, Planetarium.GetUniversalTime())));
             rdv = relInc > RdvPlaneMin ? RDV.Plane : RDV.B1;      // drobną różnicę wyrówna MechJeb przy zbliżaniu
             rdvBurnUT = double.NaN; rdvWarped = false;
-            string s = "Spotkanie z „" + tgt.vesselName + "”: profil " + (rdvB3Orbit == 17 ? "jednodobowy" : "dwudobowy") + ", różnica płaszczyzn " + relInc.ToString("F3", Inv) + "°";
+            string s = "Spotkanie z „" + tgt.vesselName + "”: profil " + (rdvB3Orbit == RdvB3Orbit1 ? "jednodobowy" : "dwudobowy") + ", różnica płaszczyzn " + relInc.ToString("F3", Inv) + "°";
             FlightLogger.Event(s);
             return s;
         }
@@ -434,7 +457,7 @@ namespace RSSBalancer
                     if (double.IsNaN(rdvBurnUT))
                     {
                         double T = me.period, tPe = now + me.timeToPe;
-                        double tMin = rdvLaunchUT + 3 * T;              // 4. okrążenie
+                        double tMin = rdvLaunchUT + RdvB1Revs * T;     // domyślnie 4. okrążenie
                         while (tPe < tMin) tPe += T;
                         double theta1 = PhaseAt(me, to, tPe);
                         // B3 jak w modelu okna: wstawienie + (n−1) obiegów + RdvAscT
@@ -527,7 +550,7 @@ namespace RSSBalancer
                 {
                     Vector3d rv = vessel.obt_velocity - rdvTarget.obt_velocity;
                     RendezvousInfo = "zbliżanie: " + dist.ToString("F0", Inv) + " m, prędkość względna " + rv.magnitude.ToString("F2", Inv) + " m/s";
-                    if (dist < 200 && rv.magnitude < 0.5) { RdvStopMj(); RdvStartDock(); }
+                    if (dist < RdvDockStart && rv.magnitude < RdvDockStartSpeed) { RdvStopMj(); RdvStartDock(); }
                     break;
                 }
                 case RDV.Dock:
@@ -568,8 +591,8 @@ namespace RSSBalancer
             rdvMjMod = core != null ? Module(core, "MechJebModuleRendezvousAutopilot") : null;
             if (rdvMjMod == null) { rdv = RDV.Failed; RdvLog("brak MechJeba (Rendezvous) – dokończ ręcznie"); return; }
             string err;
-            MechJebPresets.SetMember(rdvMjMod, "desiredDistance", "100", out err);
-            MechJebPresets.SetMember(rdvMjMod, "maxClosingSpeed", "5", out err);
+            MechJebPresets.SetMember(rdvMjMod, "desiredDistance", RdvMjDist, out err);
+            MechJebPresets.SetMember(rdvMjMod, "maxClosingSpeed", RdvMjSpeed, out err);
             object pool = Users(rdvMjMod); if (pool != null) PoolCall(pool, "Add");
             rdv = RDV.Mj;
         }
@@ -607,10 +630,10 @@ namespace RSSBalancer
             rdvDockMod = core != null ? Module(core, "MechJebModuleDockingAutopilot") : null;
             if (rdvDockMod == null) { rdv = RDV.Failed; RdvLog("brak MechJeba (Docking) – dokuj ręcznie"); return; }
             string err;
-            MechJebPresets.SetMember(rdvDockMod, "speedLimit", "0.3", out err);      // „Igła”: 0,1–0,35 m/s przy styku
+            MechJebPresets.SetMember(rdvDockMod, "speedLimit", RdvDockSpeed, out err);      // „Igła”: 0,1–0,35 m/s przy styku
             object pool = Users(rdvDockMod); if (pool != null) PoolCall(pool, "Add");
             rdv = RDV.Dock;
-            RdvLog("dokowanie: port „" + rdvMyPort.part.partInfo.title + "” → „" + rdvTgtPort.part.partInfo.title + "”, do 0,3 m/s");
+            RdvLog("dokowanie: port „" + rdvMyPort.part.partInfo.title + "” → „" + rdvTgtPort.part.partInfo.title + "”, do " + RdvDockSpeed + " m/s");
         }
 
         void RdvStopDock() { if (rdvDockMod != null) { object pool = Users(rdvDockMod); if (pool != null) PoolCall(pool, "Remove"); } rdvDockMod = null; }
