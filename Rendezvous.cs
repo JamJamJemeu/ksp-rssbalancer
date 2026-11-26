@@ -117,16 +117,14 @@ namespace RSSBalancer
 
         void LoadRendezvousSettings(ConfigNode n)
         {
-            Func<string, double, double> d = (k, def) => { string v = n != null ? n.GetValue(k) : null; double x; return v != null && double.TryParse(v.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out x) ? x : def; };
-            Func<string, string, string> t = (k, def) => { string v = n != null ? n.GetValue(k) : null; return string.IsNullOrEmpty(v) ? def : v.Trim().Replace(',', '.'); };
-            RdvAscT = d("rdv.ascentTime", 498.0); RdvInsDLat = d("rdv.insertionDLat", 5.0781); RdvInsDLon = d("rdv.insertionDLon", 22.6763);
-            RdvStop = d("rdv.arriveBehindKm", 10) * 1000; RdvRMinAlt = d("rdv.phasingMinKm", 195) * 1000; RdvPlaneMin = d("rdv.planeMinDeg", 0.1);
-            RdvWindowDays = (int)d("rdv.windowDays", 30); RdvNodeLate = d("rdv.nodeLateSec", 90); RdvB1Revs = (int)d("rdv.b1AfterRevs", 3);
-            RdvB3Orbit1 = (int)d("rdv.b3Orbit", 17); RdvB3Orbit2 = (int)d("rdv.b3OrbitSlow", 33);
-            RdvEngineDelay = d("rdv.engineDelay", 3);
-            RdvMjDist = t("rdv.mechjebDistance", "100"); RdvMjSpeed = t("rdv.mechjebMaxSpeed", "5");
-            RdvDockStart = d("rdv.dockStartDistance", 200); RdvDockStartSpeed = d("rdv.dockStartSpeed", 0.5); RdvDockSpeed = t("rdv.dockSpeed", "0.3");
-            sepFarDist = d("separationFar", 500);
+            // wartości z Tun (domyślne → Ustawienia.cfg → plik programu)
+            RdvAscT = Tun.D("rdv.ascentTime"); RdvInsDLat = Tun.D("rdv.insertionDLat"); RdvInsDLon = Tun.D("rdv.insertionDLon");
+            RdvStop = Tun.D("rdv.arriveBehindKm") * 1000; RdvRMinAlt = Tun.D("rdv.phasingMinKm") * 1000; RdvPlaneMin = Tun.D("rdv.planeMinDeg");
+            RdvWindowDays = Tun.I("rdv.windowDays"); RdvNodeLate = Tun.D("rdv.nodeLateSec"); RdvB1Revs = Tun.I("rdv.b1AfterRevs");
+            RdvB3Orbit1 = Tun.I("rdv.b3Orbit"); RdvB3Orbit2 = Tun.I("rdv.b3OrbitSlow");
+            RdvEngineDelay = Tun.D("rdv.engineDelay");
+            RdvMjDist = Tun.S("rdv.mechjebDistance"); RdvMjSpeed = Tun.S("rdv.mechjebMaxSpeed");
+            RdvDockStart = Tun.D("rdv.dockStartDistance"); RdvDockStartSpeed = Tun.D("rdv.dockStartSpeed"); RdvDockSpeed = Tun.S("rdv.dockSpeed");
         }
 
         enum RDV { None, Plane, PlaneBurn, B1, B1Burn, B2, B2Burn, B3, B3Burn, B4, B4Burn, Mj, Dock, Done, Failed }
@@ -386,15 +384,15 @@ namespace RSSBalancer
         {
             double now = Planetarium.GetUniversalTime();
             double start = tB - 0.5 * Math.Abs(dvEst) / MaxAccel();
-            if (!rdvWarped && start - now > 180)
+            if (!rdvWarped && start - now > 2 * Tun.D("burn.warpTo"))
             {
                 double nd; Vessel nv;
-                if (NearestNeighbour(out nd, out nv) >= SepSafeDist && TimeWarp.CurrentRateIndex == 0) { ProgWarpTo(start - 90); rdvWarped = true; }
+                if (NearestNeighbour(out nd, out nv) >= SepSafeDist && TimeWarp.CurrentRateIndex == 0) { ProgWarpTo(start - Tun.D("burn.warpTo")); rdvWarped = true; }
             }
             holdDir = Math.Sign(dvEst) >= 0 ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
             // przed impulsem zawsze bez przyspieszenia czasu – na szynach silnik nie pracuje
             // (lot 26.11 16:33: warp trwał jeszcze 650 s po węźle, korekta płaszczyzny poszła w złym miejscu)
-            if (now >= start - 60 && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+            if (now >= start - Tun.D("burn.warpStopLead") && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
             return now >= start;
         }
 
@@ -605,6 +603,7 @@ namespace RSSBalancer
             string err;
             MechJebPresets.SetMember(rdvMjMod, "desiredDistance", RdvMjDist, out err);
             MechJebPresets.SetMember(rdvMjMod, "maxClosingSpeed", RdvMjSpeed, out err);
+            foreach (var kv in Tun.Mj("rendezvous")) if (!MechJebPresets.SetMember(rdvMjMod, kv.Key, kv.Value, out err)) RdvLog("MechJeb Rendezvous: pole " + kv.Key + " nie przyjęte (" + err + ")");
             object pool = Users(rdvMjMod); if (pool != null) PoolCall(pool, "Add");
             rdv = RDV.Mj;
         }
@@ -642,7 +641,8 @@ namespace RSSBalancer
             rdvDockMod = core != null ? Module(core, "MechJebModuleDockingAutopilot") : null;
             if (rdvDockMod == null) { rdv = RDV.Failed; RdvLog("brak MechJeba (Docking) – dokuj ręcznie"); return; }
             string err;
-            MechJebPresets.SetMember(rdvDockMod, "speedLimit", RdvDockSpeed, out err);      // „Igła”: 0,1–0,35 m/s przy styku
+            MechJebPresets.SetMember(rdvDockMod, "speedLimit", RdvDockSpeed, out err);
+            foreach (var kv in Tun.Mj("docking")) if (!MechJebPresets.SetMember(rdvDockMod, kv.Key, kv.Value, out err)) RdvLog("MechJeb Docking: pole " + kv.Key + " nie przyjęte (" + err + ")");      // „Igła”: 0,1–0,35 m/s przy styku
             object pool = Users(rdvDockMod); if (pool != null) PoolCall(pool, "Add");
             rdv = RDV.Dock;
             RdvLog("dokowanie: port „" + rdvMyPort.part.partInfo.title + "” → „" + rdvTgtPort.part.partInfo.title + "”, do " + RdvDockSpeed + " m/s");

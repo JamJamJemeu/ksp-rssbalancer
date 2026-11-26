@@ -416,7 +416,8 @@ namespace RSSBalancer
         // Teraz, jak w prawdziwym locie (Buran odszedł od bloku Ц silnikami orientacji): dopóki jakiś statek jest
         // bliżej niż SepSafeDist – trzymamy bieżące położenie (żadnych obrotów skrzydłem/ogonem w rdzeń), RCS pcha nas
         // w kierunku „od niego” do prędkości rozejścia SepOpenSpeed, a warp jest zablokowany.
-        public const double SepSafeDist = 50.0, SepOpenSpeed = 1.0;   // 1.40.2: 150 → 50 m (symulacja: po 50 m prędkość rozejścia dalej rośnie odstęp – w ОДУ-1 ≥ 337 m tak samo jak przy 150 m)
+        public static double SepSafeDist { get { return Tun.D("sep.safeDist"); } }
+        public static double SepOpenSpeed { get { return Tun.D("sep.openSpeed"); } }   // 1.40.2: 150 → 50 m (symulacja: po 50 m prędkość rozejścia dalej rośnie odstęp – w ОДУ-1 ≥ 337 m tak samo jak przy 150 m)
         private bool sepOn, warpAfterSep; private Vessel sepVessel, sepFbwVessel; private Vector3d sepHold; private double sepStart;
         public string SeparationInfo = "";
 
@@ -444,8 +445,8 @@ namespace RSSBalancer
         // Lot 24.11 12:05: odejście 150 m „po prostu od rdzenia” zostawiło rdzeń prawie na linii lotu; ОДУ-1 (wzdłuż
         // prędkości) poprowadził Burana prosto na niego (zbliżanie 8 m/s przy 150 m). Teraz odchodzimy W BOK od kierunku
         // lotu (składowa „od rdzenia” prostopadła do prędkości), a manewr czeka, aż odsunięcie w bok ≥ SepLateral.
-        public const double SepLateral = 40.0;
-        private double sepFarDist = 500.0;      // „separationFar” w pliku programu
+        public static double SepLateral { get { return Tun.D("sep.lateral"); } }
+        private double sepFarDist { get { return Tun.D("sep.far"); } }
         private Vector3d PushDir(Vessel o)
         {
             Vector3d rel = vessel.CoMD - o.CoMD, vdir = vessel.obt_velocity.normalized;
@@ -502,7 +503,7 @@ namespace RSSBalancer
             double lat = n == null ? double.PositiveInfinity : LateralDist(n);
             // 1.43.3: dalej niż SepFarDist nic nam nie grozi – lot 26.11 15:11: Blok I 2,2 km z przodu na tej samej orbicie
             // (w bok < 40 m) znów włączył odchodzenie na RCS i zatrzymał warp.
-            if (n == null || d >= sepFarDist || (d >= SepSafeDist && lat >= SepLateral) || (sepOn && now - sepStart > 300))
+            if (n == null || d >= sepFarDist || (d >= SepSafeDist && lat >= SepLateral) || (sepOn && now - sepStart > Tun.D("sep.maxTime")))
             {
                 if (sepOn)
                 {
@@ -593,8 +594,8 @@ namespace RSSBalancer
             mLastDv = Math.Min(mLastDv, m);
             EnsureBurnEngines();
             double a = AccelNow();
-            float thr = (float)Math.Max(0.02, Math.Min(1, m / (a * 1.5)));
-            FlightInputHandler.state.mainThrottle = attError < 3 ? thr : 0f;
+            float thr = (float)Math.Max(Tun.D("burn.minThrottle"), Math.Min(1, m / (a * Tun.D("burn.vectorSoftK"))));
+            FlightInputHandler.state.mainThrottle = attError < Tun.D("burn.attTol") ? thr : 0f;
             return false;
         }
 
@@ -606,7 +607,7 @@ namespace RSSBalancer
             if (err <= 0) return true;
             EnsureBurnEngines();
             double a = AccelNow();
-            FlightInputHandler.state.mainThrottle = attError < 3 ? (float)Math.Max(0.02, Math.Min(1, err / 5000.0)) : 0f;   // err w m
+            FlightInputHandler.state.mainThrottle = attError < Tun.D("burn.attTol") ? (float)Math.Max(Tun.D("burn.minThrottle"), Math.Min(1, err / Tun.D("burn.axisSoftM"))) : 0f;   // err w m
             return false;
         }
 
@@ -769,7 +770,10 @@ namespace RSSBalancer
         // mu 289 km (> 200), więc go odrzucił, a pozostałe przeloty były nocne. Okno liczy teraz przeloty dokładnie tak
         // jak planer (wejście na entryRange, odejście boczne z kierunku toru, lądowanie = wejście + 1900 s) i z zapasem:
         // odejście ≤ 90 % maxCrossRange, Słońce ≥ 12°. Sprawdzone offline: model 281 km vs log 289 km dla tego przelotu.
-        private const double LwLag = 18, LwLandAfterEntry = 1900, LwSun = 12, LwMaxH = 30;
+        private static double LwLag { get { return Tun.D("lw.lag"); } }
+        private static double LwLandAfterEntry { get { return Tun.D("lw.landAfterEntry"); } }
+        private static double LwSun { get { return Tun.D("lw.sunDeg"); } }
+        private static double LwMaxH { get { return Tun.D("lw.maxHours"); } }
         private double lwEntryKm = 7000, lwMaxXrKm = 200, lwMaxXrLeftKm = 200, lwMinEntryS = 3600;
         // 1.41.2 (lot 24.11 18:34 – „za dużo orbit, 1K1 zrobił dwie”): prawdziwy 1K1 wszedł w atmosferę na 2. okrążeniu
         // (impuls T+2:20, lądowanie T+3:25). Ten przelot mija lotnisko o ~820 km w prawo, więc limit 200 km go odrzucał.
@@ -1222,6 +1226,8 @@ namespace RSSBalancer
             FlightLogger.StartFor(vessel);
             FlightLogger.Event("Program lotu: start „" + p.name + "”");
             Debug.Log("[RSSBalancer] Program lotu: start " + p.name);
+            string tunInfo = Tun.Load(p.node);
+            if (tunInfo.Length > 0) FlightLogger.Event(tunInfo);
             LoadRendezvousSettings(p.node);
             rdv = RDV.None; rdvTarget = null; rdvB3Orbit = RdvB3Orbit1; rdvEngineAt = double.NaN; RendezvousInfo = ""; sepPayloadUT = double.NaN;
             if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("launchWindow"))
@@ -1484,7 +1490,7 @@ namespace RSSBalancer
             SeparatePayloadTick();
             RendezvousTick();
             WarpNeighbourGuard();
-            if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
+            if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < Tun.D("burn.alignedTol") ? 1f : 0f;
             // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
             // – przy warpie ×100 000 to wypadało godziny przed impulsem, a nagłe zrzucenie warpa z takiej prędkości
             // (powtarzane, bo warp znów ruszał) psuło orbitę: lot 22:11 155×155 → 173×136 km, lot 23:14 251×263 → 484×42 km.
@@ -1579,7 +1585,7 @@ namespace RSSBalancer
                 case "lat": return v.latitude;
                 case "lon": return v.longitude;
                 case "mach": return v.mach;
-                case "aligned": return holdAttitude && attError < 5.0 ? 1 : 0;
+                case "aligned": return holdAttitude && attError < Tun.D("burn.alignedTol") ? 1 : 0;
                 case "rwydist": return approachOn || rwySet ? RunwayDistance() / 1000.0 : double.NaN;
                 case "landed": return vessel.Landed ? 1 : 0;
                 case "siteangle": return SiteAngle(false);
@@ -2178,8 +2184,8 @@ namespace RSSBalancer
                     ModuleEngines e = pm as ModuleEngines;
                     if (e != null && e.EngineIgnited && p.inverseStage >= aoLastStage) { e.Shutdown(); off++; }
                 }
-            sepPayloadUT = Planetarium.GetUniversalTime() + 3.0;
-            FlightLogger.Event("Start na orbitę: wyłączone silniki rakiety (" + off + "), oddzielenie statku za 3 s");
+            sepPayloadUT = Planetarium.GetUniversalTime() + Tun.D("ao.payloadSepDelay");
+            FlightLogger.Event("Start na orbitę: wyłączone silniki rakiety (" + off + "), oddzielenie statku za " + Tun.D("ao.payloadSepDelay").ToString("F0", Inv) + " s");
         }
 
         private void SeparatePayloadTick()
@@ -2259,7 +2265,7 @@ namespace RSSBalancer
                     if (si == null || si.deltaVinVac < 1 || si.stage < aoLastStage) continue;
                     string line = "  stopień " + si.stage + ": Δv " + si.deltaVinVac.ToString("F0", Inv) + " m/s, TWR " + (first ? si.TWRASL.ToString("F2", Inv) + " (ziemia)" : si.TWRVac.ToString("F2", Inv)) +
                                   ", czas pracy " + si.stageBurnTime.ToString("F0", Inv) + " s";
-                    if (first && si.TWRASL < 1.15) { line += "  ← za mały ciąg na start"; weak += "stopień " + si.stage + " (TWR startowy " + si.TWRASL.ToString("F2", Inv) + "); "; }
+                    if (first && si.TWRASL < Tun.D("ao.minTwr")) { line += "  ← za mały ciąg na start"; weak += "stopień " + si.stage + " (TWR startowy " + si.TWRASL.ToString("F2", Inv) + "); "; }
                     else if (!first && si.TWRVac < 0.35 && si.stageBurnTime > 600) { line += "  ← słaby ciąg, długie palenie (straty)"; weak += "stopień " + si.stage + " (TWR " + si.TWRVac.ToString("F2", Inv) + "); "; }
                     rep.Add(line); first = false;
                 }
@@ -2277,7 +2283,7 @@ namespace RSSBalancer
             List<PartModule> cores = new List<PartModule>();
             foreach (Part p in vessel.parts) foreach (PartModule pm in p.Modules) if (pm.GetType().Name == "MechJebCore") cores.Add(pm);
             if (cores.Count == 0) { aoPhase = AO.Failed; return string.Join("\n", rep.ToArray()) + "\nNa rakiecie nie ma MechJeba – dodaj część/moduł MechJeb."; }
-            double pitchStart = Math.Max(25, Math.Min(70, 55 / Math.Max(0.8, twr)));
+            double pitchStart = Math.Max(Tun.D("ao.pitchStartMin"), Math.Min(Tun.D("ao.pitchStartMax"), Tun.D("ao.pitchStartK") / Math.Max(0.8, twr)));
             string[][] asc = {
                 new[] { "AscentTypeInteger", "1" }, new[] { "DesiredOrbitAltitude", (altKm * 1000).ToString("F0", Inv) },
                 new[] { "DesiredApoapsis", (apKm * 1000).ToString("F0", Inv) }, new[] { "AttachAltFlag", "False" },
@@ -2286,9 +2292,9 @@ namespace RSSBalancer
                 new[] { "DesiredAttachAltFixed", (altKm * 1000).ToString("F0", Inv) }, new[] { "DesiredAttachAlt", (altKm * 1000).ToString("F0", Inv) },
                 new[] { "DesiredInclination", inc.ToString("F2", Inv) }, new[] { "LastStage", aoLastStage.ToString(Inv) }, new[] { "OptimizeStageFlag", "False" },
                 new[] { "CoastStageFlag", "False" }, new[] { "UnguidedStagesFlag", "False" }, new[] { "SkipCircularization", "False" },
-                new[] { "PitchStartVelocity", pitchStart.ToString("F0", Inv) }, new[] { "PitchRate", "0.75" },
+                new[] { "PitchStartVelocity", pitchStart.ToString("F0", Inv) }, new[] { "PitchRate", Tun.S("ao.pitchRate") },
                 new[] { "Autostage", "True" }, new[] { "ForceRoll", "True" }, new[] { "VerticalRoll", "0" }, new[] { "TurnRoll", "0" } };
-            string[][] thr = { new[] { "LimitAcceleration", "True" }, new[] { "MaxAcceleration", "39.2" } };
+            string[][] thr = { new[] { "LimitAcceleration", "True" }, new[] { "MaxAcceleration", Tun.S("ao.maxAccel") } };
             string[][] stg = { new[] { "AutostageLimit", aoLastStage.ToString(Inv) } };
             int bad = 0;
             foreach (PartModule core in cores)
@@ -2298,6 +2304,18 @@ namespace RSSBalancer
                     object mod = Module(core, pair.m); if (mod == null) { bad++; continue; }
                     foreach (string[] kv in pair.v) { string err; if (!MechJebPresets.SetMember(mod, kv[0], kv[1], out err)) bad++; }
                 }
+            }
+            // pola MechJeba z pliku programu / Ustawienia.cfg: mj.ascent.<pole> = wartość (szukane w Ascent, Thrust, Staging)
+            foreach (var kv in Tun.Mj("ascent"))
+            {
+                bool okSet = false; string err = "";
+                foreach (PartModule core in cores)
+                    foreach (string mn in new[] { "MechJebModuleAscentSettings", "MechJebModuleThrustController", "MechJebModuleStagingController" })
+                    {
+                        object mod = Module(core, mn);
+                        if (mod != null && MechJebPresets.SetMember(mod, kv.Key, kv.Value, out err)) okSet = true;
+                    }
+                rep.Add("MechJeb: " + kv.Key + " = " + kv.Value + (okSet ? "" : " – NIE PRZYJĘTO (zła nazwa pola?)"));
             }
             string mj = MechJebAscent(true);
             aoPhase = AO.Ascent; aoStartUT = Planetarium.GetUniversalTime(); nextAoLog = 0;
@@ -2378,7 +2396,7 @@ namespace RSSBalancer
                 // resztę (podniesienie perygeum do celu) robi „domykanie orbity”.
                 // tylko awaryjnie: apogeum UCIEKA ponad cel (lot 16:20: 209 → 297 km w 2 s). Gdy apogeum stoi przy celu, MechJeb
                 // sam kończy (lot 17:13: wyłączenie przy 141 × 222 km było za wczesne – jemu brakowało 1–2 s).
-                bool overshoot = now - aoStartUT > 30 && o.PeA > atmTop && o.ApA >= aoAp * 1000 + Math.Max(10000, aoAp * 1000 * 0.05) && EngineThrustKN() > 0.01;
+                bool overshoot = now - aoStartUT > Tun.D("ao.overshootAfter") && o.PeA > atmTop && o.ApA >= aoAp * 1000 + Math.Max(Tun.D("ao.overshootMinKm") * 1000, aoAp * 1000 * Tun.D("ao.overshootFrac")) && EngineThrustKN() > 0.01;
                 if (!(mjOff || fuelOut || inOrbit || overshoot)) return;
                 MechJebAscent(false);
                 if (overshoot)
@@ -2520,7 +2538,7 @@ namespace RSSBalancer
         private string patternPhase = "";
         private readonly List<Vector2d> patWps = new List<Vector2d>();
         private int patWp;
-        private const double PatBank = 30;       // przechylenie w zakrętach kręgu
+        private static double PatBank { get { return Tun.D("pat.bank"); } }       // przechylenie w zakrętach kręgu
         private double patR, patDInt;            // promień zakrętu, odległość wejścia na ścieżkę 19° (od progu)
         public List<Vector2d> PatternCorners { get { return patWps; } }
         public int PatternLeg { get { return patWp; } }
@@ -2542,7 +2560,7 @@ namespace RSSBalancer
             if (Vector3d.Dot(vh, ab) >= 0) { thr = a; dir = ab; } else { thr = b; dir = -ab; }
             return true;
         }
-        private const double PatAlt = 4000;      // wysokość kręgu nad pasem (punkt kluczowy Burana: ~4 km, 12,5 km przed pasem)
+        private static double PatAlt { get { return Tun.D("pat.alt"); } }      // wysokość kręgu nad pasem (punkt kluczowy Burana: ~4 km, 12,5 km przed pasem)
 
         private void StartPattern()
         {
@@ -2745,7 +2763,7 @@ namespace RSSBalancer
 
         // Dopalacz AL-31F: w KSP ogranicznik ciągu mnoży przepustnicę, a krzywa ISP od przepustnicy (Patches/Buran_AL31.cfg)
         // daje tryb bez dopalacza do 24,4 % – więc ogranicznik 24,4 % = „dopalacz wyłączony”, 100 % = dostępny.
-        private const float AbOffLimit = 24.4f;
+        private static float AbOffLimit { get { return (float)Tun.D("ab.offLimit"); } }
         private bool abOn = true;
         private void Afterburner(bool on, string why)
         {
@@ -3004,7 +3022,8 @@ namespace RSSBalancer
         private int hacSide = 1, hacLap, hacSsgn = 1;
         private double hacXa = 12000, hacPrevArc = double.NaN, hacExc;
         private Vector3d hacC0, hacE, hacN;              // płaski układ przy pasie: początek, wschód, północ
-        private const double HacLDP = 4.0, HacEM = 600;
+        private static double HacLDP { get { return Tun.D("hac.ldp"); } }
+        private static double HacEM { get { return Tun.D("hac.em"); } }
         private static double HacBank { get { return VehicleProfile.Current.hacBank; } }
         private static readonly double[] HacXas = { 12000, 8000, 5000 };
 
@@ -3374,7 +3393,8 @@ namespace RSSBalancer
         // Lot 2026-11-20 10:11: prowadzenie celowało „dolecieć nad lotnisko z prędkością → 0” w modelu, który zaniża
         // zasięg przy małych prędkościach (poddźwiękowo L/D ~5, a do tego wysokość) – Buran był nad lotniskiem na 46 km
         // z M 4,5 i przeleciał 190 km dalej. Teraz energia jest wytracana do punktu TAEM, resztę robi podejście (krążenie).
-        private const double TaemV = 800, TaemDist = 100000;
+        private static double TaemV { get { return Tun.D("taem.v"); } }
+        private static double TaemDist { get { return Tun.D("taem.dist"); } }
         private static double RangeIntegral(double v0, double r, double g)
         {
             double s = 0, dv = 20;
