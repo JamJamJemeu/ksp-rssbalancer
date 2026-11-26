@@ -111,6 +111,7 @@ namespace RSSBalancer
         int rdvB3Orbit = 17;
         double rdvRph, rdvAltT, rdvBurnUT = double.NaN, rdvB3Plan, rdvLaunchUT, rdvDvUsed, rdvNextLog;
         bool rdvWarped, rdvEngine;
+        double rdvEngineAt = double.NaN;
         ModuleDockingNode rdvMyPort, rdvTgtPort;
         public string RendezvousInfo = "";
         public int RendezvousState { get { return rdv == RDV.Done ? 1 : rdv == RDV.Failed ? -1 : 0; } }
@@ -310,6 +311,7 @@ namespace RSSBalancer
             FlightGlobals.fetch.SetVesselTarget(tgt, true);
             rdvLaunchUT = Planetarium.GetUniversalTime() - vessel.missionTime;
             rdvDvUsed = 0; rdvEngine = false;
+            rdvEngineAt = Planetarium.GetUniversalTime() + 3;   // KTDU i panele zaraz po oddzieleniu (w RendezvousTick)
             Orbit me = vessel.orbit, to = tgt.orbit;
             double relInc = Vector3d.Angle(Vector3d.Cross(RelPos(me, 0 + Planetarium.GetUniversalTime()), RelVel(me, Planetarium.GetUniversalTime())),
                                            Vector3d.Cross(RelPos(to, Planetarium.GetUniversalTime()), RelVel(to, Planetarium.GetUniversalTime())));
@@ -380,6 +382,8 @@ namespace RSSBalancer
                 rdv = RDV.Failed; RdvLog("cel zniknął"); return;
             }
             if (!IsBurnRdv(rdv) && rdv < RDV.Mj && SeparationGuard()) return;
+            // jak w prawdziwym Sojuzie: zaraz po oddzieleniu od Bloku I – KTDU gotowe, panele słoneczne rozłożone (stage 3)
+            if (!rdvEngine && !double.IsNaN(rdvEngineAt) && Planetarium.GetUniversalTime() >= rdvEngineAt) { RdvEnsureEngine(); FlightInputHandler.state.mainThrottle = 0f; }
             CelestialBody b = vessel.mainBody; double mu = b.gravParameter, R = b.Radius;
             Orbit me = vessel.orbit, to = rdvTarget.orbit;
             double now = Planetarium.GetUniversalTime();
