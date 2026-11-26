@@ -364,7 +364,9 @@ namespace RSSBalancer
             if (rdvEngine) return;
             rdvEngine = true;
             foreach (Part p in vessel.parts)
-                foreach (PartModule pm in p.Modules) { ModuleEngines e = pm as ModuleEngines; if (e != null && e.EngineIgnited && !e.flameout && !e.propellants.Exists(pr => pr.name == "SolidFuel")) return; }
+                // 1.45.1: liczą się tylko silniki już odpalone przez staging – silnik lądowania kapsuły (stage 0, RNLandingEngine)
+                // bywa „uzbrojony” (EngineIgnited) i blokował odpalenie KTDU (lot 26.11 17:55)
+                foreach (PartModule pm in p.Modules) { ModuleEngines e = pm as ModuleEngines; if (e != null && e.EngineIgnited && !e.flameout && p.inverseStage >= vessel.currentStage && !e.propellants.Exists(pr => pr.name == "SolidFuel")) return; }
             bool eng = false, dec = false; int next = vessel.currentStage - 1;
             foreach (Part p in vessel.parts)
             {
