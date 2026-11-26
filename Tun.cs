@@ -67,6 +67,7 @@ namespace RSSBalancer
             // --- spotkanie i dokowanie ---
             A("Spotkanie", "rdv.planeMinDeg", "0.1", "°", "mniejszej różnicy płaszczyzn nie korygujemy osobnym impulsem (wyrówna MechJeb przy zbliżaniu)");
             A("Spotkanie", "rdv.nodeLateSec", "90", "s", "korekta płaszczyzny najpóźniej tyle po węźle, inaczej czeka na następny");
+            A("Spotkanie", "rdv.burnTolMs", "0.05", "m/s", "impuls w apsydzie kończy się, gdy zostało mniej niż tyle Δv");
             A("Spotkanie", "rdv.b1AfterRevs", "3", "obiegi", "impuls 1 po tylu obiegach od wstawienia (3 → 4. okrążenie)");
             A("Spotkanie", "rdv.b3Orbit", "17", "okrążenie", "zbliżenie (Hohmann pod cel), profil jednodobowy");
             A("Spotkanie", "rdv.b3OrbitSlow", "33", "okrążenie", "zbliżenie, profil dwudobowy");
@@ -78,6 +79,8 @@ namespace RSSBalancer
             A("Spotkanie", "rdv.mechjebMaxSpeed", "5", "m/s", "MechJeb Rendezvous: maks. prędkość zbliżania");
             A("Spotkanie", "rdv.dockStartDistance", "200", "m", "dokowanie zaczyna się poniżej tej odległości …");
             A("Spotkanie", "rdv.dockStartSpeed", "0.5", "m/s", "… i prędkości względnej");
+            A("Spotkanie", "rdv.openTargetAnims", "OPEN, OPEN DockPort", "", "animacje otwierane na celu przed dokowaniem (nazwy animationName, po przecinku) – Buran: drzwi ładowni i podstawa portu");
+            A("Spotkanie", "rdv.portWaitSec", "60", "s", "najdłużej tyle czekamy na wysunięcie portów dokujących");
             A("Spotkanie", "rdv.dockSpeed", "0.3", "m/s", "MechJeb Docking: prędkość podejścia („Igła”: 0,1–0,35)");
             A("Spotkanie", "rdv.ascentTime", "498", "s", "model wynoszenia do okna startowego: czas do wstawienia");
             A("Spotkanie", "rdv.insertionDLat", "5.0781", "°", "przesunięcie punktu wstawienia względem wyrzutni (szerokość)");

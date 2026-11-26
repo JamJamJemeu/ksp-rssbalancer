@@ -127,7 +127,7 @@ namespace RSSBalancer
             RdvDockStart = Tun.D("rdv.dockStartDistance"); RdvDockStartSpeed = Tun.D("rdv.dockStartSpeed"); RdvDockSpeed = Tun.S("rdv.dockSpeed");
         }
 
-        enum RDV { None, Plane, PlaneBurn, B1, B1Burn, B2, B2Burn, B3, B3Burn, B4, B4Burn, Mj, Dock, Done, Failed }
+        enum RDV { None, Plane, PlaneBurn, B1, B1Burn, B2, B2Burn, B3, B3Burn, B4, B4Burn, Mj, DockWait, Dock, Done, Failed }
         RDV rdv = RDV.None;
         Vessel rdvTarget;
         int rdvB3Orbit = 17;
@@ -333,7 +333,7 @@ namespace RSSBalancer
             rdvTarget = tgt;
             FlightGlobals.fetch.SetVesselTarget(tgt, true);
             rdvLaunchUT = Planetarium.GetUniversalTime() - vessel.missionTime;
-            rdvDvUsed = 0; rdvEngine = false;
+            rdvDvUsed = 0; rdvEngine = false; rdvDir = 0;
             rdvEngineAt = RdvEngineDelay < 0 ? double.NaN : Planetarium.GetUniversalTime() + RdvEngineDelay;   // KTDU i panele zaraz po oddzieleniu (w RendezvousTick)
             Orbit me = vessel.orbit, to = tgt.orbit;
             double relInc = Vector3d.Angle(Vector3d.Cross(RelPos(me, 0 + Planetarium.GetUniversalTime()), RelVel(me, Planetarium.GetUniversalTime())),
@@ -394,8 +394,39 @@ namespace RSSBalancer
             holdDir = Math.Sign(dvEst) >= 0 ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
             // przed impulsem zawsze bez przyspieszenia czasu – na szynach silnik nie pracuje
             // (lot 26.11 16:33: warp trwał jeszcze 650 s po węźle, korekta płaszczyzny poszła w złym miejscu)
-            if (now >= start - Tun.D("burn.warpStopLead") && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+            // (lot 26.11 16:33: warp trwał jeszcze 650 s po węźle). Przy dużym warpie – łagodne hamowanie stockowym WarpTo
+            // (nagłe SetRate(0) przy ×100 000 psuło orbitę, loty 19.11), przy małym – od razu.
+            if (TimeWarp.CurrentRateIndex > 0)
+            {
+                double lead = Tun.D("burn.warpStopLead");
+                if (now >= start - lead) { if (TimeWarp.CurrentRate > 100 && start - now > 30) ProgWarpTo(Math.Max(now + 5, start - 30)); else TimeWarp.SetRate(0, true); }
+                else if (TimeWarp.CurrentRate > 100 && (double.IsNaN(progWarpUT) || progWarpUT > start - lead)) ProgWarpTo(start - lead);   // ręczny warp za impuls – skróć
+            }
             return now >= start;
+        }
+
+        int rdvDir;   // kierunek impulsu ustalony na jego początku (+1 prograde, −1 retrograde)
+
+        /// <summary>
+        /// Impuls w apsydzie: prędkość tak, żeby przeciwległa apsyda wypadła na rOpp (vis-viva).
+        /// Kierunek ustalony raz na początku – 1.45.2: wcześniej „raises” liczony co klatkę i przy przestrzeleniu
+        /// silnik odwracał kierunek tam i z powrotem (symulacja offline: B1 nigdy się nie kończył, statek by się kręcił).
+        /// Przepustnica od pozostałej Δv, jak impuls wektorowy. true = skończony.
+        /// </summary>
+        bool RdvApsisBurn(double rOpp)
+        {
+            double mu = vessel.mainBody.gravParameter;
+            double r = (vessel.CoMD - vessel.mainBody.position).magnitude, v = vessel.obt_velocity.magnitude;
+            double vNeed = Math.Sqrt(Math.Max(0, mu * (2 / r - 2 / (r + rOpp))));
+            double dvRem = vNeed - v;
+            if (rdvDir == 0) rdvDir = dvRem >= 0 ? 1 : -1;
+            holdDir = rdvDir > 0 ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
+            if (dvRem * rdvDir <= Tun.D("rdv.burnTolMs")) { FlightInputHandler.state.mainThrottle = 0f; rdvDir = 0; return true; }
+            EnsureBurnEngines();
+            double a = AccelNow();
+            float thr = (float)Math.Max(Tun.D("burn.minThrottle"), Math.Min(1, Math.Abs(dvRem) / (a * Tun.D("burn.vectorSoftK"))));
+            FlightInputHandler.state.mainThrottle = attError < Tun.D("burn.attTol") ? thr : 0f;
+            return false;
         }
 
         void RdvLog(string s) { FlightLogger.Event("Spotkanie: " + s); RendezvousInfo = s; }
@@ -477,13 +508,21 @@ namespace RSSBalancer
                         double dv, te, thU;
                         double rB1 = me.semiMajorAxis * (1 - me.eccentricity), rOpp = me.semiMajorAxis * (1 + me.eccentricity);
                         rdvRph = RdvPlanner.SolveAnyPhase(mu, theta1, rB1, rOpp, to.semiMajorAxis, rdvB3Plan - tPe, RdvStop, Math.Max(R + RdvRMinAlt, rB1 + 2000), out dv, out te, out thU);
+                        if (double.IsNaN(rdvRph) && rdvB3Orbit != RdvB3Orbit2)
+                        {
+                            // faza nie pasuje do profilu jednodobowego – dwudobowy (jak część lotów 7K-T)
+                            double planSlow = rdvLaunchUT + RdvAscT + (RdvB3Orbit2 - 1) * T + RdvAscT;
+                            double rS = RdvPlanner.SolveAnyPhase(mu, theta1, rB1, rOpp, to.semiMajorAxis, planSlow - tPe, RdvStop, Math.Max(R + RdvRMinAlt, rB1 + 2000), out dv, out te, out thU);
+                            if (!double.IsNaN(rS)) { rdvRph = rS; rdvB3Orbit = RdvB3Orbit2; rdvB3Plan = planSlow; RdvLog("faza nie pasuje do profilu jednodobowego – profil dwudobowy (zbliżenie na " + RdvB3Orbit2 + ". okrążeniu)"); }
+                        }
                         if (!double.IsNaN(rdvRph)) theta1 = thU;
                         else theta1 = RdvPlanner.Wrap2Pi(theta1);
                         if (double.IsNaN(rdvRph))
                         {
-                            // poza zakresem profilu – najbliższa granica, MechJeb dokończy (drożej)
-                            rdvRph = theta1 > Math.PI / 2 ? R + RdvRMinAlt : to.semiMajorAxis - 5000;
-                            RdvLog("faza " + (theta1 * 180 / Math.PI).ToString("F0", Inv) + "° poza profilem – orbita fazująca " + ((rdvRph - R) / 1000).ToString("F0", Inv) + " km, resztę zrobi MechJeb");
+                            // poza oboma profilami – nie zgadujemy (wcześniej: „granica + MechJeb”, co mogło zepsuć orbitę)
+                            rdv = RDV.Failed; FlightInputHandler.state.mainThrottle = 0f;
+                            RdvLog("faza " + (theta1 * 180 / Math.PI).ToString("F0", Inv) + "° poza profilami 1- i 2-dobowym – program zatrzymany, statek na orbicie bez zmian. Start w innym oknie albo zmień rdv.b3Orbit / rdv.phasingMinKm.");
+                            break;
                         }
                         else RdvLog("plan: B1 za " + KSPUtil.PrintTimeCompact(tPe - now, false) + ", faza " + (theta1 * 180 / Math.PI).ToString("F1", Inv) + "°, orbita fazująca " + ((rdvRph - R) / 1000).ToString("F1", Inv) + " km, Δv ≈ " + dv.ToString("F0", Inv) + " m/s, przybycie za " + KSPUtil.PrintTimeCompact(te + tPe - now, false));
                         rdvBurnUT = tPe; rdvWarped = false;
@@ -494,7 +533,7 @@ namespace RSSBalancer
                     break;
                 }
                 case RDV.B1Burn:
-                    if (AxisBurn(me.ApA, rdvRph - R, rdvRph - R > me.ApA)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B2; rdvBurnUT = now + me.timeToAp; rdvWarped = false; RdvLog("B1 gotowe: " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km"); }
+                    if (RdvApsisBurn(rdvRph)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B2; rdvBurnUT = now + me.timeToAp; rdvWarped = false; RdvLog("B1 gotowe: " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km"); }
                     break;
                 case RDV.B2:
                 {
@@ -505,7 +544,7 @@ namespace RSSBalancer
                     break;
                 }
                 case RDV.B2Burn:
-                    if (AxisBurn(me.PeA, Math.Min(rdvRph - R, me.ApA - 300), true)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B3; rdvBurnUT = double.NaN; rdvWarped = false; RdvLog("B2 gotowe: orbita fazująca " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km"); }
+                    if (RdvApsisBurn(rdvRph)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B3; rdvBurnUT = double.NaN; rdvWarped = false; RdvLog("B2 gotowe: orbita fazująca " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km"); }
                     break;
                 case RDV.B3:
                 {
@@ -513,12 +552,16 @@ namespace RSSBalancer
                     {
                         // chwila B3: przy Hohmannie z bieżącej orbity przybycie RdvStop za celem; szukamy w ±1 obiegu od planu
                         double rT = to.semiMajorAxis, nT = 2 * Math.PI / RdvPlanner.Per(mu, rT);
+                        // 1.45.2: dokładnie – gdzie naprawdę będzie cel w chwili przybycia (jego orbita jest eliptyczna:
+                        // średni ruch dawał w symulacji 12 km PRZED celem zamiast 10 km za nim)
                         Func<double, double> miss = t3 =>
                         {
-                            double r1 = RelPos(me, t3).magnitude, d1, d2, th;
-                            RdvPlanner.Hohmann(mu, r1, rT, out d1, out d2, out th);
-                            double ph = PhaseAt(me, to, t3);
-                            return ph + nT * th - Math.PI - RdvStop / rT;
+                            Vector3d p3 = RelPos(me, t3);
+                            double r1 = p3.magnitude;
+                            double rA = RelPos(to, t3 + 0.5 * RdvPlanner.Per(mu, 0.5 * (r1 + rT))).magnitude;
+                            double th = 0.5 * RdvPlanner.Per(mu, 0.5 * (r1 + rA));
+                            Vector3d pT = RelPos(to, t3 + th), nT3 = Vector3d.Cross(RelPos(to, t3), RelVel(to, t3));
+                            return RdvPlanner.SignedAngle(-p3, pT, nT3) - RdvStop / rA;
                         };
                         double T = me.period, best = double.NaN;
                         double t0 = Math.Max(now + 300, rdvB3Plan - T), prevM = miss(t0);
@@ -540,21 +583,24 @@ namespace RSSBalancer
                     break;
                 }
                 case RDV.B3Burn:
-                    if (AxisBurn(me.ApA, rdvAltT, rdvAltT > me.ApA)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B4; rdvBurnUT = now + me.timeToAp; rdvWarped = false; RdvLog("B3 gotowe: " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km"); }
+                    if (RdvApsisBurn(R + rdvAltT)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B4; rdvBurnUT = now + me.timeToAp; rdvWarped = false; RdvLog("B3 gotowe: " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km"); }
                     break;
                 case RDV.B4:
                 {
-                    double r = me.semiMajorAxis * (1 + me.eccentricity);
-                    double dvE = Math.Sqrt(mu / r) - Math.Sqrt(mu * (2 / r - 1 / me.semiMajorAxis));
-                    if (!RdvWait(rdvBurnUT, dvE)) break;
-                    RdvEnsureEngine(); rdv = RDV.B4Burn; RdvLog("B4: wyrównanie orbity przy celu");
+                    // 1.45.2: wyrównanie PRĘDKOŚCI z celem (nie samo zaokrąglenie orbity – cel ma orbitę eliptyczną,
+                    // symulacja: po zaokrągleniu 15 m/s względnej, po wyrównaniu wektora 0,3 m/s)
+                    Vector3d dv4 = RelVel(to, rdvBurnUT) - RelVel(me, rdvBurnUT);
+                    bool go4 = RdvWait(rdvBurnUT, dv4.magnitude);
+                    holdDir = dv4.normalized; holdMode = Hold.Inertial;
+                    if (!go4) break;
+                    RdvEnsureEngine(); mLastDv = double.MaxValue; rdv = RDV.B4Burn; RdvLog("B4: wyrównanie prędkości z celem, " + dv4.magnitude.ToString("F1", Inv) + " m/s");
                     break;
                 }
                 case RDV.B4Burn:
-                    if (AxisBurn(me.PeA, Math.Min(rdvAltT, me.ApA - 300), true))
+                    if (VectorBurn(RelVel(to, now) - RelVel(me, now)))      // prędkości z orbit (cel bywa poza zasięgiem fizyki)
                     {
                         FlightInputHandler.state.mainThrottle = 0f;
-                        RdvLog("B4 gotowe: " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km, do celu " + (dist / 1000).ToString("F1", Inv) + " km – zbliżanie automatyczne (MechJeb)");
+                        RdvLog("B4 gotowe: " + (me.PeA / 1000).ToString("F1", Inv) + "×" + (me.ApA / 1000).ToString("F1", Inv) + " km, do celu " + (dist / 1000).ToString("F1", Inv) + " km, prędkość względna " + (RelVel(to, now) - RelVel(me, now)).magnitude.ToString("F2", Inv) + " m/s – zbliżanie automatyczne (MechJeb)");
                         RdvStartMj();
                     }
                     break;
@@ -562,7 +608,18 @@ namespace RSSBalancer
                 {
                     Vector3d rv = vessel.obt_velocity - rdvTarget.obt_velocity;
                     RendezvousInfo = "zbliżanie: " + dist.ToString("F0", Inv) + " m, prędkość względna " + rv.magnitude.ToString("F2", Inv) + " m/s";
-                    if (dist < RdvDockStart && rv.magnitude < RdvDockStartSpeed) { RdvStopMj(); RdvStartDock(); }
+                    // porty Burana (APAS) chowają się w luku – „Disabled”, dopóki się ich nie wysunie (ModuleAnimateGeneric)
+                    RdvExtendPorts(vessel); if (rdvTarget.loaded) RdvExtendPorts(rdvTarget);
+                    if (dist < RdvDockStart && rv.magnitude < RdvDockStartSpeed) { RdvStopMj(); rdv = RDV.DockWait; rdvDockWaitUT = now; }
+                    break;
+                }
+                case RDV.DockWait:
+                {
+                    bool moving = RdvExtendPorts(vessel) | RdvExtendPorts(rdvTarget);
+                    ModuleDockingNode mine = FreePort(vessel, null), theirs = mine != null ? FreePort(rdvTarget, mine) : null;
+                    RendezvousInfo = "dokowanie: wysuwanie portów (" + (now - rdvDockWaitUT).ToString("F0", Inv) + " s)";
+                    if (mine != null && theirs != null) { RdvStartDock(); break; }
+                    if (!moving || now - rdvDockWaitUT > Tun.D("rdv.portWaitSec")) { RdvStartDock(); break; }   // RdvStartDock zgłosi brak portów
                     break;
                 }
                 case RDV.Dock:
@@ -608,6 +665,44 @@ namespace RSSBalancer
             foreach (var kv in Tun.Mj("rendezvous")) if (!MechJebPresets.SetMember(rdvMjMod, kv.Key, kv.Value, out err)) RdvLog("MechJeb Rendezvous: pole " + kv.Key + " nie przyjęte (" + err + ")");
             object pool = Users(rdvMjMod); if (pool != null) PoolCall(pool, "Add");
             rdv = RDV.Mj;
+        }
+
+        double rdvDockWaitUT;
+
+        /// <summary>Wysuwa porty dokujące schowane animacją (stan „Disabled”). true = jakiś port jeszcze się wysuwa / był schowany.</summary>
+        bool RdvExtendPorts(Vessel v)
+        {
+            if (v == null || !v.loaded) return false;
+            bool any = false;
+            // celowi otwieramy też luk/drzwi (np. Buran: drzwi ładowni „OPEN”, podstawa portu „OPEN DockPort”) – lista w rdv.openTargetAnims
+            if (v == rdvTarget)
+            {
+                var names = new List<string>();
+                foreach (string x in Tun.S("rdv.openTargetAnims").Split(',')) if (x.Trim().Length > 0) names.Add(x.Trim());
+                foreach (Part p in v.parts)
+                    foreach (PartModule pm in p.Modules)
+                    {
+                        ModuleAnimateGeneric a = pm as ModuleAnimateGeneric;
+                        if (a == null || !names.Contains(a.animationName)) continue;
+                        if (a.IsMoving()) { any = true; continue; }
+                        if (a.animTime < 0.5f) { a.Toggle(); any = true; RdvLog("otwieram „" + a.animationName + "” na „" + p.partInfo.title + "”"); }
+                    }
+            }
+            foreach (Part p in v.parts)
+                foreach (PartModule pm in p.Modules)
+                {
+                    ModuleDockingNode d = pm as ModuleDockingNode;
+                    if (d == null || d.deployAnimator == null || d.state == null) continue;
+                    if (d.deployAnimator.IsMoving()) { any = true; continue; }
+                    if (!d.state.StartsWith("Disabled")) continue;
+                    any = true;
+                    if (d.deployAnimator.animTime < 0.5f)
+                    {
+                        d.deployAnimator.Toggle();
+                        RdvLog("wysuwam port „" + p.partInfo.title + "” (" + v.vesselName + ")");
+                    }
+                }
+            return any;
         }
 
         void RdvStopMj() { if (rdvMjMod != null) { object pool = Users(rdvMjMod); if (pool != null) PoolCall(pool, "Remove"); } rdvMjMod = null; }
