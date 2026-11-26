@@ -106,7 +106,8 @@ namespace RSSBalancer
         double RdvStop = 10000;          // rdv.arriveBehindKm – przybycie za celem, dalej „Igła” (MechJeb)
         double RdvRMinAlt = 195000;      // rdv.phasingMinKm – orbita fazująca nie niżej
         double RdvPlaneMin = 0.1;        // rdv.planeMinDeg – mniejszej różnicy płaszczyzn nie korygujemy osobnym impulsem
-        int RdvWindowDays = 30;          // rdv.windowDays – jak daleko szukać okna startowego
+        int RdvWindowDays = 30;
+        double RdvNodeLate = 90;         // rdv.nodeLateSec – korekta płaszczyzny najpóźniej tyle [s] po węźle          // rdv.windowDays – jak daleko szukać okna startowego
         int RdvB1Revs = 3;               // rdv.b1AfterRevs – impuls 1 po tylu obiegach (3 → 4. okrążenie)
         int RdvB3Orbit1 = 17, RdvB3Orbit2 = 33;   // rdv.b3Orbit, rdv.b3OrbitSlow – okrążenie zbliżenia (profil 1- i 2-dobowy)
         double RdvEngineDelay = 3;       // rdv.engineDelay – [s] po oddzieleniu: stage silnika statku (KTDU + panele); < 0 = wcale
@@ -120,7 +121,7 @@ namespace RSSBalancer
             Func<string, string, string> t = (k, def) => { string v = n != null ? n.GetValue(k) : null; return string.IsNullOrEmpty(v) ? def : v.Trim().Replace(',', '.'); };
             RdvAscT = d("rdv.ascentTime", 498.0); RdvInsDLat = d("rdv.insertionDLat", 5.0781); RdvInsDLon = d("rdv.insertionDLon", 22.6763);
             RdvStop = d("rdv.arriveBehindKm", 10) * 1000; RdvRMinAlt = d("rdv.phasingMinKm", 195) * 1000; RdvPlaneMin = d("rdv.planeMinDeg", 0.1);
-            RdvWindowDays = (int)d("rdv.windowDays", 30); RdvB1Revs = (int)d("rdv.b1AfterRevs", 3);
+            RdvWindowDays = (int)d("rdv.windowDays", 30); RdvNodeLate = d("rdv.nodeLateSec", 90); RdvB1Revs = (int)d("rdv.b1AfterRevs", 3);
             RdvB3Orbit1 = (int)d("rdv.b3Orbit", 17); RdvB3Orbit2 = (int)d("rdv.b3OrbitSlow", 33);
             RdvEngineDelay = d("rdv.engineDelay", 3);
             RdvMjDist = t("rdv.mechjebDistance", "100"); RdvMjSpeed = t("rdv.mechjebMaxSpeed", "5");
@@ -137,6 +138,7 @@ namespace RSSBalancer
         double rdvEngineAt = double.NaN;
         ModuleDockingNode rdvMyPort, rdvTgtPort;
         public string RendezvousInfo = "";
+        public bool RendezvousBurning { get { return IsBurnRdv(rdv); } }
         public int RendezvousState { get { return rdv == RDV.Done ? 1 : rdv == RDV.Failed ? -1 : 0; } }
 
         // ------------------------------------------------------------------ cel
@@ -390,6 +392,9 @@ namespace RSSBalancer
                 if (NearestNeighbour(out nd, out nv) >= SepSafeDist && TimeWarp.CurrentRateIndex == 0) { ProgWarpTo(start - 90); rdvWarped = true; }
             }
             holdDir = Math.Sign(dvEst) >= 0 ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
+            // przed impulsem zawsze bez przyspieszenia czasu – na szynach silnik nie pracuje
+            // (lot 26.11 16:33: warp trwał jeszcze 650 s po węźle, korekta płaszczyzny poszła w złym miejscu)
+            if (now >= start - 60 && TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
             return now >= start;
         }
 
@@ -448,6 +453,13 @@ namespace RSSBalancer
                 {
                     Vector3d n = Vector3d.Cross(RelPos(to, now), RelVel(to, now)).normalized;
                     double vn = Vector3d.Dot(RelVel(me, now), n);
+                    // za daleko od węzła (impuls by tylko psuł nachylenie) – czekamy na następny węzeł
+                    if (now > rdvBurnUT + RdvNodeLate)
+                    {
+                        FlightInputHandler.state.mainThrottle = 0f;
+                        RdvLog("korekta płaszczyzny spóźniona o " + (now - rdvBurnUT).ToString("F0", Inv) + " s – czekam na następny węzeł");
+                        rdv = RDV.Plane; rdvBurnUT = double.NaN; break;
+                    }
                     // wektor w świecie: obt_velocity jest w świecie; normalna z orbit (xzy) też – spójne
                     if (VectorBurn(-n * vn)) { FlightInputHandler.state.mainThrottle = 0f; rdv = RDV.B1; rdvBurnUT = double.NaN; RdvLog("płaszczyzna wyrównana"); }
                     break;

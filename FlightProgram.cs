@@ -1667,7 +1667,7 @@ namespace RSSBalancer
         private void WarpEventGuard()
         {
             if (TimeWarp.CurrentRateIndex == 0) { progWarpUT = double.NaN; return; }
-            if ((mph != MPh.None && mph != MPh.Done && IsBurnPhase(mph)) || burnOn || sepOn)
+            if ((mph != MPh.None && mph != MPh.Done && IsBurnPhase(mph)) || burnOn || sepOn || RendezvousBurning)
             {
                 TimeWarp.SetRate(0, true);
                 if (warpGuardName != "burn") { warpGuardName = "burn"; FlightLogger.Event("Przyspieszenie zatrzymane – trwa impuls/manewr"); }
