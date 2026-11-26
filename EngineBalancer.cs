@@ -975,6 +975,7 @@ namespace RSSBalancer
             if (run != null && !string.IsNullOrEmpty(run.EntryInfo)) GUILayout.Label("Wejście: " + run.EntryInfo);
             if (run != null && !string.IsNullOrEmpty(run.ApproachInfo)) GUILayout.Label("Podejście: " + run.ApproachInfo);
             if (run != null && !string.IsNullOrEmpty(run.AutoOrbitInfo)) GUILayout.Label("Start na orbitę: " + run.AutoOrbitInfo);
+            if (run != null && !string.IsNullOrEmpty(run.RendezvousInfo)) GUILayout.Label("Spotkanie: " + run.RendezvousInfo);
             if (run != null && !string.IsNullOrEmpty(run.LandingVerdict))
             {
                 Color oc = GUI.color;

@@ -1219,7 +1219,7 @@ namespace RSSBalancer
             FlightLogger.StartFor(vessel);
             FlightLogger.Event("Program lotu: start „" + p.name + "”");
             Debug.Log("[RSSBalancer] Program lotu: start " + p.name);
-            rdv = RDV.None; rdvTarget = null; rdvB3Orbit = 17; RendezvousInfo = "";
+            rdv = RDV.None; rdvTarget = null; rdvB3Orbit = 17; RendezvousInfo = ""; sepPayloadUT = double.NaN;
             if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("launchWindow"))
                 AskLaunchWindow(p, p.node.GetValue("launchWindow"));
             else if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("rendezvousTarget"))
@@ -1477,6 +1477,7 @@ namespace RSSBalancer
             if (approachOn) Approach();
             if (aoPhase == AO.Ascent || aoPhase == AO.Finish) AutoOrbitTick();
             if (mph != MPh.None && mph != MPh.Done) Maneuver();
+            SeparatePayloadTick();
             RendezvousTick();
             WarpNeighbourGuard();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < 5.0 ? 1f : 0f;
@@ -1582,7 +1583,7 @@ namespace RSSBalancer
                 case "deorbitin": return DeorbitIn();
                 case "orbitdone": return mph == MPh.Done ? 1 : 0;
                 case "rendezvous": case "docked": return RendezvousState;
-                case "autoorbit": return aoPhase == AO.Done ? 1 : aoPhase == AO.Failed ? -1 : 0;
+                case "autoorbit": return aoPhase == AO.Done ? (double.IsNaN(sepPayloadUT) ? 1 : 0) : aoPhase == AO.Failed ? -1 : 0;
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
                 case "upper": return id != null && id.ok ? Running_(id.upper, v) : double.NaN;
@@ -2158,9 +2159,32 @@ namespace RSSBalancer
 
         // Gdy wiadomo, gdzie kończy się rakieta („Ostatni stage rakiety” > 0), po wejściu na orbitę program sam oddziela
         // statek od ostatniego stopnia – jeden stage (np. Sojuz: stage 4 = oddzielenie od Bloku I). Dalej nic nie stage'uje.
+        // Oddzielenie statku: najpierw wyłączyć silniki ostatniego stopnia i odczekać, dopiero potem stage.
+        // Lot 26.11 10:42: przepustnica 0 i stage w tej samej klatce – Blok I odszedł z rozpędzonymi silnikami
+        // (odłączony stopień ma własny stan sterowania) i wjechał w Sojuza (uszkodzony panel).
+        private double sepPayloadUT = double.NaN;
         private void SeparatePayload()
         {
             if (aoLastStage <= 0 || vessel == null || vessel.currentStage != aoLastStage) return;
+            vessel.ctrlState.mainThrottle = 0f; FlightInputHandler.state.mainThrottle = 0f;
+            int off = 0;
+            foreach (Part p in vessel.parts)
+                foreach (PartModule pm in p.Modules)
+                {
+                    ModuleEngines e = pm as ModuleEngines;
+                    if (e != null && e.EngineIgnited && p.inverseStage >= aoLastStage) { e.Shutdown(); off++; }
+                }
+            sepPayloadUT = Planetarium.GetUniversalTime() + 3.0;
+            FlightLogger.Event("Start na orbitę: wyłączone silniki rakiety (" + off + "), oddzielenie statku za 3 s");
+        }
+
+        private void SeparatePayloadTick()
+        {
+            if (double.IsNaN(sepPayloadUT) || vessel == null) return;
+            vessel.ctrlState.mainThrottle = 0f; FlightInputHandler.state.mainThrottle = 0f;
+            if (Planetarium.GetUniversalTime() < sepPayloadUT) return;
+            sepPayloadUT = double.NaN;
+            if (vessel.currentStage != aoLastStage) return;
             StageManager.ActivateNextStage();
             FlightLogger.Event("Start na orbitę: oddzielenie statku od rakiety (stage " + (aoLastStage - 1) + ")");
             ScreenMessages.PostScreenMessage("Statek oddzielony od rakiety", 5f, ScreenMessageStyle.UPPER_CENTER);

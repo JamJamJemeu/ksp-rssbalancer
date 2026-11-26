@@ -119,15 +119,20 @@ namespace RSSBalancer
         {
             ITargetable t = FlightGlobals.fetch != null ? FlightGlobals.fetch.VesselTarget : null;
             Vessel v = t != null ? t.GetVessel() : null;
-            if (v != null && v != vessel) return v;
+            if (v != null && v != vessel && !v.vesselName.ToUpperInvariant().StartsWith(vessel.vesselName.ToUpperInvariant())) return v;
             if (string.IsNullOrEmpty(name)) return null;
             string key = name.Trim().ToUpperInvariant();
+            string own = vessel.vesselName.ToUpperInvariant();
             Vessel best = null;
             foreach (Vessel o in FlightGlobals.Vessels)
             {
                 if (o == null || o == vessel || o.situation != Vessel.Situations.ORBITING) continue;
                 if (o.vesselType == VesselType.Debris || o.vesselType == VesselType.SpaceObject) continue;
-                if (o.vesselName.ToUpperInvariant().Contains(key) && (best == null || o.totalMass > best.totalMass)) best = o;
+                string nm = o.vesselName.ToUpperInvariant();
+                // własne stopnie i odłamki („SOJUZ … BURAN DOCK Probe” też zawiera „BURAN”) – nigdy
+                if (nm.StartsWith(own)) continue;
+                if (nm == key) return o;                                    // dokładna nazwa ma pierwszeństwo
+                if (nm.Contains(key) && (best == null || o.GetTotalMass() > best.GetTotalMass())) best = o;
             }
             return best;
         }
