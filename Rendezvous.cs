@@ -102,7 +102,8 @@ namespace RSSBalancer
         // 51,0864° N 85,9818° E); dla 51,6° z Bajkonuru
         const double RdvAscT = 498.0, RdvInsDLat = 5.0781, RdvInsDLon = 22.6763;
         const double RdvStop = 10000;          // przybycie 10 km za celem – dalej „Igła” (MechJeb)
-        const double RdvRMinAlt = 195000;      // orbita fazująca nie niżej (powyżej perygeum wstawienia)
+        const double RdvRMinAlt = 195000;
+        const double RdvPlaneMin = 0.1;        // [°] mniejszej różnicy płaszczyzn nie korygujemy osobnym impulsem (0,1° ≈ 14 m/s)      // orbita fazująca nie niżej (powyżej perygeum wstawienia)
 
         enum RDV { None, Plane, PlaneBurn, B1, B1Burn, B2, B2Burn, B3, B3Burn, B4, B4Burn, Mj, Dock, Done, Failed }
         RDV rdv = RDV.None;
@@ -312,7 +313,7 @@ namespace RSSBalancer
             Orbit me = vessel.orbit, to = tgt.orbit;
             double relInc = Vector3d.Angle(Vector3d.Cross(RelPos(me, 0 + Planetarium.GetUniversalTime()), RelVel(me, Planetarium.GetUniversalTime())),
                                            Vector3d.Cross(RelPos(to, Planetarium.GetUniversalTime()), RelVel(to, Planetarium.GetUniversalTime())));
-            rdv = relInc > 0.02 ? RDV.Plane : RDV.B1;
+            rdv = relInc > RdvPlaneMin ? RDV.Plane : RDV.B1;      // drobną różnicę wyrówna MechJeb przy zbliżaniu
             rdvBurnUT = double.NaN; rdvWarped = false;
             string s = "Spotkanie z „" + tgt.vesselName + "”: profil " + (rdvB3Orbit == 17 ? "jednodobowy" : "dwudobowy") + ", różnica płaszczyzn " + relInc.ToString("F3", Inv) + "°";
             FlightLogger.Event(s);
@@ -385,8 +386,8 @@ namespace RSSBalancer
             double dist = (rdvTarget.CoMD - vessel.CoMD).magnitude;
             if (now > rdvNextLog && rdv < RDV.Mj)
             {
-                rdvNextLog = now + 600;
-                RendezvousInfo = rdv + ": odległość " + (dist / 1000).ToString("F0", Inv) + " km, faza " + (PhaseAt(me, to, now) * 180 / Math.PI).ToString("F1", Inv) + "°, orbita " + (me.PeA / 1000).ToString("F0", Inv) + "×" + (me.ApA / 1000).ToString("F0", Inv) + " km";
+                rdvNextLog = now + 5;
+                RendezvousInfo = RdvStateName(rdv) + (double.IsNaN(rdvBurnUT) || IsBurnRdv(rdv) ? "" : " za " + KSPUtil.PrintTimeCompact(Math.Max(0, rdvBurnUT - now), false)) + "; do celu " + (dist / 1000).ToString("F0", Inv) + " km, faza " + (PhaseAt(me, to, now) * 180 / Math.PI).ToString("F1", Inv) + "°, orbita " + (me.PeA / 1000).ToString("F0", Inv) + "×" + (me.ApA / 1000).ToString("F0", Inv) + " km";
             }
             switch (rdv)
             {
@@ -405,6 +406,7 @@ namespace RSSBalancer
                         }
                         rdvWarped = false;
                         if (double.IsNaN(rdvBurnUT)) { rdv = RDV.B1; break; }
+                        RdvLog("korekta płaszczyzny w węźle za " + KSPUtil.PrintTimeCompact(rdvBurnUT - now, false));
                     }
                     Vector3d nn = Vector3d.Cross(RelPos(to, rdvBurnUT), RelVel(to, rdvBurnUT)).normalized;
                     double vn = Vector3d.Dot(RelVel(me, rdvBurnUT), nn);
@@ -530,6 +532,19 @@ namespace RSSBalancer
                     RendezvousInfo = "dokowanie: " + dist.ToString("F0", Inv) + " m";
                     break;
                 }
+            }
+        }
+
+        static string RdvStateName(RDV s)
+        {
+            switch (s)
+            {
+                case RDV.Plane: return "korekta płaszczyzny";
+                case RDV.B1: return "impuls 1 (4. okrążenie, perygeum)";
+                case RDV.B2: return "impuls 2 (apogeum – orbita fazująca)";
+                case RDV.B3: return "impuls 3 (" + "zbliżenie – Hohmann)";
+                case RDV.B4: return "impuls 4 (wyrównanie przy celu)";
+                default: return IsBurnRdv(s) ? "trwa impuls" : s.ToString();
             }
         }
 

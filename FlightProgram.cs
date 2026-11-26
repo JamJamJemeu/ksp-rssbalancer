@@ -444,7 +444,7 @@ namespace RSSBalancer
         // Lot 24.11 12:05: odejście 150 m „po prostu od rdzenia” zostawiło rdzeń prawie na linii lotu; ОДУ-1 (wzdłuż
         // prędkości) poprowadził Burana prosto na niego (zbliżanie 8 m/s przy 150 m). Teraz odchodzimy W BOK od kierunku
         // lotu (składowa „od rdzenia” prostopadła do prędkości), a manewr czeka, aż odsunięcie w bok ≥ SepLateral.
-        public const double SepLateral = 40.0;
+        public const double SepLateral = 40.0, SepFarDist = 500.0;
         private Vector3d PushDir(Vessel o)
         {
             Vector3d rel = vessel.CoMD - o.CoMD, vdir = vessel.obt_velocity.normalized;
@@ -499,7 +499,9 @@ namespace RSSBalancer
             NearestNeighbour(out d, out n);
             double now = Planetarium.GetUniversalTime();
             double lat = n == null ? double.PositiveInfinity : LateralDist(n);
-            if (n == null || (d >= SepSafeDist && lat >= SepLateral) || (sepOn && now - sepStart > 300))
+            // 1.43.3: dalej niż SepFarDist nic nam nie grozi – lot 26.11 15:11: Blok I 2,2 km z przodu na tej samej orbicie
+            // (w bok < 40 m) znów włączył odchodzenie na RCS i zatrzymał warp.
+            if (n == null || d >= SepFarDist || (d >= SepSafeDist && lat >= SepLateral) || (sepOn && now - sepStart > 300))
             {
                 if (sepOn)
                 {
