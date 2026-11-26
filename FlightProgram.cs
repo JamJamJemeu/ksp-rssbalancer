@@ -1229,7 +1229,7 @@ namespace RSSBalancer
             string tunInfo = Tun.Load(p.node);
             if (tunInfo.Length > 0) FlightLogger.Event(tunInfo);
             LoadRendezvousSettings(p.node);
-            rdv = RDV.None; rdvTarget = null; rdvB3Orbit = RdvB3Orbit1; rdvEngineAt = double.NaN; RendezvousInfo = ""; sepPayloadUT = double.NaN;
+            rdv = RDV.None; rdvTarget = null; rdvB3Orbit = RdvB3Orbit1; rdvEngineAt = double.NaN; blk = null; blkB1UT = double.NaN; blkDocking = false; blkStopPending = false; rdvB3Plan = double.NaN; RendezvousInfo = ""; sepPayloadUT = double.NaN;
             if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("launchWindow"))
                 AskLaunchWindow(p, p.node.GetValue("launchWindow"));
             else if (vessel.situation == Vessel.Situations.PRELAUNCH && p.node != null && p.node.HasValue("rendezvousTarget"))
@@ -1247,6 +1247,7 @@ namespace RSSBalancer
             if (mph != MPh.None && mph != MPh.Done) FlightInputHandler.state.mainThrottle = 0f;
             mph = MPh.None;
             StopRendezvous();
+            StopBlocks();
             EndSeparation();
             Running = null;
             Current = -1;
@@ -1489,6 +1490,7 @@ namespace RSSBalancer
             if (mph != MPh.None && mph != MPh.Done) Maneuver();
             SeparatePayloadTick();
             RendezvousTick();
+            BlocksTick();
             WarpNeighbourGuard();
             if (burnOn) FlightInputHandler.state.mainThrottle = holdAttitude && attError < Tun.D("burn.alignedTol") ? 1f : 0f;
             // Bezpieczne zatrzymanie warpa przed impulsem. Do 1.30 było tu natychmiastowe SetRate(0) przy „tin < 20 + 3·krok”
@@ -1592,7 +1594,11 @@ namespace RSSBalancer
                 case "sitexrange": return SiteAngle(true);
                 case "deorbitin": return DeorbitIn();
                 case "orbitdone": return mph == MPh.Done ? 1 : 0;
-                case "rendezvous": case "docked": return RendezvousState;
+                case "rendezvous": return RendezvousState;
+                case "docked": return Math.Max(RendezvousState, BlkDocked());
+                case "done": return BlockState;
+                case "targetdist": return BlkTargetDist();
+                case "relspeed": return BlkRelSpeed();
                 case "autoorbit": return aoPhase == AO.Done ? (double.IsNaN(sepPayloadUT) ? 1 : 0) : aoPhase == AO.Failed ? -1 : 0;
                 case "boosters": return id != null && id.ok ? Running_(id.boosters, v) : double.NaN;
                 case "core": return id != null && id.ok ? Running_(id.core, v) : double.NaN;
@@ -1673,7 +1679,7 @@ namespace RSSBalancer
         private void WarpEventGuard()
         {
             if (TimeWarp.CurrentRateIndex == 0) { progWarpUT = double.NaN; return; }
-            if ((mph != MPh.None && mph != MPh.Done && IsBurnPhase(mph)) || burnOn || sepOn || RendezvousBurning)
+            if ((mph != MPh.None && mph != MPh.Done && IsBurnPhase(mph)) || burnOn || sepOn || RendezvousBurning || BlockBurning)
             {
                 TimeWarp.SetRate(0, true);
                 if (warpGuardName != "burn") { warpGuardName = "burn"; FlightLogger.Event("Przyspieszenie zatrzymane – trwa impuls/manewr"); }
@@ -1951,6 +1957,7 @@ namespace RSSBalancer
                 string key = v.name, val = v.value.Trim();
                 try
                 {
+                    if (ExecuteBlock(key, val, n)) continue;      // klocki (Blocks.cs)
                     if (key == "throttle")
                     {
                         float t = (float)Num(val, -1);

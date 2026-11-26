@@ -678,7 +678,7 @@ namespace RSSBalancer
             if (v == rdvTarget)
             {
                 var names = new List<string>();
-                foreach (string x in Tun.S("rdv.openTargetAnims").Split(',')) if (x.Trim().Length > 0) names.Add(x.Trim());
+                foreach (string x in (blkAnimsOverride ?? Tun.S("rdv.openTargetAnims")).Split(',')) if (x.Trim().Length > 0) names.Add(x.Trim());
                 foreach (Part p in v.parts)
                     foreach (PartModule pm in p.Modules)
                     {
@@ -757,8 +757,8 @@ namespace RSSBalancer
         /// <summary>Po zadokowaniu KSP łączy statki – aktywny może stać się innym obiektem Vessel. true = to nasze dokowanie.</summary>
         public bool RendezvousAdopt(Vessel active)
         {
-            if (rdv != RDV.Dock || active == null || rdvMyPort == null || rdvMyPort.part == null || rdvMyPort.part.vessel != active) return false;
-            vessel = active; RdvStopDock(); rdv = RDV.Done; RdvLog("ZADOKOWANO (statki połączone: „" + active.vesselName + "”)");
+            if ((rdv != RDV.Dock && !blkDocking) || active == null || rdvMyPort == null || rdvMyPort.part == null || rdvMyPort.part.vessel != active) return false;
+            vessel = active; RdvStopDock(); blkDocking = false; rdv = RDV.Done; RdvLog("ZADOKOWANO (statki połączone: „" + active.vesselName + "”)");
             return true;
         }
 

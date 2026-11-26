@@ -198,6 +198,21 @@ namespace RSSBalancer
                 sb.AppendLine("  mj.rendezvous.<pole> = …   MechJebModuleRendezvousAutopilot (np. mj.rendezvous.maxPhasingOrbits = 10)");
                 sb.AppendLine("  mj.docking.<pole> = …      MechJebModuleDockingAutopilot (np. mj.docking.overrideSafeDistance = True)");
                 sb.AppendLine();
+                sb.AppendLine("KLOCKI – czynności do składania misji w krokach programu (STEP { … }), bez nowego DLL:");
+                sb.AppendLine("  target = NAZWA                 wybór celu (statek z NAZWĄ w nazwie; nigdy własne stopnie)");
+                sb.AppendLine("  engine = ready                 silnik statku gotowy (następny stage, jeśli to sam silnik)");
+                sb.AppendLine("  planeBurn = target             korekta płaszczyzny w węźle; w kroku: minDeg = 1 (mniejszej nie robi)");
+                sb.AppendLine("  phasingPlan = target           plan orbity fazującej; w kroku: b1Orbit, b3Orbit, b3OrbitSlow, behindKm, minKm");
+                sb.AppendLine("  apsisBurn = KIEDY DOKĄD        KIEDY: b1 | pe | ap (+ orbit = N), DOKĄD: km | phasing | arrival | circular");
+                sb.AppendLine("  transferBurn = target          Hohmann pod cel; w kroku: orbit = N, behindKm = 10");
+                sb.AppendLine("  matchVelocity = ap | now       wyrównanie prędkości z celem");
+                sb.AppendLine("  openParts = target             otwarcie animacji celu (anims = …) i wysunięcie portów obu statków");
+                sb.AppendLine("  mechjeb = rendezvous on|off    w kroku: distance, maxSpeed, mj.rendezvous.<pole>");
+                sb.AppendLine("  mechjeb = docking on|off       w kroku: speed, mj.docking.<pole>");
+                sb.AppendLine("Warunki (when = …): done (poprzedni klocek skończony), targetdist [m], relspeed [m/s], docked,");
+                sb.AppendLine("  oraz dotychczasowe: met, alt, apo, peri, stage, timetoap, timetope, autoorbit, orbitdone, aligned …  (łączenie: „a & b”)");
+                sb.AppendLine("Błąd klocka zatrzymuje program – statek zostaje na orbicie. Przed każdym impulsem warp jest zatrzymany.");
+                sb.AppendLine();
                 string g = null;
                 foreach (Def d in catalog)
                 {
