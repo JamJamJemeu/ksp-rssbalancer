@@ -358,18 +358,22 @@ namespace RSSBalancer
                     {
                         holdDir = e.normalized;
                         if (em < Math.Max(0.03, 0.5 * tol)) { blkApBurn = false; blk.st = 0; FlightInputHandler.state.mainThrottle = 0f; return; }
-                        if (TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+                        // na szynach silnik nie działa – warp fizyczny (×2–×4) może zostać
+                        if (TimeWarp.CurrentRateIndex > 0 && TimeWarp.WarpMode == TimeWarp.Modes.HIGH) TimeWarp.SetRate(0, true);
                         EnsureBurnEngines();
                         double a = MaxAccel();     // pełny ciąg silnika statku / masa
                         float thr = (float)Math.Max(Tun.D("burn.minThrottle"), Math.Min(1, em / (a * Tun.D("burn.vectorSoftK"))));
                         bool on = attError < Tun.D("burn.attTol");
                         FlightInputHandler.state.mainThrottle = on ? thr : 0f;
-                        if (on) blkApDv += a * thr * TimeWarp.fixedDeltaTime;
+                        // 1.47.2: Δv z rzeczywistego ciągu (wcześniej z przepustnicy – licznik nie zgadzał się z paliwem)
+                        blkApDv += EngineThrustKN() / vessel.totalMass * TimeWarp.fixedDeltaTime;
                     }
                     else
                     {
-                        // między korektami: nos na cel (jak Sojuz przy „Igle”), silnik zgaszony
-                        holdDir = rel.normalized; FlightInputHandler.state.mainThrottle = 0f;
+                        // 1.47.2: między korektami nos zostaje w kierunku ostatniej korekty (następna jest zwykle podobna) –
+                        // obracanie na cel i z powrotem co 20 s zjadało paliwo RCS (lot 27.11 11:49)
+                        if (holdDir.sqrMagnitude < 0.5) holdDir = rel.normalized;
+                        FlightInputHandler.state.mainThrottle = 0f;
                     }
                     return;
                 }
