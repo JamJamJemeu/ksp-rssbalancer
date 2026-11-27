@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="950" viewBox="0 0 680 950" role="img"><title>RSSBalancer project roadmap</title>
+<rect x="10" y="10" width="660" height="930" rx="14" fill="#26908A" stroke="#1C7873" stroke-width="2"/><rect x="22" y="22" width="636" height="906" rx="8" fill="none" stroke="#33A39B"/>
+<circle cx="30" cy="30" r="6" fill="#C9B37A" stroke="#8A7A50"/><line x1="26" y1="34" x2="34" y2="26" stroke="#6B5D38" stroke-width="1.5"/>
+<circle cx="650" cy="30" r="6" fill="#C9B37A" stroke="#8A7A50"/><line x1="646" y1="26" x2="654" y2="34" stroke="#6B5D38" stroke-width="1.5"/>
+<circle cx="30" cy="920" r="6" fill="#C9B37A" stroke="#8A7A50"/><line x1="26" y1="916" x2="34" y2="924" stroke="#6B5D38" stroke-width="1.5"/>
+<circle cx="650" cy="920" r="6" fill="#C9B37A" stroke="#8A7A50"/><line x1="646" y1="924" x2="654" y2="916" stroke="#6B5D38" stroke-width="1.5"/>
+<rect x="40" y="40" width="600" height="50" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="2"/>
+<text x="60" y="70" font-size="15" font-weight="bold" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">RSSBALANCER · PROJECT ROADMAP</text>
+<text x="620" y="70" font-size="12" text-anchor="end" fill="#FFAD21" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">13 days · 150 commits</text>
+<line x1="340" y1="112" x2="340" y2="700" stroke="#C9B37A" stroke-width="3"/><line x1="340" y1="711" x2="340" y2="752" stroke="#C9B37A" stroke-width="2" stroke-dasharray="5 4"/>
+<line x1="351" y1="140" x2="370" y2="140" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="140" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="140" r="7" fill="#5FD37A"></circle>
+<rect x="370" y="112" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="505" y="136" font-size="14" font-weight="bold" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.6 – 1.9 · Nov 15</text>
+<text x="505" y="156" font-size="12" text-anchor="middle" fill="#46A85C" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Engine and tank balancer</text>
+<line x1="329" y1="210" x2="310" y2="210" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="210" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="210" r="7" fill="#5FD37A"></circle>
+<rect x="40" y="182" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="175" y="206" font-size="14" font-weight="bold" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.10 – 1.15 · Nov 16–17</text>
+<text x="175" y="226" font-size="12" text-anchor="middle" fill="#46A85C" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Telemetry screen, Energia</text>
+<line x1="351" y1="280" x2="370" y2="280" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="280" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="280" r="7" fill="#5FD37A"></circle>
+<rect x="370" y="252" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="505" y="276" font-size="14" font-weight="bold" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.16 – 1.19 · Nov 18</text>
+<text x="505" y="296" font-size="12" text-anchor="middle" fill="#46A85C" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Flight programs, MechJeb presets</text>
+<line x1="329" y1="350" x2="310" y2="350" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="350" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="350" r="7" fill="#5FD37A"></circle>
+<rect x="40" y="322" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="175" y="346" font-size="14" font-weight="bold" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.20 – 1.35 · Nov 19–20</text>
+<text x="175" y="366" font-size="12" text-anchor="middle" fill="#46A85C" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Buran autoland, 1K1 mission</text>
+<line x1="351" y1="420" x2="370" y2="420" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="420" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="420" r="7" fill="#FFAD21"></circle>
+<rect x="370" y="392" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="505" y="416" font-size="14" font-weight="bold" text-anchor="middle" fill="#FFAD21" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.38.1 · Nov 23 · baseline</text>
+<text x="505" y="436" font-size="12" text-anchor="middle" fill="#B37A17" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Baikonur, CRT, OK-GLI circuit</text>
+<line x1="329" y1="490" x2="310" y2="490" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="490" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="490" r="7" fill="#FFAD21"></circle>
+<rect x="40" y="462" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="175" y="486" font-size="14" font-weight="bold" text-anchor="middle" fill="#FFAD21" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.41.3 · Nov 24 · baseline</text>
+<text x="175" y="506" font-size="12" text-anchor="middle" fill="#B37A17" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Full 1K1 mission with landing</text>
+<line x1="351" y1="560" x2="370" y2="560" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="560" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="560" r="7" fill="#5FD37A"></circle>
+<rect x="370" y="532" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="505" y="556" font-size="14" font-weight="bold" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.42 – 1.45 · Nov 25–26</text>
+<text x="505" y="576" font-size="12" text-anchor="middle" fill="#46A85C" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Soyuz rendezvous with Buran</text>
+<line x1="329" y1="630" x2="310" y2="630" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="630" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="630" r="7" fill="#5FD37A"></circle>
+<rect x="40" y="602" width="270" height="56" rx="4" fill="#121415" stroke="#3A3C3E" stroke-width="1.5"/>
+<text x="175" y="626" font-size="14" font-weight="bold" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.46 – 1.49 · Nov 26–27</text>
+<text x="175" y="646" font-size="12" text-anchor="middle" fill="#46A85C" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Program blocks, Proton</text>
+<line x1="351" y1="700" x2="370" y2="700" stroke="#C9B37A" stroke-width="2"/>
+<circle cx="340" cy="700" r="11" fill="#2C2E30" stroke="#121415"/>
+<circle cx="340" cy="700" r="7" fill="#FF5A36"><animate attributeName="opacity" values="1;0.25;1" dur="1.2s" repeatCount="indefinite"/></circle>
+<rect x="370" y="672" width="270" height="56" rx="4" fill="#121415" stroke="#FFAD21" stroke-width="2"/>
+<text x="505" y="696" font-size="14" font-weight="bold" text-anchor="middle" fill="#FFAD21" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">1.52.1 · Nov 27 · current</text>
+<text x="505" y="716" font-size="12" text-anchor="middle" fill="#7DFF99" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Rockets tab, 18 templates</text>
+<line x1="130" y1="752" x2="550" y2="752" stroke="#C9B37A" stroke-width="2" stroke-dasharray="5 4"/>
+<line x1="130" y1="752" x2="130" y2="770" stroke="#C9B37A" stroke-width="2" stroke-dasharray="5 4"/>
+<line x1="340" y1="752" x2="340" y2="770" stroke="#C9B37A" stroke-width="2" stroke-dasharray="5 4"/>
+<line x1="550" y1="752" x2="550" y2="770" stroke="#C9B37A" stroke-width="2" stroke-dasharray="5 4"/>
+<rect x="40" y="770" width="180" height="44" rx="4" fill="#1A1C1D" stroke="#4A4C4E" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="130" y="797" font-size="14" font-weight="bold" text-anchor="middle" fill="#8FA096" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Soyuz return</text>
+<rect x="250" y="770" width="180" height="44" rx="4" fill="#1A1C1D" stroke="#4A4C4E" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="340" y="797" font-size="14" font-weight="bold" text-anchor="middle" fill="#8FA096" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Proton program</text>
+<rect x="460" y="770" width="180" height="44" rx="4" fill="#1A1C1D" stroke="#4A4C4E" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="550" y="797" font-size="14" font-weight="bold" text-anchor="middle" fill="#8FA096" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">VAB staging check</text>
+<rect x="40" y="828" width="180" height="44" rx="4" fill="#1A1C1D" stroke="#4A4C4E" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="130" y="855" font-size="14" font-weight="bold" text-anchor="middle" fill="#8FA096" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Buran on blocks</text>
+<rect x="250" y="828" width="180" height="44" rx="4" fill="#1A1C1D" stroke="#4A4C4E" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="340" y="855" font-size="14" font-weight="bold" text-anchor="middle" fill="#8FA096" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Δv calibration</text>
+<rect x="460" y="828" width="180" height="44" rx="4" fill="#1A1C1D" stroke="#4A4C4E" stroke-width="1.5" stroke-dasharray="4 3"/>
+<text x="550" y="855" font-size="14" font-weight="bold" text-anchor="middle" fill="#8FA096" style="font-family:'DejaVu Sans Mono',Consolas,'Courier New',monospace">Log cleanup</text>
+<circle cx="52" cy="900" r="9" fill="#2C2E30"/><circle cx="52" cy="900" r="6" fill="#5FD37A"/><text x="68" y="904" font-size="12" fill="#E6F2ED" style="font-family:'Segoe UI',Arial,sans-serif">DONE</text>
+<circle cx="192" cy="900" r="9" fill="#2C2E30"/><circle cx="192" cy="900" r="6" fill="#FFAD21"/><text x="208" y="904" font-size="12" fill="#E6F2ED" style="font-family:'Segoe UI',Arial,sans-serif">BASELINE</text>
+<circle cx="362" cy="900" r="9" fill="#2C2E30"/><circle cx="362" cy="900" r="6" fill="#FF5A36"/><text x="378" y="904" font-size="12" fill="#E6F2ED" style="font-family:'Segoe UI',Arial,sans-serif">CURRENT</text>
+<circle cx="502" cy="900" r="9" fill="#2C2E30"/><circle cx="502" cy="900" r="6" fill="#3A3C3E"/><text x="518" y="904" font-size="12" fill="#E6F2ED" style="font-family:'Segoe UI',Arial,sans-serif">PLANNED</text>
+</svg>

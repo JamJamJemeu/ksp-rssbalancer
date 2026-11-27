@@ -2,6 +2,10 @@
 
 Mod do **Kerbal Space Program 1.12** do dostrajania silników w grze. Dzięki niemu rakiety z modów robionych pod skalę stockową (np. radzieckie rakiety, Tantares) działają poprawnie w większych układach planet, takich jak **Sol** czy **RSS**. Ma też wzorzec **R-7 / Sojuz** z krzyżem Korolewa.
 
+## Roadmap
+
+![RSSBalancer project roadmap](docs/roadmap.svg)
+
 ## Funkcje
 
 Okno otwierane klawiszem **F8**, w VAB/SPH i w locie:
