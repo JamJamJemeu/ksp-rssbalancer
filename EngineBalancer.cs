@@ -790,6 +790,17 @@ namespace RSSBalancer
                     if (!TryNum(pF[r, i], out rows[r][i]) || rows[r][i] <= 0) { status = "Wpisz poprawne wartości (wszystkie > 0)."; return; }
 
             Refresh();
+            // ogranicznik ciągu stopni na 100 % – prawdziwe silniki Protona pracują na pełnym ciągu (TKS 27.11: wszystkie
+            // silniki miały 50 %, a mod liczy mnożnik ciągu od obecnego przepływu – wyszłoby ×5,7 i limit suwaka)
+            ProtonTemplate.Result idp = new ProtonTemplate.Result();
+            int limited = 0;
+            if (ProtonTemplate.Identify(groups, idp.st) == null)
+                foreach (EngineGroup g1 in idp.st)
+                    if (g1 != null)
+                        foreach (Part p in g1.parts)
+                            foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                                if (e.thrustPercentage < 99.9f) { e.thrustPercentage = 100f; limited++; }
+            if (limited > 0) Refresh();
             CelestialBody body = LaunchBody();
             double g = body != null ? body.gravParameter / (body.Radius * body.Radius) : 9.80665;
             ProtonTemplate.Result res = ProtonTemplate.Solve(groups, ShipMassNoClamps(), g, t);
@@ -814,7 +825,8 @@ namespace RSSBalancer
                 ModuleEngineBalancer.NotifyEditor();
                 Refresh();
             }
-            status = res.message + (res.ok ? "\nZastosowano, zbiorniki stopni zatankowane do pełna. Zapisz rakietę (np. jako „PROTON-K TKS RSS”)." : "");
+            status = (limited > 0 ? "Ogranicznik ciągu " + limited + " silników stopni był poniżej 100 % – ustawiony na 100 %.\n" : "") +
+                     res.message + (res.ok ? "\nZastosowano, zbiorniki stopni zatankowane do pełna. Zapisz rakietę (np. jako „PROTON-K TKS RSS”)." : "");
         }
 
         // ================================================================== zakładka: Misja
