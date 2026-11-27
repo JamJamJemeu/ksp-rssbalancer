@@ -353,7 +353,7 @@ namespace RSSBalancer
                 {
                     ModuleEngines e = pm as ModuleEngines;
                     if (e == null || e.propellants.Exists(pr => pr.name == "SolidFuel" || pr.name == "IntakeAir")) continue;
-                    if (e.EngineIgnited || p.inverseStage == vessel.currentStage - 1) t += e.maxThrust * e.thrustPercentage / 100.0;
+                    if ((e.EngineIgnited && p.inverseStage >= vessel.currentStage) || p.inverseStage == vessel.currentStage - 1) t += e.maxThrust * e.thrustPercentage / 100.0;
                 }
             return t > 0.1 ? t / vessel.totalMass : 0.5;
         }

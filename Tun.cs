@@ -206,6 +206,8 @@ namespace RSSBalancer
                 sb.AppendLine("  apsisBurn = KIEDY DOKĄD        KIEDY: b1 | pe | ap (+ orbit = N), DOKĄD: km | phasing | arrival | circular");
                 sb.AppendLine("  transferBurn = target          Hohmann pod cel; w kroku: orbit = N, behindKm = 10");
                 sb.AppendLine("  matchVelocity = ap | now       wyrównanie prędkości z celem");
+                sb.AppendLine("  approach = target              zbliżanie jak „Igła” (własne, bez MechJeba); w kroku: stopDist 200, rateK 0.002,");
+                sb.AppendLine("                                 vmin 0.3, vmax 10, tolFar 0.5, tolNear 0.1, maxDv 80, doneSpeed 0.15");
                 sb.AppendLine("  openParts = target             otwarcie animacji celu (anims = …) i wysunięcie portów obu statków");
                 sb.AppendLine("  mechjeb = rendezvous on|off    w kroku: distance, maxSpeed, mj.rendezvous.<pole>");
                 sb.AppendLine("  mechjeb = docking on|off       w kroku: speed, mj.docking.<pole>");

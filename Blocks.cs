@@ -139,6 +139,19 @@ namespace RSSBalancer
                     blk.ut = blk.atNow ? Planetarium.GetUniversalTime() : Planetarium.GetUniversalTime() + vessel.orbit.timeToAp;
                     return true;
                 }
+                case "approach":
+                {
+                    if (!BlkNeedTarget()) return true;
+                    BlkStart("approach", "zbliżanie (jak „Igła”)");
+                    blkAp = new double[] {
+                        StepNum(n, "stopDist", 200), StepNum(n, "rateK", 0.002), StepNum(n, "vmax", 10), StepNum(n, "vmin", 0.3),
+                        StepNum(n, "tolFar", 0.5), StepNum(n, "tolNear", 0.1), StepNum(n, "maxDv", 80), StepNum(n, "doneSpeed", 0.15) };
+                    blkApDv = 0; blkApBurns = 0; blkApBurn = false;
+                    ReleaseAttitude(); holdAttitude = true;
+                    vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
+                    RdvLog("zbliżanie: do " + blkAp[0].ToString("F0", Inv) + " m, prędkość ≈ " + blkAp[1].ToString("0.####", Inv) + " × odległość (" + blkAp[3].ToString("F1", Inv) + "–" + blkAp[2].ToString("F0", Inv) + " m/s), limit Δv " + blkAp[6].ToString("F0", Inv) + " m/s");
+                    return true;
+                }
                 case "openparts":
                 {
                     if (!BlkNeedTarget()) return true;
@@ -162,6 +175,7 @@ namespace RSSBalancer
         }
 
         double blkBehind = 10000;
+        double[] blkAp; double blkApDv; int blkApBurns; bool blkApBurn;
         string blkAnims = "";
 
         void BlkPhasingPlan(ConfigNode n)
@@ -209,7 +223,7 @@ namespace RSSBalancer
         {
             if (blkStopPending) { blkStopPending = false; Stop(); return; }
             if (!BlkBusy || vessel == null) return;
-            if (blk.st == 0 && blk.kind != "open" && SeparationGuard()) return;     // przy otwieraniu cel jest tuż obok – to nie odrzucony stopień
+            if (blk.st == 0 && blk.kind != "open" && blk.kind != "approach" && SeparationGuard()) return;     // przy otwieraniu cel jest tuż obok – to nie odrzucony stopień
             if (!rdvEngine && !double.IsNaN(rdvEngineAt) && Planetarium.GetUniversalTime() >= rdvEngineAt) { RdvEnsureEngine(); FlightInputHandler.state.mainThrottle = 0f; }
             CelestialBody b = vessel.mainBody; double mu = b.gravParameter, R = b.Radius, now = Planetarium.GetUniversalTime();
             Orbit me = vessel.orbit;
@@ -320,6 +334,45 @@ namespace RSSBalancer
                     if (VectorBurn(-n1 * Vector3d.Dot(RelVel(me, now), n1))) BlkDone("płaszczyzna wyrównana");
                     return;
                 }
+                case "approach":
+                {
+                    // „Igła”: prędkość zbliżania proporcjonalna do odległości (rateK), wzdłuż linii celu; korekty, gdy błąd > tol.
+                    // Symulacja offline (tools/rdv_approach_sim.py): z 9 km → 200 m w ~32 min, ~27 m/s, bez ruszania orbity.
+                    if (to == null) { BlkFail("cel zniknął"); return; }
+                    Vector3d rel = RelPos(to, now) - RelPos(me, now), u = RelVel(me, now) - RelVel(to, now);
+                    double d = rel.magnitude, stopD = blkAp[0];
+                    double vdes = d <= stopD ? 0 : Math.Max(blkAp[3], Math.Min(blkAp[2], d * blkAp[1]));
+                    Vector3d e = rel.normalized * vdes - u;
+                    double em = e.magnitude, tol = d < 1000 ? blkAp[5] : blkAp[4];
+                    RendezvousInfo = "zbliżanie: " + d.ToString("F0", Inv) + " m, prędkość " + Vector3d.Dot(u, rel.normalized).ToString("F2", Inv) + " m/s (cel " + vdes.ToString("F2", Inv) + "), korekt " + blkApBurns + ", Δv " + blkApDv.ToString("F1", Inv) + " m/s";
+                    if (!blkApBurn && d <= stopD && u.magnitude < blkAp[7])
+                    {
+                        FlightInputHandler.state.mainThrottle = 0f; blk.st = 0;
+                        BlkDone("zbliżanie gotowe: " + d.ToString("F0", Inv) + " m, prędkość względna " + u.magnitude.ToString("F2", Inv) + " m/s, " + blkApBurns + " korekt, Δv " + blkApDv.ToString("F1", Inv) + " m/s");
+                        return;
+                    }
+                    if (blkApDv > blkAp[6]) { BlkFail("zbliżanie zużyło " + blkApDv.ToString("F0", Inv) + " m/s (limit maxDv " + blkAp[6].ToString("F0", Inv) + ")"); return; }
+                    if (!blkApBurn && em > tol) { blkApBurn = true; blkApBurns++; blk.st = 1; }
+                    holdMode = Hold.Inertial; holdAttitude = true;
+                    if (blkApBurn)
+                    {
+                        holdDir = e.normalized;
+                        if (em < Math.Max(0.03, 0.5 * tol)) { blkApBurn = false; blk.st = 0; FlightInputHandler.state.mainThrottle = 0f; return; }
+                        if (TimeWarp.CurrentRateIndex > 0) TimeWarp.SetRate(0, true);
+                        EnsureBurnEngines();
+                        double a = MaxAccel();     // pełny ciąg silnika statku / masa
+                        float thr = (float)Math.Max(Tun.D("burn.minThrottle"), Math.Min(1, em / (a * Tun.D("burn.vectorSoftK"))));
+                        bool on = attError < Tun.D("burn.attTol");
+                        FlightInputHandler.state.mainThrottle = on ? thr : 0f;
+                        if (on) blkApDv += a * thr * TimeWarp.fixedDeltaTime;
+                    }
+                    else
+                    {
+                        // między korektami: nos na cel (jak Sojuz przy „Igle”), silnik zgaszony
+                        holdDir = rel.normalized; FlightInputHandler.state.mainThrottle = 0f;
+                    }
+                    return;
+                }
                 case "open":
                 {
                     if (to == null) { BlkFail("cel zniknął"); return; }
@@ -367,6 +420,8 @@ namespace RSSBalancer
         {
             if (!on) { RdvStopDock(); blkDocking = false; RdvLog("MechJeb Docking wyłączony"); return; }
             if (!BlkNeedTarget()) return;
+            ReleaseAttitude(); holdAttitude = false; FlightInputHandler.state.mainThrottle = 0f;   // sterowanie przejmuje MechJeb
+            vessel.ActionGroups.SetGroup(KSPActionGroup.RCS, true); vessel.ActionGroups.SetGroup(KSPActionGroup.SAS, false);
             rdvMyPort = FreePort(vessel, null);
             rdvTgtPort = rdvMyPort != null ? FreePort(rdvTarget, rdvMyPort) : null;
             if (rdvMyPort == null || rdvTgtPort == null) { blk = new Blk(); BlkFail("brak wolnych, wysuniętych portów dokujących (najpierw „openParts = target”)"); return; }
