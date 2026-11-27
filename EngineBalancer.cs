@@ -19,7 +19,7 @@ namespace RSSBalancer
     {
         private const int WindowId = 0x52535342;
         private const string LockId = "RSSBalancer_WindowLock";
-        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Misja", "Presety", "MechJeb", "Program" };
+        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Proton", "Misja", "Presety", "MechJeb", "Program" };
 
         private static bool show = false;
         private static int tab = 0;
@@ -165,10 +165,11 @@ namespace RSSBalancer
                 case 1: DrawGroupsTab(); break;
                 case 2: DrawSoyuzTab(); break;
                 case 3: DrawEnergiaTab(); break;
-                case 4: DrawMissionTab(); break;
-                case 5: DrawPresetsTab(); break;
-                case 6: DrawMechJebTab(); break;
-                case 7: DrawProgramTab(); break;
+                case 4: DrawProtonTab(); break;
+                case 5: DrawMissionTab(); break;
+                case 6: DrawPresetsTab(); break;
+                case 7: DrawMechJebTab(); break;
+                case 8: DrawProgramTab(); break;
             }
 
             if (!string.IsNullOrEmpty(status))
@@ -705,6 +706,115 @@ namespace RSSBalancer
             double thrust = 0;
             foreach (EngineGroup g in groups) if (g.ignition == launch) thrust += g.thrustAsl;
             return thrust / (twr * body.gravParameter / (body.Radius * body.Radius));
+        }
+
+        // ================================================================== zakładka: Proton
+
+        private static string[,] pF;            // [wiersz, stopień]: paliwo, konstrukcja, ISP, ciąg
+        private static bool pSetDry = true;
+        private static readonly string[] PRows = { "Paliwo [t]:", "Konstrukcja bez paliwa [t]:", "ISP w próżni [s]:", "Ciąg w próżni [kN] (cały stopień):" };
+
+        private static void ProtonDefaults()
+        {
+            CultureInfo c = CultureInfo.InvariantCulture;
+            pF = new string[4, 3];
+            for (int i = 0; i < 3; i++)
+            {
+                pF[0, i] = ProtonTemplate.Prop[i].ToString("0.##", c);
+                pF[1, i] = ProtonTemplate.Dry[i].ToString("0.##", c);
+                pF[2, i] = ProtonTemplate.IspVac[i].ToString("0", c);
+                pF[3, i] = ProtonTemplate.ThrustVac[i].ToString("0.#", c);
+            }
+        }
+
+        private void DrawProtonTab()
+        {
+            if (pF == null) ProtonDefaults();
+            GUILayout.Label("Wzorzec Proton-K (8K82K): trzy stopnie szeregowe na N₂O₄/UDMH. Dla każdego stopnia mod ustawia paliwo, ISP, ciąg i masę konstrukcji " +
+                            "jak w oryginale – czasy pracy (124 / 206 / 238 s) wychodzą z nich same. Ładunek (TKS, Ałmaz…) zostaje bez zmian.");
+            ProtonTemplate.Result id = new ProtonTemplate.Result();
+            string err = ProtonTemplate.Identify(groups, id.st);
+            GUILayout.BeginVertical("box");
+            if (err == null)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    EngineGroup g = id.st[i];
+                    GUILayout.Label(g == null ? ProtonTemplate.Names[i] + ": nie znaleziono"
+                        : ProtonTemplate.Names[i] + ":  " + g.Label + "  ·  teraz " + Sec(g.BurnTimeNow) + ", ISP " + Sec(g.ispVac) +
+                          ", paliwo " + g.propMass.ToString("F1") + " t, konstrukcja " + g.dryMass.ToString("F1") + " t, ciąg " + (g.massFlow * g.ispVac * EngineGroups.G0).ToString("F0") + " kN");
+                }
+                GUILayout.Label("Masa startowa: teraz " + ShipMassNoClamps().ToString("F0") + " t · TWR na starcie: teraz " + Twr(CurrentTwr()));
+            }
+            else GUILayout.Label(err);
+            GUILayout.EndVertical();
+
+            GUILayout.Space(4f);
+            GUILayout.Label("                                                    I stopień       II stopień      III stopień");
+            for (int r = 0; r < 4; r++)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(PRows[r], GUILayout.Width(230f));
+                for (int i = 0; i < 3; i++) { pF[r, i] = GUILayout.TextField(pF[r, i] ?? "", 8, GUILayout.Width(80f)); GUILayout.Space(12f); }
+                GUILayout.EndHorizontal();
+            }
+            pSetDry = GUILayout.Toggle(pSetDry, " Ustaw też masę konstrukcji stopni (zbiorniki, w razie potrzeby silniki)");
+            GUILayout.Label("Proton-K: paliwo 419,4 / 156,1 / 46,6 t, konstrukcja 31,1 / 11,7 / 4,2 t, ISP 316 / 327 / 325 s, ciąg 10 470 / 2 399 / 614 kN, " +
+                            "z TKS (21,6 t) masa startowa ≈ 691 t, TWR ≈ 1,39.");
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Wartości Protona-K")) ProtonDefaults();
+            GUI.enabled = err == null && HighLogic.LoadedSceneIsEditor;
+            if (GUILayout.Button("Oblicz i zastosuj")) RunProtonSolve();
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+            if (!HighLogic.LoadedSceneIsEditor)
+                GUILayout.Label("Paliwo i zbiorniki da się zmieniać tylko w VAB.");
+
+            GUILayout.Space(6f);
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("Profil lotu jak w oryginale (Proton-K z TKS, Bajkonur, 51,6°):\n" +
+                            "• start – 6 × RD-253, ok. T+124 s zapłon II stopnia i odrzut I (gorące rozdzielenie, przez kratownicę),\n" +
+                            "• ok. T+330 s – zapłon III stopnia i odrzut II,\n" +
+                            "• ok. T+570 s – wyłączenie III stopnia, oddzielenie ładunku na orbicie ok. 200 × 250 km.\n" +
+                            "SAS i owiewka odpadają w trakcie pracy II stopnia. W MechJeb (PVG) Last Stage = stage oddzielenia ładunku.");
+            GUILayout.EndVertical();
+        }
+
+        private void RunProtonSolve()
+        {
+            ProtonTemplate.Targets t = new ProtonTemplate.Targets { setDry = pSetDry };
+            double[][] rows = { t.prop, t.dry, t.isp, t.thr };
+            for (int r = 0; r < 4; r++)
+                for (int i = 0; i < 3; i++)
+                    if (!TryNum(pF[r, i], out rows[r][i]) || rows[r][i] <= 0) { status = "Wpisz poprawne wartości (wszystkie > 0)."; return; }
+
+            Refresh();
+            CelestialBody body = LaunchBody();
+            double g = body != null ? body.gravParameter / (body.Radius * body.Radius) : 9.80665;
+            ProtonTemplate.Result res = ProtonTemplate.Solve(groups, ShipMassNoClamps(), g, t);
+            if (res.ok)
+            {
+                List<EngineGroup> st = new List<EngineGroup>();
+                foreach (EngineGroup g2 in res.st) if (g2 != null) st.Add(g2);
+                // jak w Energii: mnożniki masy obejmują całą część (też masę z TweakScale itp.)
+                foreach (EngineGroup g2 in st)
+                {
+                    foreach (ModuleTankBalancer tb in g2.tanks) if (tb != null) tb.scaleWholePart = true;
+                    foreach (Part p in g2.parts)
+                        foreach (ModuleEngineBalancer eb in p.FindModulesImplementing<ModuleEngineBalancer>()) eb.scaleWholePart = true;
+                }
+                ApplyGroups(false);
+                foreach (EngineGroup g2 in st)
+                {
+                    foreach (ModuleTankBalancer tb in g2.tanks) if (tb != null && tb.part != null) tb.part.UpdateMass();
+                    foreach (Part p in g2.parts) if (p != null) p.UpdateMass();
+                    EngineGroups.FillTanks(g2);
+                }
+                ModuleEngineBalancer.NotifyEditor();
+                Refresh();
+            }
+            status = res.message + (res.ok ? "\nZastosowano, zbiorniki stopni zatankowane do pełna. Zapisz rakietę (np. jako „PROTON-K TKS RSS”)." : "");
         }
 
         // ================================================================== zakładka: Misja

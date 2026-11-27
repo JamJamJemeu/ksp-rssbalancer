@@ -192,7 +192,7 @@ namespace RSSBalancer
         /// Ustawia masę pustych zbiorników grupy tak, by konstrukcja ważyła <paramref name="target"/> t.
         /// Gdy same zbiorniki nie wystarczą (limit 0,1–2×), resztę bierze mnożnik masy silników.
         /// </summary>
-        private static void FitDry(EngineGroup g, double target, ref bool clamped)
+        internal static void FitDry(EngineGroup g, double target, ref bool clamped)
         {
             // Liczone od konstrukcji przy wszystkich mnożnikach = 1 (Core0); mnożniki działają na całą masę części.
             double delta = target - g.Core0;
@@ -216,13 +216,13 @@ namespace RSSBalancer
             if (Math.Abs(delta) > 1.0) clamped = true;
         }
 
-        private static double DryAfter(EngineGroup g)
+        internal static double DryAfter(EngineGroup g)
         {
             return g.Core0 + g.tankDryBase * (g.dry - 1f) + g.engineDryBase * (g.engMass - 1f);
         }
 
         /// <summary>Ustawia paliwo, ISP i ciąg jednej grupy. Zwraca masę paliwa po zatankowaniu do pełna [t].</summary>
-        private static double Fit(EngineGroup g, double propTarget, double ispTarget, double time, double thrTarget, ref bool clamped)
+        internal static double Fit(EngineGroup g, double propTarget, double ispTarget, double time, double thrTarget, ref bool clamped)
         {
             g.fuel = Clamp((float)(g.appliedFuel * propTarget / g.propCapacity), ModuleTankBalancer.MinFuel, ModuleTankBalancer.MaxFuel, ref clamped);
             double prop = g.propCapacity * g.fuel / g.appliedFuel;
