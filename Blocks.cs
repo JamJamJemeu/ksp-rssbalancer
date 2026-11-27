@@ -14,6 +14,7 @@ namespace RSSBalancer
     ///   apsisBurn = KIEDY DOKĄD           impuls w apsydzie: KIEDY = b1 | pe | ap, DOKĄD = km | phasing | arrival | circular
     ///   transferBurn = target             Hohmann pod cel, przybycie behindKm za nim (okrążenie: orbit, domyślnie z planu)
     ///   matchVelocity = ap | now          wyrównanie prędkości z celem
+    ///   approach = target (rdvApproach)   własne zbliżanie do celu („approach = on/off” to podejście do lądowania)
     ///   openParts = target                otwarcie animacji celu (anims = …) i wysunięcie portów dokujących (obu statków)
     ///   mechjeb = rendezvous on|off       MechJeb Rendezvous (pola: mj.rendezvous.* w kroku/programie)
     ///   mechjeb = docking on|off          MechJeb Docking z wyborem portów (pola: mj.docking.*)
@@ -140,7 +141,12 @@ namespace RSSBalancer
                     return true;
                 }
                 case "approach":
+                case "rdvapproach":
                 {
+                    // 1.47.4: „approach = on/off” to stare podejście do lądowania (Buran) – nie klocek! W 1.46–1.47.3 klocek
+                    // przechwytywał ten klucz i program powrotu Burana stawał w podejściu na Jubilejnyj (loty 27.11 17:12, 17:36).
+                    string av = val.Trim().ToLowerInvariant();
+                    if (k == "approach" && (av == "on" || av == "off" || av == "")) return false;
                     if (!BlkNeedTarget()) return true;
                     BlkStart("approach", "zbliżanie (jak „Igła”)");
                     blkAp = new double[] {

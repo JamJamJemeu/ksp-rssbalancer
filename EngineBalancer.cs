@@ -945,6 +945,8 @@ namespace RSSBalancer
             if (cdw != CountdownWindow.Show) CountdownWindow.Show = cdw;
             bool pa3 = GUILayout.Toggle(Pa3Plotter.Show, " Planszet ПА-3 – mapa: pas, krąg, ścieżka 19° i ślad lotu");
             if (pa3 != Pa3Plotter.Show) Pa3Plotter.Show = pa3;
+            bool us = GUILayout.Toggle(AirspeedIndicator.Show, " Prędkościomierz УС – prędkość przyrządowa w km/h albo węzłach (podejście i lądowanie)");
+            if (us != AirspeedIndicator.Show) AirspeedIndicator.Show = us;
             if (GUILayout.Button("Pomiar terenu Bajkonuru (zapis do Logs)"))
             {
                 try { status = TerrainSurvey.Run(); } catch (Exception e) { status = "Pomiar: błąd " + e.Message; Debug.LogException(e); }
