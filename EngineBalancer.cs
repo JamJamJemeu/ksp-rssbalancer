@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace RSSBalancer
@@ -19,7 +20,7 @@ namespace RSSBalancer
     {
         private const int WindowId = 0x52535342;
         private const string LockId = "RSSBalancer_WindowLock";
-        private static readonly string[] Tabs = { "Statek", "Grupy", "Sojuz", "Energia", "Proton", "Misja", "Presety", "MechJeb", "Program" };
+        private static readonly string[] Tabs = { "Statek", "Grupy", "Rakiety", "Misja", "Presety", "MechJeb", "Program" };
 
         private static bool show = false;
         private static int tab = 0;
@@ -163,13 +164,11 @@ namespace RSSBalancer
             {
                 case 0: DrawShipTab(); break;
                 case 1: DrawGroupsTab(); break;
-                case 2: DrawSoyuzTab(); break;
-                case 3: DrawEnergiaTab(); break;
-                case 4: DrawProtonTab(); break;
-                case 5: DrawMissionTab(); break;
-                case 6: DrawPresetsTab(); break;
-                case 7: DrawMechJebTab(); break;
-                case 8: DrawProgramTab(); break;
+                case 2: DrawRocketsTab(); break;
+                case 3: DrawMissionTab(); break;
+                case 4: DrawPresetsTab(); break;
+                case 5: DrawMechJebTab(); break;
+                case 6: DrawProgramTab(); break;
             }
 
             if (!string.IsNullOrEmpty(status))
@@ -706,6 +705,263 @@ namespace RSSBalancer
             double thrust = 0;
             foreach (EngineGroup g in groups) if (g.ignition == launch) thrust += g.thrustAsl;
             return thrust / (twr * body.gravParameter / (body.Radius * body.Radius));
+        }
+
+        // ================================================================== zakładka: Rakiety (lista z wyszukiwaniem)
+
+        private static readonly string[] BuiltinNames = { "Sojuz (R-7 – Sojuz, Woschod)", "Energia (Buran, Polus)", "Proton-K (TKS, Ałmaz, Salut)" };
+        private static readonly string[] BuiltinAliases = { "soyuz r7 r-7 semiorka 11a511 woschod voskhod", "buran polus polyus 11k25", "8k82k ur-500 tks almaz salut zond" };
+        private static readonly Regex[] BuiltinDetect =
+        {
+            new Regex(@"^rn\.r7\.(blok\.a|bvgd)|SoyuzU\.", RegexOptions.IgnoreCase),
+            new Regex(@"^rd\.?0120|^RD\.01201", RegexOptions.IgnoreCase),
+            new Regex(@"^rn\.proton\.rd253", RegexOptions.IgnoreCase)
+        };
+        private static string rocketSelName = BuiltinNames[0];
+        private static bool rocketListOpen;
+        private static string rocketSearch = "";
+        private Vector2 rocketScroll;
+        private float rocketDetectAt = -1f;
+        private string rocketBest;                       // najlepiej pasujący wzorzec do rakiety w VAB
+        private readonly HashSet<string> rocketFits = new HashSet<string>();
+
+        private static string[,] rF;                     // [stopień, kolumna]: paliwo, konstrukcja, ISP, ciąg
+        private static string rFFor;
+        private static bool rSetDry = true;
+
+        private void DetectRockets()
+        {
+            if (Time.realtimeSinceStartup < rocketDetectAt) return;
+            rocketDetectAt = Time.realtimeSinceStartup + 1f;
+            rocketFits.Clear();
+            rocketBest = null;
+            int best = 0;
+            for (int b = 0; b < BuiltinNames.Length; b++)
+            {
+                bool hit = false;
+                foreach (EngineGroup g in groups)
+                    foreach (Part p in g.parts)
+                        if (p != null && p.partInfo != null && BuiltinDetect[b].IsMatch(p.partInfo.name)) hit = true;
+                if (b == 1 && hit)
+                {   // Energia: oprócz RD-0120 rdzenia także RD-170 bloków
+                    hit = false;
+                    foreach (EngineGroup g in groups)
+                        foreach (Part p in g.parts)
+                            if (p != null && p.partInfo != null && Regex.IsMatch(p.partInfo.name, @"RD\.?170|RD170engine", RegexOptions.IgnoreCase)) hit = true;
+                }
+                if (!hit) continue;
+                rocketFits.Add(BuiltinNames[b]);
+                int sc = b == 2 ? 45 : 25;
+                if (sc > best) { best = sc; rocketBest = BuiltinNames[b]; }
+            }
+            foreach (RocketTemplates.RocketDef d in RocketTemplates.Defs)
+            {
+                int sc = RocketTemplates.Score(d, groups);
+                if (sc <= 0) continue;
+                rocketFits.Add(d.name);
+                if (sc > best) { best = sc; rocketBest = d.name; }
+            }
+        }
+
+        private void DrawRocketsTab()
+        {
+            RocketTemplates.EnsureLoaded();
+            DetectRockets();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Rakieta:", GUILayout.Width(60f));
+            if (GUILayout.Button(rocketSelName + (rocketFits.Contains(rocketSelName) ? "   ✓" : "") + (rocketListOpen ? "   ▲" : "   ▼"))) rocketListOpen = !rocketListOpen;
+            GUILayout.EndHorizontal();
+
+            if (rocketListOpen)
+            {
+                GUILayout.BeginVertical("box");
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Szukaj:", GUILayout.Width(52f));
+                rocketSearch = GUILayout.TextField(rocketSearch ?? "", 40);
+                if (GUILayout.Button("×", GUILayout.Width(24f))) rocketSearch = "";
+                GUILayout.EndHorizontal();
+                string q = (rocketSearch ?? "").Trim().ToLowerInvariant();
+                rocketScroll = GUILayout.BeginScrollView(rocketScroll, GUILayout.Height(230f));
+                int shown = 0;
+                for (int b = 0; b < BuiltinNames.Length; b++)
+                    if (RocketEntry(BuiltinNames[b], BuiltinAliases[b], q, "wbudowany")) shown++;
+                foreach (RocketTemplates.RocketDef d in RocketTemplates.Defs)
+                    if (RocketEntry(d.name, d.aliases + " " + d.file, q, d.stages.Count + " st.")) shown++;
+                if (shown == 0) GUILayout.Label("Nic nie pasuje do „" + rocketSearch + "”.");
+                GUILayout.EndScrollView();
+                GUILayout.Label("✓ = pasuje do rakiety w VAB. Wzorce z plików: PluginData\\Rakiety\\*.cfg");
+                if (GUILayout.Button("Wczytaj pliki wzorców ponownie")) { RocketTemplates.Reload(); rocketDetectAt = -1f; rFFor = null; status = RocketTemplates.LoadReport; }
+                GUILayout.EndVertical();
+            }
+
+            if (rocketBest != null && rocketBest != rocketSelName)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Rakieta w VAB pasuje do: " + rocketBest);
+                if (GUILayout.Button("Wybierz", GUILayout.Width(80f))) SelectRocket(rocketBest);
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.Space(4f);
+
+            if (rocketSelName == BuiltinNames[0]) DrawSoyuzTab();
+            else if (rocketSelName == BuiltinNames[1]) DrawEnergiaTab();
+            else if (rocketSelName == BuiltinNames[2]) DrawProtonTab();
+            else
+            {
+                RocketTemplates.RocketDef d = RocketTemplates.Defs.Find(x => x.name == rocketSelName);
+                if (d == null) { GUILayout.Label("Brak wzorca „" + rocketSelName + "” – plik usunięty? Wybierz rakietę z listy."); return; }
+                DrawGenericRocket(d);
+            }
+        }
+
+        private bool RocketEntry(string name, string aliases, string q, string note)
+        {
+            if (q.Length > 0 && name.ToLowerInvariant().IndexOf(q, StringComparison.Ordinal) < 0 && (aliases ?? "").ToLowerInvariant().IndexOf(q, StringComparison.Ordinal) < 0) return false;
+            string label = (name == rocketSelName ? "● " : "   ") + name + "   (" + note + ")" + (rocketFits.Contains(name) ? "   ✓ pasuje" : "");
+            if (GUILayout.Button(label, GUI.skin.label)) SelectRocket(name);
+            return true;
+        }
+
+        private void SelectRocket(string name)
+        {
+            rocketSelName = name;
+            rocketListOpen = false;
+            rFFor = null;
+            status = null;
+            window.height = WinMinH;
+        }
+
+        private static void RocketDefaults(RocketTemplates.RocketDef d)
+        {
+            CultureInfo c = CultureInfo.InvariantCulture;
+            rF = new string[d.stages.Count, 4];
+            for (int i = 0; i < d.stages.Count; i++)
+            {
+                RocketTemplates.StageDef s = d.stages[i];
+                rF[i, 0] = s.prop.ToString("0.##", c);
+                rF[i, 1] = s.dry.ToString("0.##", c);
+                rF[i, 2] = s.isp.ToString("0.#", c);
+                rF[i, 3] = s.thrust.ToString("0.#", c);
+            }
+            rFFor = d.name;
+        }
+
+        private void DrawGenericRocket(RocketTemplates.RocketDef d)
+        {
+            if (rF == null || rFFor != d.name || rF.GetLength(0) != d.stages.Count) RocketDefaults(d);
+            if (d.info.Length > 0) GUILayout.Label(d.info);
+
+            RocketTemplates.Found[] id = new RocketTemplates.Found[d.stages.Count];
+            string err = RocketTemplates.Identify(d, groups, id);
+            GUILayout.BeginVertical("box");
+            if (err == null)
+            {
+                for (int i = 0; i < d.stages.Count; i++)
+                {
+                    RocketTemplates.StageDef s = d.stages[i];
+                    RocketTemplates.Found f = id[i];
+                    if (f == null) { GUILayout.Label(s.name + ": brak (opcjonalny)"); continue; }
+                    EngineGroup g = f.g;
+                    GUILayout.Label(s.name + (s.IsBooster ? " (" + f.n + " bl.)" : "") + ":  " + g.Label + "  ·  teraz " + Sec(g.BurnTimeNow) + ", ISP " + Sec(g.ispVac) +
+                                    ", paliwo " + g.propMass.ToString("F1") + " t, konstrukcja " + g.dryMass.ToString("F1") + " t, ciąg " + (g.massFlow * g.ispVac * EngineGroups.G0).ToString("F0") + " kN");
+                }
+                GUILayout.Label("Masa startowa: teraz " + ShipMassNoClamps().ToString("F0") + " t · TWR na starcie: teraz " + Twr(CurrentTwr()));
+            }
+            else GUILayout.Label(err);
+            GUILayout.EndVertical();
+
+            GUILayout.Space(4f);
+            bool anyBooster = d.stages.Exists(x => x.IsBooster);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Stopień", GUILayout.Width(120f));
+            GUILayout.Label("paliwo t", GUILayout.Width(66f));
+            GUILayout.Label("konstr. t", GUILayout.Width(66f));
+            GUILayout.Label("ISP s", GUILayout.Width(56f));
+            GUILayout.Label("ciąg kN", GUILayout.Width(70f));
+            GUILayout.EndHorizontal();
+            for (int i = 0; i < d.stages.Count; i++)
+            {
+                RocketTemplates.StageDef s = d.stages[i];
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(s.name + (s.IsBooster ? " ×" + s.count : ""), GUILayout.Width(120f));
+                rF[i, 0] = GUILayout.TextField(rF[i, 0] ?? "", 9, GUILayout.Width(62f)); GUILayout.Space(4f);
+                rF[i, 1] = GUILayout.TextField(rF[i, 1] ?? "", 9, GUILayout.Width(62f)); GUILayout.Space(4f);
+                rF[i, 2] = GUILayout.TextField(rF[i, 2] ?? "", 6, GUILayout.Width(52f)); GUILayout.Space(4f);
+                rF[i, 3] = GUILayout.TextField(rF[i, 3] ?? "", 9, GUILayout.Width(66f));
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.Label("ISP i ciąg w próżni; ciąg całego stopnia" + (anyBooster ? ", dla bloków bocznych wartości NA JEDEN blok" : "") + ". Paliwo/konstrukcja 0 = bez zmian.");
+            rSetDry = GUILayout.Toggle(rSetDry, " Ustaw też masę konstrukcji stopni (zbiorniki, w razie potrzeby silniki)");
+            if (d.liftoffMass > 0 || d.payload.Length > 0)
+                GUILayout.Label("Oryginał: " + (d.liftoffMass > 0 ? "masa startowa ≈ " + d.liftoffMass.ToString("F0") + " t" : "") +
+                                (d.liftoffTwr > 0 ? ", TWR ≈ " + d.liftoffTwr.ToString("F2") : "") + (d.payload.Length > 0 ? ", ładunek: " + d.payload : "") + ".");
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Wartości oryginału")) RocketDefaults(d);
+            GUI.enabled = err == null && HighLogic.LoadedSceneIsEditor;
+            if (GUILayout.Button("Oblicz i zastosuj")) RunRocketSolve(d);
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+            if (!HighLogic.LoadedSceneIsEditor)
+                GUILayout.Label("Paliwo i zbiorniki da się zmieniać tylko w VAB.");
+
+            if (d.profile.Length > 0)
+            {
+                GUILayout.Space(6f);
+                GUILayout.BeginVertical("box");
+                GUILayout.Label(d.profile);
+                GUILayout.EndVertical();
+            }
+            if (d.source.Length > 0) GUILayout.Label("Dane: " + d.source);
+        }
+
+        private void RunRocketSolve(RocketTemplates.RocketDef d)
+        {
+            RocketTemplates.Targets t = RocketTemplates.Targets.From(d);
+            t.setDry = rSetDry;
+            double[][] cols = { t.prop, t.dry, t.isp, t.thr };
+            for (int i = 0; i < d.stages.Count; i++)
+                for (int k = 0; k < 4; k++)
+                    if (!TryNum(rF[i, k], out cols[k][i]) || cols[k][i] < 0 || (k >= 2 && cols[k][i] <= 0))
+                    { status = "Wpisz poprawne wartości (" + d.stages[i].name + "): paliwo i konstrukcja ≥ 0, ISP i ciąg > 0."; return; }
+
+            Refresh();
+            // ogranicznik ciągu stopni na 100 % (jak w Protonie: mnożnik ciągu liczony od obecnego przepływu)
+            RocketTemplates.Found[] idp = new RocketTemplates.Found[d.stages.Count];
+            int limited = 0;
+            if (RocketTemplates.Identify(d, groups, idp) == null)
+                foreach (RocketTemplates.Found f in idp)
+                    if (f != null)
+                        foreach (Part p in f.g.parts)
+                            foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                                if (e.thrustPercentage < 99.9f) { e.thrustPercentage = 100f; limited++; }
+            if (limited > 0) Refresh();
+            CelestialBody body = LaunchBody();
+            double g = body != null ? body.gravParameter / (body.Radius * body.Radius) : 9.80665;
+            RocketTemplates.Result res = RocketTemplates.Solve(d, groups, ShipMassNoClamps(), g, t);
+            if (res.ok)
+            {
+                List<EngineGroup> st = new List<EngineGroup>();
+                foreach (RocketTemplates.Found f in res.st) if (f != null) st.Add(f.g);
+                foreach (EngineGroup g2 in st)
+                {
+                    foreach (ModuleTankBalancer tb in g2.tanks) if (tb != null) tb.scaleWholePart = true;
+                    foreach (Part p in g2.parts)
+                        foreach (ModuleEngineBalancer eb in p.FindModulesImplementing<ModuleEngineBalancer>()) eb.scaleWholePart = true;
+                }
+                ApplyGroups(false);
+                foreach (EngineGroup g2 in st)
+                {
+                    foreach (ModuleTankBalancer tb in g2.tanks) if (tb != null && tb.part != null) tb.part.UpdateMass();
+                    foreach (Part p in g2.parts) if (p != null) p.UpdateMass();
+                    EngineGroups.FillTanks(g2);
+                }
+                ModuleEngineBalancer.NotifyEditor();
+                Refresh();
+            }
+            status = (limited > 0 ? "Ogranicznik ciągu " + limited + " silników stopni był poniżej 100 % – ustawiony na 100 %.\n" : "") +
+                     res.message + (res.ok ? "\nZastosowano, zbiorniki stopni zatankowane do pełna. Zapisz rakietę (np. jako „" + d.name.ToUpperInvariant() + " RSS”)." : "");
         }
 
         // ================================================================== zakładka: Proton
