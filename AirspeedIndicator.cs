@@ -15,7 +15,7 @@ namespace RSSBalancer
     public class AirspeedIndicator : MonoBehaviour
     {
         private const int WindowId = 0x55534931;
-        private const float W = 300f, H = 468f, R = 116f;
+        private const float W = 300f, H = 468f, R = 112f;
         private static bool show, knots, loaded;
         private static Rect win = new Rect(40, 300, W, H);
         private static string CfgFile { get { return Path.Combine(Path.Combine(Path.Combine(KSPUtil.ApplicationRootPath, "GameData"), "RSSBalancer"), Path.Combine("PluginData", "us.cfg")); } }
@@ -53,6 +53,7 @@ namespace RSSBalancer
         }
 
         private Texture2D px, disc;
+        private static Texture2D texKmh, texKt, texNeedle, texTop, cellTex;
         private GUIStyle sNum, sFace, sSmall, sCap, sTitle, sDrum, sCnt, sBtn;
         private bool styled;
 
@@ -91,13 +92,26 @@ namespace RSSBalancer
                     disc.SetPixel(x, y, new Color(sh, sh, sh, a));
                 }
             disc.Apply();
+            if (texKmh == null)
+            {
+                texKmh = Res("us_face_kmh"); texKt = Res("us_face_kt"); texNeedle = Res("us_needle"); texTop = Res("us_top");
+                // bębenek licznika: pionowy gradient jak .vem-cell (czarny – szary – czarny, ciemne brzegi)
+                cellTex = new Texture2D(1, 32, TextureFormat.ARGB32, false);
+                for (int yy = 0; yy < 32; yy++)
+                {
+                    float t = yy / 31f, g = t < 0.14f ? Mathf.Lerp(0f, 0.10f, t / 0.14f) : t < 0.5f ? Mathf.Lerp(0.10f, 0.17f, (t - 0.14f) / 0.36f) : t < 0.86f ? Mathf.Lerp(0.17f, 0.09f, (t - 0.5f) / 0.36f) : Mathf.Lerp(0.09f, 0f, (t - 0.86f) / 0.14f);
+                    float edge = Mathf.Clamp01(Mathf.Min(t, 1 - t) / 0.3f); g *= 0.15f + 0.85f * edge;
+                    cellTex.SetPixel(0, yy, new Color(g, g, g, 1));
+                }
+                cellTex.Apply();
+            }
             sNum = SovietSkin.Style(20, White, TextAnchor.MiddleCenter); sNum.fontStyle = FontStyle.Bold;
             sFace = SovietSkin.Style(10, White, TextAnchor.MiddleCenter); sFace.fontStyle = FontStyle.Bold;
             sSmall = SovietSkin.Style(8, new Color(0.8f, 0.8f, 0.78f), TextAnchor.MiddleCenter);
             sCap = SovietSkin.Style(10, new Color(0.85f, 0.86f, 0.84f), TextAnchor.MiddleCenter); sCap.fontStyle = FontStyle.Bold;
             sTitle = SovietSkin.Style(15, new Color(0.88f, 0.89f, 0.87f), TextAnchor.MiddleLeft); sTitle.fontStyle = FontStyle.Bold;
             sDrum = SovietSkin.Style(19, White, TextAnchor.MiddleCenter); sDrum.fontStyle = FontStyle.Bold;
-            sCnt = SovietSkin.Style(14, White, TextAnchor.MiddleCenter); sCnt.fontStyle = FontStyle.Bold;
+            sCnt = SovietSkin.Style(17, new Color(0.92f, 0.91f, 0.86f), TextAnchor.MiddleCenter); sCnt.fontStyle = FontStyle.Bold;
             sBtn = SovietSkin.Style(12, new Color(0.88f, 0.89f, 0.87f), TextAnchor.MiddleCenter); sBtn.fontStyle = FontStyle.Bold;
             sBtn.normal.background = SovietSkin.Button; sBtn.hover.background = SovietSkin.Button;
             sBtn.active.background = SovietSkin.ButtonOn; sBtn.border = new RectOffset(3, 3, 3, 3);
@@ -140,37 +154,30 @@ namespace RSSBalancer
             bool air = rho > 1e-6 && v.mainBody.atmosphere;
             double ias = air ? v.srfSpeed * Math.Sqrt(rho / Rho0) : 0;      // [m/s]
 
-            // --- przyrząd: kwadratowa oprawa z mosiężnymi wkrętami, czarna tarcza (jak ВЭМ-72)
-            Rect bz = new Rect(W / 2 - 130, 44, 260, 260);
-            Fill(bz, BezelEdge); Fill(new Rect(bz.x + 3, bz.y + 3, bz.width - 6, bz.height - 6), Bezel);
-            Brass(bz.x + 7, bz.y + 7, 13); Brass(bz.xMax - 20, bz.y + 7, 13); Brass(bz.x + 7, bz.yMax - 20, 13); Brass(bz.xMax - 20, bz.yMax - 20, 13);
-            Vector2 c = new Vector2(bz.center.x, bz.center.y);
-            GUI.DrawTexture(new Rect(c.x - R, c.y - R, 2 * R, 2 * R), disc);
-            double max = ScaleMax, minor = knots ? 5 : 10, major = knots ? 50 : 50, label = knots ? 50 : 100;
-            for (double s = 0; s <= max + 0.01; s += minor)
+            // --- przyrząd: kopia wysokościomierza ВЭМ-72 z AP-28 (te same gradienty, mosiężne wkręty, litery, wskazówka i szkło),
+            //     tylko ze skalą prędkości; tekstury wygenerowane z kodu SVG panelu AP-28 (Res/us_gen.js)
+            const float G = 260f; float S = G / 240f;
+            Rect bz = new Rect(W / 2 - G / 2, 44, G, G);
+            Vector2 c = new Vector2(bz.x + 120 * S, bz.y + 120 * S);
+            if (texKmh != null) GUI.DrawTexture(bz, knots ? texKt : texKmh);
+            // licznik cyfrowy: 4 bębenki w okienku (jak licznik ВЭМ-72)
+            string digits = air ? ((int)Math.Min(9999, Math.Round(ias * k))).ToString("0000", Inv) : "----";
+            for (int d = 0; d < 4; d++)
             {
-                bool lab = Math.Abs(s % label) < 0.01, maj = Math.Abs(s % major) < 0.01;
-                float a = Ang(s);
-                Line(Pol(c, a, R - 5), Pol(c, a, R - (lab ? 20 : maj ? 15 : 10)), White, lab ? 3f : maj ? 2f : 1.2f);
-                if (lab)
-                {
-                    Vector2 p = Pol(c, a, R - 36);
-                    GUI.Label(new Rect(p.x - 20, p.y - 12, 40, 24), (s / (knots ? 10 : 100)).ToString("0", Inv), sNum);
-                }
+                Rect cell = new Rect(bz.x + (84.5f + d * 18f) * S, bz.y + 135 * S, 17f * S, 22f * S);
+                if (cellTex != null) GUI.DrawTexture(cell, cellTex); else Fill(cell, new Color(0.15f, 0.15f, 0.15f));
+                GUI.Label(cell, digits.Substring(d, 1), sCnt);
             }
-            GUI.Label(new Rect(c.x - 50, c.y - 44, 100, 14), knots ? "×10 УЗ" : "×100 КМ/Ч", sFace);
-            GUI.Label(new Rect(c.x - 50, c.y - 30, 100, 14), "ПРИБОРНАЯ", sFace);
-            // licznik cyfrowy w okienku (jak licznik wysokości ВЭМ-72)
-            Rect cnt = new Rect(c.x - 34, c.y + 26, 68, 22);
-            Fill(cnt, White); Fill(new Rect(cnt.x + 2, cnt.y + 2, cnt.width - 4, cnt.height - 4), new Color(0.02f, 0.02f, 0.02f));
-            GUI.Label(cnt, air ? Math.Min(9999, ias * k).ToString("0000", Inv) : "----", sCnt);
-            GUI.Label(new Rect(c.x - 40, c.y + 50, 80, 12), "УС-" + (knots ? "350" : "600"), sSmall);
-            // wskazówka: biała, z pomarańczowym końcem i przeciwwagą
+            // wskazówka (obrót wokół środka tarczy)
             float na = Ang(ias * k);
-            Line(Pol(c, na + 180, 22), Pol(c, na, R - 10), White, 3.5f);
-            Line(Pol(c, na + 180, 22), Pol(c, na + 180, 8), White, 7f);
-            Line(Pol(c, na, R - 30), Pol(c, na, R - 10), Orange, 3.5f);
-            GUI.DrawTexture(new Rect(c.x - 8, c.y - 8, 16, 16), SovietSkin.Screw);
+            if (texNeedle != null)
+            {
+                Matrix4x4 m = GUI.matrix;
+                GUIUtility.RotateAroundPivot(na, c);
+                GUI.DrawTexture(bz, texNeedle);
+                GUI.matrix = m;
+                GUI.DrawTexture(bz, texTop);
+            }
 
             // --- bębenki pod przyrządem (podpisy pod spodem, jak w AP-28)
             float y = bz.yMax + 14;
@@ -184,6 +191,25 @@ namespace RSSBalancer
             Drum(new Rect(28, y, 112, 34), agl < 100000 ? agl.ToString("0", Inv) : "-----", "ВЫС. НАД ЗЕМЛЕЙ, М");
             if (GUI.Button(new Rect(156, y, 116, 34), knots ? "ЕД. УЗ" : "ЕД. КМ/Ч", sBtn)) { knots = !knots; Save(); }
             GUI.DragWindow(new Rect(0, 0, W, H));
+        }
+
+        /// <summary>Tekstura 480×480 RGBA z zasobu DLL (gzip, wiersze od dołu).</summary>
+        private static Texture2D Res(string name)
+        {
+            try
+            {
+                using (Stream st = typeof(AirspeedIndicator).Assembly.GetManifestResourceStream("RSSBalancer.Res." + name + ".rgba.gz"))
+                using (var gz = new System.IO.Compression.GZipStream(st, System.IO.Compression.CompressionMode.Decompress))
+                using (var ms = new MemoryStream())
+                {
+                    gz.CopyTo(ms);
+                    var t = new Texture2D(480, 480, TextureFormat.RGBA32, false);
+                    t.LoadRawTextureData(ms.ToArray()); t.Apply(false, true);
+                    t.filterMode = FilterMode.Bilinear; t.wrapMode = TextureWrapMode.Clamp;
+                    return t;
+                }
+            }
+            catch (Exception e) { Debug.LogError("[RSSBalancer] УС: brak tekstury " + name + ": " + e.Message); return null; }
         }
 
         private void Drum(Rect r, string val, string cap)

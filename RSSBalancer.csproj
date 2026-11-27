@@ -31,4 +31,7 @@
     <Copy SourceFiles="$(TargetPath);RSSBalancer.cfg" DestinationFolder="$(KSPDir)\GameData\RSSBalancer" />
   </Target>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Res/*.gz" LogicalName="RSSBalancer.Res.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>
