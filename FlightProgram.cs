@@ -68,6 +68,8 @@ namespace RSSBalancer
         public static int LastStageOverride = -1;
         /// <summary>Zdarzenia „stage o czasie” wpisane w zakładce Program, np. „114:8 157:6” (null = jak zapamiętane / w pliku).</summary>
         public static string StageAtOverride = null;
+        /// <summary>Wzorzec rakiety wybrany w zakładce Program (null = zapamiętany dla statku / rozpoznany).</summary>
+        public static string TemplateOverride = null;
 
         public static string SavedStageAt(string ship)
         {
@@ -2146,6 +2148,7 @@ namespace RSSBalancer
                         string sa = FlightPrograms.StageAtOverride ?? FlightPrograms.SavedStageAt(vessel.vesselName) ?? n.GetValue("stageAt");
                         if (FlightPrograms.StageAtOverride != null) FlightPrograms.SaveStageAt(vessel.vesselName, FlightPrograms.StageAtOverride);
                         aoStageAt = FlightPrograms.ParseStageAt(sa); aoStageAtIdx = 0;
+                        SetupPartEvents();
                         LastMessage += "\n" + StartAutoOrbit(val);
                     }
                     else if (key == "orbittarget")
@@ -2456,6 +2459,70 @@ namespace RSSBalancer
         //   t – czas lotu (wieża SAS T+114 s, owiewka T+157 s, BECO Atlasa), a – wysokość [km], h – gorące rozdzielenie
         //   (zapłon następnego stopnia, gdy pracującemu zostało ≤ v s – Proton, Titan II, N1, CZ-2/3).
         // Odpala zdarzenie tylko, gdy jego stage jest NASTĘPNY w kolejce; gdy już poszedł (MechJeb, ręcznie) – pomija.
+        // Zdarzenia na częściach z wzorca rakiety: wcześniejsze wyłączenie środkowych silników, zapłon wybranych silników
+        // przed stage'em (verniery), odrzut części o czasie bezpośrednio odłączaczem (pierścień S-II).
+        private List<KeyValuePair<double, List<Part>>> aoCutoffs = new List<KeyValuePair<double, List<Part>>>();
+        private List<KeyValuePair<double, List<Part>>> aoPreIgn = new List<KeyValuePair<double, List<Part>>>();
+        private List<KeyValuePair<double, List<Part>>> aoJett = new List<KeyValuePair<double, List<Part>>>();
+
+        private void SetupPartEvents()
+        {
+            aoCutoffs.Clear(); aoPreIgn.Clear(); aoJett.Clear();
+            try
+            {
+                string tn = FlightPrograms.TemplateOverride ?? FlightPrograms.SavedTemplate(vessel.vesselName);
+                RocketTemplates.EnsureLoaded();
+                List<EngineGroup> gs = EngineGroups.Build(vessel.parts, null);
+                RocketTemplates.RocketDef d = string.IsNullOrEmpty(tn) ? RocketTemplates.Best(gs) : tn == "-" ? null : RocketTemplates.Defs.Find(x => x.name == tn);
+                if (d == null) return;
+                RocketTemplates.Plan pl = RocketTemplates.StagingPlan(d, gs, vessel.parts);
+                if (!pl.ok) { FlightLogger.Event("Start na orbitę: wzorzec „" + d.name + "” nie pasuje – " + pl.error); return; }
+                aoCutoffs.AddRange(pl.cutoffs); aoPreIgn.AddRange(pl.preIgnites); aoJett.AddRange(pl.jettisons);
+                // odrzucane o czasie: wyłącz im odrzut w stage'u (np. pierścień S-II odpadałby razem z zapłonem S-II)
+                foreach (var j in aoJett)
+                    foreach (Part p in j.Value)
+                        foreach (ModuleDecouplerBase m in p.FindModulesImplementing<ModuleDecouplerBase>()) m.staged = false;
+                FlightLogger.Event("Start na orbitę: rakieta „" + d.name + "” – " + string.Join("; ", pl.lines.ToArray()));
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] staging z wzorca: " + e); }
+        }
+
+        private void PartEventsTick()
+        {
+            double met = vessel.missionTime;
+            for (int i = aoCutoffs.Count - 1; i >= 0; i--)
+            {
+                if (met < aoCutoffs[i].Key) continue;
+                int n = 0;
+                foreach (Part p in aoCutoffs[i].Value)
+                    if (p != null && p.vessel == vessel)
+                        foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                            if (e.EngineIgnited && !e.flameout) { e.Shutdown(); n++; }
+                FlightLogger.Event("Start na orbitę: wyłączenie " + n + " środkowych silników T+" + met.ToString("F1", Inv) + " s");
+                aoCutoffs.RemoveAt(i);
+            }
+            for (int i = aoPreIgn.Count - 1; i >= 0; i--)
+            {
+                double rem = BurnRemaining();
+                if (rem < 0 || rem > aoPreIgn[i].Key) continue;
+                int n = 0;
+                foreach (Part p in aoPreIgn[i].Value)
+                    if (p != null && p.vessel == vessel)
+                        foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                            if (!e.EngineIgnited) { e.Activate(); n++; }
+                FlightLogger.Event("Start na orbitę: wcześniejszy zapłon " + n + " silników, pracującemu stopniowi zostało " + rem.ToString("F1", Inv) + " s");
+                aoPreIgn.RemoveAt(i);
+            }
+            for (int i = aoJett.Count - 1; i >= 0; i--)
+            {
+                if (met < aoJett[i].Key) continue;
+                foreach (Part p in aoJett[i].Value)
+                    if (p != null && p.vessel == vessel) EngineGroups.Decouple(p);
+                FlightLogger.Event("Start na orbitę: odrzut " + aoJett[i].Value.Count + " części o czasie T+" + met.ToString("F1", Inv) + " s");
+                aoJett.RemoveAt(i);
+            }
+        }
+
         private void StageEventsTick()
         {
             foreach (FlightPrograms.StageEv ev in aoStageAt)
@@ -2528,6 +2595,7 @@ namespace RSSBalancer
                 // Stage o czasie (np. wieża SAS T+114 s, owiewka T+157 s – MechJeb ich nie odpali, bo nic się wtedy nie wypala).
                 // Odpala tylko, gdy NASTĘPNY stage to dokładnie ten z listy – jeśli już poszedł (MechJeb, ręcznie), pomija.
                 StageEventsTick();
+                PartEventsTick();
                 bool mjOff = now - aoStartUT > 10 && !AscentEnabled();
                 bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= aoLastStage && vessel.altitude > atmTop;
                 bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;

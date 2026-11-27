@@ -61,12 +61,22 @@ namespace RSSBalancer
             public bool IsCore { get { return role == "core"; } }
         }
 
+        /// <summary>Wcześniejsze wyłączenie części silników stopnia (środkowy F-1, wewnętrzne H-1, 6 środkowych NK-15).</summary>
+        public class CutoffDef { public string stage = "", note = ""; public int count = 1; public double at; }
+        /// <summary>Zapłon wybranych silników stopnia przed jego stage'em (verniery III stopnia Protona).</summary>
+        public class PreIgniteDef { public string stage = "", note = ""; public Regex part; public double lead = 3; }
+        /// <summary>Odrzut części o czasie bezpośrednio odłączaczem, niezależnie od stage'a (pierścień S-II Saturna V).</summary>
+        public class JettisonDef { public string name = ""; public Regex part; public double at; }
+
         public class RocketDef
         {
             public string name = "", aliases = "", info = "", profile = "", source = "", payload = "", file = "", exclude = "";
             public Regex excludeRx;
             public int builtin = -1;            // wzorzec wbudowany (0 Sojuz, 1 Energia, 2 Proton): tylko rozpoznanie i staging, panel jak dotąd
             public string les = "", fairing = "", stagingNote = "";
+            public readonly List<CutoffDef> cutoffs = new List<CutoffDef>();
+            public readonly List<PreIgniteDef> preIgnites = new List<PreIgniteDef>();
+            public readonly List<JettisonDef> jettisons = new List<JettisonDef>();
             public Regex lesRx = new Regex(@"(^|[._])les([._]|$)|escape|tower|\bsas\b", RegexOptions.IgnoreCase);
             public Regex fairingRx = new Regex(@"fairing|faring|shroud", RegexOptions.IgnoreCase);
             public double liftoffMass, liftoffTwr;
@@ -161,6 +171,16 @@ namespace RSSBalancer
                     if (S(sg, "fairingPart").Length > 0) d.fairingRx = new Regex(S(sg, "fairingPart"), RegexOptions.IgnoreCase);
                 }
                 catch (Exception ex) { err = d.name + ": zły regex w STAGING (" + ex.Message + ")"; return null; }
+                try
+                {
+                    foreach (ConfigNode c in sg.GetNodes("CUTOFF"))
+                        d.cutoffs.Add(new CutoffDef { stage = S(c, "stage"), count = Math.Max(1, (int)D(c, "count", 1)), at = D(c, "at"), note = S(c, "note") });
+                    foreach (ConfigNode c in sg.GetNodes("PREIGNITE"))
+                        d.preIgnites.Add(new PreIgniteDef { stage = S(c, "stage"), part = new Regex(S(c, "part"), RegexOptions.IgnoreCase), lead = D(c, "lead", 3), note = S(c, "note") });
+                    foreach (ConfigNode c in sg.GetNodes("JETTISON"))
+                        d.jettisons.Add(new JettisonDef { name = S(c, "name"), part = new Regex(S(c, "part"), RegexOptions.IgnoreCase), at = D(c, "at") });
+                }
+                catch (Exception ex) { err = d.name + ": błąd w CUTOFF/PREIGNITE/JETTISON (" + ex.Message + ")"; return null; }
             }
             try { d.excludeRx = d.exclude.Length > 0 ? new Regex(d.exclude, RegexOptions.IgnoreCase) : null; }
             catch (Exception ex) { err = d.name + ": zły regex exclude (" + ex.Message + ")"; return null; }
@@ -288,6 +308,26 @@ namespace RSSBalancer
             public int lastStage;
             public string events = "";
             public readonly List<string> lines = new List<string>();
+            // zdarzenia na częściach (wykonuje program lotu)
+            public readonly List<KeyValuePair<double, List<Part>>> cutoffs = new List<KeyValuePair<double, List<Part>>>();
+            public readonly List<KeyValuePair<double, List<Part>>> preIgnites = new List<KeyValuePair<double, List<Part>>>();
+            public readonly List<KeyValuePair<double, List<Part>>> jettisons = new List<KeyValuePair<double, List<Part>>>();
+        }
+
+        /// <summary>count silników grupy najbliżej osi rakiety (środkowe / wewnętrzne).</summary>
+        private static List<Part> Innermost(EngineGroup g, int count)
+        {
+            List<Part> eng = g.parts.FindAll(p => p != null);
+            if (eng.Count == 0) return eng;
+            Vector3 c = Vector3.zero; foreach (Part p in eng) c += p.transform.position; c /= eng.Count;
+            Part root = eng[0].vessel != null ? eng[0].vessel.rootPart : eng[0].localRoot;
+            Vector3 up = root != null ? root.transform.up : Vector3.up;
+            eng.Sort((a, b) =>
+            {
+                Vector3 da = a.transform.position - c, db = b.transform.position - c;
+                return Vector3.ProjectOnPlane(da, up).sqrMagnitude.CompareTo(Vector3.ProjectOnPlane(db, up).sqrMagnitude);
+            });
+            return eng.GetRange(0, Math.Min(count, eng.Count));
         }
 
         private static string Ev(string spec, int stage, out string what)
@@ -366,6 +406,34 @@ namespace RSSBalancer
                 else pl.lines.Add("owiewka: nie znaleziono części owiewki nad stage'em " + last + " – pominięta");
             }
             pl.lines.Add("ostatni stage rakiety: " + last + " – stage " + (last - 1) + " i niższe to statek (oddzielenie po wejściu na orbitę)");
+            // wyłączenie części silników, zapłon przed stage'em, odrzut części o czasie
+            foreach (CutoffDef cd in d.cutoffs)
+            {
+                int i = d.stages.FindIndex(x => x.name == cd.stage);
+                if (i < 0 || st[i] == null) { pl.lines.Add("wyłączenie silników „" + cd.stage + "”: brak tego stopnia – pominięte"); continue; }
+                if (st[i].g.parts.Count <= cd.count) { pl.lines.Add("wyłączenie silników „" + cd.stage + "”: stopień ma tylko " + st[i].g.parts.Count + " silnik(i) – pominięte"); continue; }
+                List<Part> ps = Innermost(st[i].g, cd.count);
+                pl.cutoffs.Add(new KeyValuePair<double, List<Part>>(cd.at, ps));
+                pl.lines.Add("„" + cd.stage + "”: wyłączenie " + ps.Count + " środkowych silników T+" + cd.at.ToString("0.#", c) + " s" + (cd.note.Length > 0 ? " (" + cd.note + ")" : ""));
+            }
+            foreach (PreIgniteDef pd in d.preIgnites)
+            {
+                int i = d.stages.FindIndex(x => x.name == pd.stage);
+                if (i < 0 || st[i] == null) continue;
+                List<Part> ps = st[i].g.parts.FindAll(p => p != null && p.partInfo != null && pd.part.IsMatch(p.partInfo.name));
+                if (ps.Count == 0) { pl.lines.Add("wcześniejszy zapłon w „" + pd.stage + "”: brak części „" + pd.part + "” – pominięty"); continue; }
+                pl.preIgnites.Add(new KeyValuePair<double, List<Part>>(pd.lead, ps));
+                pl.lines.Add("„" + pd.stage + "”: zapłon " + ps.Count + " silników (" + ps[0].partInfo.title + "), gdy poprzedniemu stopniowi zostanie " + pd.lead.ToString("0.#", c) + " s" + (pd.note.Length > 0 ? " (" + pd.note + ")" : ""));
+            }
+            if (parts != null)
+                foreach (JettisonDef jd in d.jettisons)
+                {
+                    List<Part> ps = parts.FindAll(p => p != null && p.partInfo != null && jd.part.IsMatch(p.partInfo.name) &&
+                        (p.FindModuleImplementing<ModuleDecouple>() != null || p.FindModuleImplementing<ModuleAnchoredDecoupler>() != null));
+                    if (ps.Count == 0) { pl.lines.Add((jd.name.Length > 0 ? jd.name : jd.part.ToString()) + ": brak w rakiecie – pominięty"); continue; }
+                    pl.jettisons.Add(new KeyValuePair<double, List<Part>>(jd.at, ps));
+                    pl.lines.Add((jd.name.Length > 0 ? jd.name : ps[0].partInfo.title) + ": odrzut T+" + jd.at.ToString("0.#", c) + " s odłączaczem (jego stage nie odrzuca go wcześniej)");
+                }
             if (d.stagingNote.Length > 0) pl.lines.Add(d.stagingNote);
             List<string> uniq = new List<string>();
             foreach (string e in ev) if (!uniq.Contains(e)) uniq.Add(e);   // wieża i owiewka w tym samym stage'u – raz

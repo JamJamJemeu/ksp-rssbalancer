@@ -1346,6 +1346,7 @@ namespace RSSBalancer
             FlightPrograms.AutoOrbitOverride = hasAo ? AutoOrbitText() : "";
             FlightPrograms.LastStageOverride = hasAo ? AoLastStage(FlightPrograms.Programs[progSel]) : -1;
             FlightPrograms.StageAtOverride = hasAo ? aoStageAtTxt : null;
+            FlightPrograms.TemplateOverride = hasAo && aoTpl.Length > 0 ? aoTpl : null;
             if (hasAo && FlightGlobals.ActiveVessel != null && aoTpl.Length > 0) FlightPrograms.SaveTemplate(FlightGlobals.ActiveVessel.vesselName, aoTpl);
             run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage;
         }
