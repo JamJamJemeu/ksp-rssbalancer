@@ -2082,6 +2082,15 @@ namespace RSSBalancer
                     else if (key == "askProgram" || key == "askprogram") AskProgram(val.Trim());
                     else if (key == "autoOrbit" || key == "autoorbit")
                     {
+                        // 1.47.1: program uruchomiony ponownie na orbicie – NIE startujemy wznoszenia (lot 27.11 09:31: MechJeb Ascent
+                        // na orbicie obniżył Sojuza z 252×265 do 140×220 km)
+                        if (vessel.situation == Vessel.Situations.ORBITING && vessel.orbit.PeA > (vessel.mainBody.atmosphere ? vessel.mainBody.atmosphereDepth : 0))
+                        {
+                            aoPhase = AO.Done;
+                            FlightLogger.Event("Start na orbitę: statek jest już na orbicie " + (vessel.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (vessel.orbit.ApA / 1000).ToString("F0", Inv) + " km – wznoszenie pominięte");
+                            LastMessage += "\nJuż na orbicie – wznoszenie pominięte.";
+                            continue;
+                        }
                         string ls = n.GetValue("lastStage") ?? n.GetValue("laststage");
                         int saved = FlightPrograms.SavedLastStage(vessel.vesselName);
                         aoLastStage = FlightPrograms.LastStageOverride >= 0 ? FlightPrograms.LastStageOverride
