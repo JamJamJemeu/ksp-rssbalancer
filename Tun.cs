@@ -48,8 +48,10 @@ namespace RSSBalancer
             A("Impulsy", "burn.axisSoftM", "5000", "m", "impuls na wysokość: przepustnica spada liniowo w ostatnich tylu metrach");
             A("Impulsy", "burn.vectorSoftK", "1.5", "s", "impuls wektorowy: przepustnica = Δv / (przyspieszenie × tyle)");
             A("Impulsy", "burn.minThrottle", "0.02", "", "najmniejsza przepustnica przy końcówce impulsu");
-            A("Impulsy", "burn.warpStopLead", "60", "s", "tyle przed impulsem warp jest zawsze zatrzymany");
-            A("Impulsy", "burn.warpTo", "90", "s", "program przyspiesza czas do tylu sekund przed impulsem");
+            A("Impulsy", "burn.warpStopLead", "30", "s", "tyle przed impulsem warp jest zawsze zatrzymany");
+            A("Impulsy", "burn.autoWarp", "1", "", "1 = przed impulsem spotkania/klocka program sam przyspiesza czas (przyciski warpu nadal działają – wtedy sterujesz Ty), 0 = tylko Ty");
+            A("Impulsy", "burn.warpRealSec", "5", "s", "warp zwalnia tak, żeby do zatrzymania zostało co najmniej tyle sekund czasu rzeczywistego");
+            A("Impulsy", "burn.warpTo", "90", "s", "(od 1.47.3 nieużywane przy klockach – warp idzie do burn.warpStopLead)");
             A("Impulsy", "burn.alignedTol", "5", "°", "warunek „aligned” i stały ciąg „burn” – tolerancja kierunku");
 
             // --- start na orbitę (autoOrbit) ---

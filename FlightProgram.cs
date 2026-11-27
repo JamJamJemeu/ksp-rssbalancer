@@ -331,7 +331,9 @@ namespace RSSBalancer
             if (o.PeA < atmTop && o.ApA > atmTop)
             {
                 mBi = false;
-                if (Math.Abs(di) > 0.05) mplan.Add(MPh.WaitNodePlane);
+                // 1.47.3: już za apogeum – bez czekania na węzeł (płaszczyznę poprawi później spotkanie/korekta)
+                bool pastAp = vessel.verticalSpeed < 0 || o.timeToAp > 0.5 * o.period;
+                if (Math.Abs(di) > 0.05 && !pastAp) mplan.Add(MPh.WaitNodePlane);
                 mplan.Add(MPh.WaitApRaiseAp); mplan.Add(MPh.WaitApP); mplan.Add(MPh.Done);
                 mIdx = 0; mph = mplan[0]; mBurnUT = double.NaN; mWarpedFor = double.NaN;
                 ManeuverInfo = "z toru suborbitalnego: ОДУ-1 w apogeum (apogeum → " + apKm.ToString("F0", Inv) + " km), ОДУ-2 w nowym apogeum (perygeum → " + peKm.ToString("F0", Inv) + " km)";
@@ -614,10 +616,11 @@ namespace RSSBalancer
         private void Maneuver()
         {
             if (mph == MPh.None || mph == MPh.Done || vessel == null) return;
-            if (!IsBurnPhase(mph) && SeparationGuard()) return;   // w trakcie impulsu nie przerywamy (lot 24.11 12:05)
+            if (!IsBurnPhase(mph) && !mUrgent && SeparationGuard()) return;   // w trakcie impulsu nie przerywamy (lot 24.11 12:05)
             Orbit o = vessel.orbit; CelestialBody b = vessel.mainBody;
             double now = Planetarium.GetUniversalTime(), R = b.Radius;
             double a = AccelNow();
+            if (mUrgent && o.PeA > (b.atmosphere ? b.atmosphereDepth : 0)) mUrgent = false;     // perygeum już nad atmosferą
             Vector3d up = (vessel.CoMD - b.position).normalized;
             Vector3d v = vessel.obt_velocity;
             double vz = Vector3d.Dot(v, up), vhm = (v - up * vz).magnitude;
@@ -713,6 +716,13 @@ namespace RSSBalancer
                         mBurnUT = now + o.timeToAp - 0.5 * dv / a;
                         if (mBurnUT < now + 5) mBurnUT = now + 5;
                         ManeuverInfo = "ОДУ-1 w apogeum: apogeum do " + mAp.ToString("F0", Inv) + " km, Δv " + dv.ToString("F0", Inv) + " m/s";
+                        // 1.47.3: już za apogeum (spadamy) – następne apogeum byłoby po przejściu przez atmosferę → impuls TERAZ
+                        double atmT = b.atmosphere ? b.atmosphereDepth : 0;
+                        if (o.PeA < atmT && (vz < 0 || o.timeToAp > 0.5 * o.period))
+                        {
+                            mBurnUT = now; mUrgent = true;
+                            ManeuverInfo = "ОДУ-1 od razu (już za apogeum, perygeum w atmosferze): apogeum do " + mAp.ToString("F0", Inv) + " km";
+                        }
                     }
                     holdDir = Vector3d.forward; holdMode = Hold.Orbit; holdAttitude = true;
                     ManeuverWarp(mBurnUT);
@@ -1245,7 +1255,7 @@ namespace RSSBalancer
             steerHdg = double.NaN;
             if (burnOn) { burnOn = false; FlightInputHandler.state.mainThrottle = 0f; }
             if (mph != MPh.None && mph != MPh.Done) FlightInputHandler.state.mainThrottle = 0f;
-            mph = MPh.None;
+            mph = MPh.None; mUrgent = false; aoFinishAfterSep = false;
             StopRendezvous();
             StopBlocks();
             EndSeparation();
@@ -2237,6 +2247,22 @@ namespace RSSBalancer
         //    początek zakrętu zależny od TWR; MechJeb sam odpala pierwszy stopień i zwalnia klamry;
         // 3) gdy MechJeb skończy (albo zabraknie mu paliwa, orbita suborbitalna/krzywa) – nasz „orbittarget” domyka orbitę.
         private enum AO { None, Ascent, Finish, Done, Failed }
+        private bool aoFinishAfterSep;
+        /// <summary>Manewr ratunkowy (tor suborbitalny) – bez czekania na odejście od stopnia i bez warpa.</summary>
+        private bool mUrgent;
+
+        /// <summary>Czy silniki rakiety nośnej (stage ≥ aoLastStage) mają jeszcze paliwo.</summary>
+        private bool RocketHasFuel()
+        {
+            foreach (Part p in vessel.parts)
+                if (p.inverseStage >= aoLastStage)
+                    foreach (PartModule pm in p.Modules)
+                    {
+                        ModuleEngines e = pm as ModuleEngines;
+                        if (e != null && e.EngineIgnited && !e.flameout) return true;
+                    }
+            return false;
+        }
         private AO aoPhase = AO.None;
         private double aoAlt, aoAp, aoInc, aoStartUT, nextAoLog;
         private int aoLastStage;
@@ -2431,13 +2457,31 @@ namespace RSSBalancer
                 }
                 if (o.eccentricity >= 1 || vessel.altitude < atmTop * 0.6) { aoPhase = AO.Failed; AutoOrbitInfo = "wznoszenie przerwane nisko – rakieta nie dała rady"; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); return; }
                 FlightLogger.Event("Start na orbitę: MechJeb skończył przy " + (o.PeA / 1000).ToString("F0", Inv) + " × " + (o.ApA / 1000).ToString("F0", Inv) + " km – domykam orbitę");
+                aoPhase = AO.Finish;
+                // 1.47.3 (lot 27.11 15:28): Blok I wypalony przy −562 × 193 km, tuż za apogeum. Domykanie czekało na NASTĘPNE
+                // apogeum (za ~80 min, po drodze atmosfera) – statek spadł, choć KTDU miało 386 m/s. Teraz: tor suborbitalny
+                // i rakieta pusta → od razu oddzielenie statku i domykanie jego silnikiem; ОДУ-1 natychmiast, gdy już po apogeum.
+                if (o.PeA < atmTop && aoLastStage > 0 && vessel.currentStage == aoLastStage && (fuelOut || EngineThrustKN() < 0.01 && !RocketHasFuel()))
+                {
+                    FlightLogger.Event("Start na orbitę: rakieta bez paliwa na torze suborbitalnym – oddzielam statek, orbitę domknie jego silnik (od razu)");
+                    SeparatePayload();
+                    aoFinishAfterSep = true;
+                    return;
+                }
                 double incT = Math.Abs(o.inclination - aoInc) < 1.0 ? o.inclination : aoInc;
                 StartManeuver(aoAlt, aoAp, incT);
-                aoPhase = AO.Finish;
                 return;
             }
             if (aoPhase == AO.Finish)
             {
+                if (aoFinishAfterSep)
+                {
+                    AutoOrbitInfo = "oddzielanie statku – potem domknięcie orbity jego silnikiem";
+                    if (!double.IsNaN(sepPayloadUT) || vessel.currentStage >= aoLastStage) return;
+                    aoFinishAfterSep = false; mUrgent = true;
+                    StartManeuver(aoAlt, aoAp, Math.Abs(o.inclination - aoInc) < 1.0 ? o.inclination : aoInc);
+                    return;
+                }
                 AutoOrbitInfo = "domykanie orbity: " + ManeuverInfo;
                 if (mph == MPh.Done)
                 {

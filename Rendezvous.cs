@@ -386,23 +386,59 @@ namespace RSSBalancer
         {
             double now = Planetarium.GetUniversalTime();
             double start = tB - 0.5 * Math.Abs(dvEst) / MaxAccel();
-            if (!rdvWarped && start - now > 2 * Tun.D("burn.warpTo"))
+            holdDir = Math.Sign(dvEst) >= 0 ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
+            // 1.47.3: przyspieszanie bez stockowego WarpTo – jego korutyna co klatkę narzucała swoje tempo, więc przyciski
+            // i klawisze warpu „nie działały” (lot 27.11 16:01). Teraz program sam podnosi warp stopień po stopniu
+            // (burn.autoWarp), a gdy gracz zmieni tempo przyciskiem – oddaje mu sterowanie i tylko zwalnia przed impulsem.
+            // Przed każdym impulsem warp zatrzymany burn.warpStopLead s wcześniej (domyślnie 30 s).
+            double stopAt = start - Tun.D("burn.warpStopLead");
+            if (now < stopAt) RdvWarpTick(stopAt);
+            else if (TimeWarp.CurrentRateIndex > 0)
+            {
+                // zwykle tu już ×1–×10 (RdvWarpTick zwalniał); przy dużym – stopniowo, nagłe zrzucenie z ×100 000 psuło orbitę (19.11)
+                if (TimeWarp.WarpMode == TimeWarp.Modes.HIGH && TimeWarp.CurrentRate > 100) TimeWarp.SetRate(TimeWarp.CurrentRateIndex - 1, false, false);
+                else TimeWarp.SetRate(0, true, false);
+            }
+            if (now >= start) { rdvWarpIdx = -1; rdvWarpUser = false; return true; }
+            return false;
+        }
+
+        int rdvWarpIdx = -1;     // stopień warpu ustawiony ostatnio przez program (inny = gracz nacisnął przycisk)
+        bool rdvWarpUser;        // gracz przejął warp – program już tylko zwalnia przed impulsem
+
+        /// <summary>Warp na szynach do chwili stopAt: ogranicza tempo tak, żeby zostało ≥ burn.warpRealSec s czasu rzeczywistego
+        /// (tak jak osłona WarpEventGuard), a gdy burn.autoWarp = 1 i gracz nie ruszał przycisków – sam przyspiesza.</summary>
+        void RdvWarpTick(double stopAt)
+        {
+            if (TimeWarp.fetch == null || vessel == null) return;
+            double tin = stopAt - Planetarium.GetUniversalTime();
+            int idx = TimeWarp.CurrentRateIndex;
+            if (idx > 0 && TimeWarp.WarpMode != TimeWarp.Modes.HIGH) { rdvWarpIdx = -1; return; }   // warp fizyczny – graczowi (stop przy stopAt)
+            if (rdvWarpIdx >= 0 && idx != rdvWarpIdx && !rdvWarpUser)
+            {
+                rdvWarpUser = true;
+                FlightLogger.Event("Przyspieszenie: zmienione przyciskiem – sterujesz warpem, program tylko zwolni przed impulsem");
+            }
+            float[] rates = TimeWarp.fetch.warpRates;
+            double K = Tun.D("burn.warpRealSec");
+            int allowed = rates.Length - 1;
+            while (allowed > 0 && rates[allowed] * K > tin) allowed--;
+            if (idx > allowed)
+            {
+                TimeWarp.SetRate(allowed, rates[idx] * TimeWarp.fixedDeltaTime * 50 > tin, false);
+                rdvWarpIdx = TimeWarp.CurrentRateIndex;
+                return;
+            }
+            if (!rdvWarpUser && Tun.D("burn.autoWarp") > 0 && idx < allowed && TimeWarp.CurrentRateIsTargetRate && FlightInputHandler.state.mainThrottle <= 0f)
             {
                 double nd; Vessel nv;
-                if (NearestNeighbour(out nd, out nv) >= SepSafeDist && TimeWarp.CurrentRateIndex == 0) { ProgWarpTo(start - Tun.D("burn.warpTo")); rdvWarped = true; }
+                if (NearestNeighbour(out nd, out nv) >= SepSafeDist)
+                {
+                    if (idx == 0 && TimeWarp.fetch.Mode != TimeWarp.Modes.HIGH) TimeWarp.fetch.Mode = TimeWarp.Modes.HIGH;
+                    TimeWarp.SetRate(idx + 1, false, false);     // poza limitem wysokości / przy przyspieszeniu KSP sam przytnie
+                }
             }
-            holdDir = Math.Sign(dvEst) >= 0 ? Vector3d.forward : Vector3d.back; holdMode = Hold.Orbit; holdAttitude = true;
-            // przed impulsem zawsze bez przyspieszenia czasu – na szynach silnik nie pracuje
-            // (lot 26.11 16:33: warp trwał jeszcze 650 s po węźle, korekta płaszczyzny poszła w złym miejscu)
-            // (lot 26.11 16:33: warp trwał jeszcze 650 s po węźle). Przy dużym warpie – łagodne hamowanie stockowym WarpTo
-            // (nagłe SetRate(0) przy ×100 000 psuło orbitę, loty 19.11), przy małym – od razu.
-            if (TimeWarp.CurrentRateIndex > 0)
-            {
-                double lead = Tun.D("burn.warpStopLead");
-                if (now >= start - lead) { if (TimeWarp.CurrentRate > 100 && start - now > 30) ProgWarpTo(Math.Max(now + 5, start - 30)); else TimeWarp.SetRate(0, true); }
-                else if (TimeWarp.CurrentRate > 100 && (double.IsNaN(progWarpUT) || progWarpUT > start - lead)) ProgWarpTo(start - lead);   // ręczny warp za impuls – skróć
-            }
-            return now >= start;
+            rdvWarpIdx = TimeWarp.CurrentRateIndex;
         }
 
         int rdvDir;   // kierunek impulsu ustalony na jego początku (+1 prograde, −1 retrograde)

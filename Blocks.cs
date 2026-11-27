@@ -46,7 +46,7 @@ namespace RSSBalancer
             return v != null && double.TryParse(v.Trim().Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out x) ? x : def;
         }
 
-        void BlkStart(string kind, string name) { blk = new Blk { kind = kind, name = name, st = 0, t0 = Planetarium.GetUniversalTime() }; rdvWarped = false; rdvDir = 0; mLastDv = double.MaxValue; }
+        void BlkStart(string kind, string name) { blk = new Blk { kind = kind, name = name, st = 0, t0 = Planetarium.GetUniversalTime() }; rdvWarped = false; rdvWarpIdx = -1; rdvWarpUser = false; rdvDir = 0; mLastDv = double.MaxValue; }
         void BlkDone(string msg) { if (blk != null) blk.st = 2; FlightInputHandler.state.mainThrottle = 0f; RdvLog(msg); }
         void BlkFail(string msg)
         {
