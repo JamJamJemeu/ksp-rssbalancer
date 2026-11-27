@@ -76,6 +76,11 @@ namespace RSSBalancer
             A("Spotkanie", "rdv.arriveBehindKm", "10", "km", "przybycie tyle za celem – dalej MechJeb");
             A("Spotkanie", "rdv.phasingMinKm", "195", "km", "orbita fazująca nie niżej");
             A("Spotkanie", "rdv.windowDays", "30", "doby", "jak daleko szukać okna startowego");
+            A("Spotkanie", "rdv.check", "1", "", "1 = przed oknem startowym bilans Δv: czy rakieta doleci do celu i czy statkowi starczy na powrót");
+            A("Spotkanie", "rdv.ascentNeedK", "0.87", "", "szacunek Δv na wynoszenie × tyle (szacunek jest ostrożny: Sojuz 25.11 zużył 8310 z szacowanych 9535 m/s)");
+            A("Spotkanie", "rdv.dvMargin", "60", "m/s", "bilans: zapas na korektę płaszczyzny, zbliżanie i dokowanie (ponad manewry z planu)");
+            A("Spotkanie", "rdv.returnPeKm", "30", "km", "bilans: powrót = impuls z orbity celu na perygeum tej wysokości");
+            A("Spotkanie", "rdv.returnDv", "0", "m/s", "bilans: Δv na powrót podane wprost (> 0 zastępuje rdv.returnPeKm)");
             A("Spotkanie", "rdv.engineDelay", "3", "s", "po oddzieleniu: stage silnika statku (KTDU + panele); −1 = nie odpalaj");
             A("Spotkanie", "rdv.mechjebDistance", "100", "m", "MechJeb Rendezvous: zatrzymaj się tyle od celu");
             A("Spotkanie", "rdv.mechjebMaxSpeed", "5", "m/s", "MechJeb Rendezvous: maks. prędkość zbliżania");

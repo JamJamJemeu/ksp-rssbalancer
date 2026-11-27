@@ -74,6 +74,7 @@ namespace RSSBalancer
             {
                 case "target":
                 {
+                    if (val.Trim() == "*") val = "";      // cel wybrany na wyrzutni (program dla dowolnego celu)
                     Vessel t = rdvTarget != null && rdvTarget.state != Vessel.State.DEAD && (string.IsNullOrEmpty(val) || rdvTarget.vesselName.ToUpperInvariant().Contains(val.Trim().ToUpperInvariant())) ? rdvTarget : FindTarget(val);
                     if (t == null) { blk = new Blk { kind = "target", st = 0 }; BlkFail("nie ma celu „" + val + "” na orbicie"); return true; }
                     rdvTarget = t; FlightGlobals.fetch.SetVesselTarget(t, true);
@@ -199,12 +200,17 @@ namespace RSSBalancer
             double rB1 = me.semiMajorAxis * (1 - me.eccentricity), rOpp = me.semiMajorAxis * (1 + me.eccentricity);
             double rMin = Math.Max(R + StepNum(n, "minKm", RdvRMinAlt / 1000) * 1000, rB1 + 2000);
             double theta1 = PhaseAt(me, to, tPe), dv, te, thU;
-            foreach (int orb in new[] { o1, o2 })
+            // 1.49: oba profile z programu nie pasują (inna rakieta – inna faza we wstawieniu) – szukamy kolejnych okrążeń
+            var orbs = new List<int> { o1, o2 };
+            int oMax = (int)StepNum(n, "b3OrbitMax", Math.Max(o2, o1) + 16);
+            for (int o = o1 + 1; o <= oMax; o++) if (o != o2) orbs.Add(o);
+            foreach (int orb in orbs)
             {
                 double plan = rdvLaunchUT + RdvAscT + (orb - 1) * T + RdvAscT;
                 double rph = RdvPlanner.SolveAnyPhase(mu, theta1, rB1, rOpp, to.semiMajorAxis, plan - tPe, stop, rMin, out dv, out te, out thU);
                 if (double.IsNaN(rph)) continue;
                 rdvRph = rph; rdvB3Orbit = orb; rdvB3Plan = plan; blkB1UT = tPe; RdvStop = stop;
+                if (orb != o1 && orb != o2) RdvLog("plan: profile " + o1 + "/" + o2 + " nie pasują do fazy – zbliżenie na " + orb + ". okrążeniu");
                 BlkDone("plan: impuls 1 za " + KSPUtil.PrintTimeCompact(tPe - now, false) + " (" + b1Orbit.ToString("F0", Inv) + ". okrążenie), faza " + (thU * 180 / Math.PI).ToString("F1", Inv) +
                         "°, orbita fazująca " + ((rph - R) / 1000).ToString("F1", Inv) + " km, zbliżenie na " + orb + ". okrążeniu, Δv ≈ " + dv.ToString("F0", Inv) + " m/s, przybycie za " + KSPUtil.PrintTimeCompact(te + tPe - now, false));
                 return;

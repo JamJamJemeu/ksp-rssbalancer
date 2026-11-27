@@ -2280,6 +2280,12 @@ namespace RSSBalancer
             double lat = Math.Abs(vessel.latitude);
             double peKm, apKm, inc;
             FlightPrograms.ParseAutoOrbit(val, b, out peKm, out apKm, out inc);
+            // 1.49: „autoOrbit = target” – orbita wstawienia pod cel wybrany na wyrzutni (dowolna rakieta)
+            if (w.Length > 0 && w[0].ToLowerInvariant() == "target")
+            {
+                if (rdvTarget == null || rdvTarget.state == Vessel.State.DEAD) { aoPhase = AO.Failed; return "autoOrbit = target: nie wybrano celu (program musi mieć „rendezvousTarget”)."; }
+                TargetInsertion(rdvTarget, b, out peKm, out apKm); inc = rdvTarget.orbit.inclination;
+            }
             if (double.IsNaN(inc)) inc = Math.Ceiling(lat * 10) / 10;
             if (rdvTarget != null && rdv == RDV.None && rdvTarget.state != Vessel.State.DEAD) inc = Math.Round(rdvTarget.orbit.inclination, 2);   // spotkanie: płaszczyzna celu
             double altKm = peKm;

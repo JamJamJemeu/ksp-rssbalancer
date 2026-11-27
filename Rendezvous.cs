@@ -177,6 +177,27 @@ namespace RSSBalancer
         /// Najbliższe starty (UT), gdy punkt wstawienia leży w płaszczyźnie celu, i profil, który z nich wychodzi.
         /// Model: wstawienie RdvAscT s po starcie w punkcie wyrzutnia + (RdvInsDLat, RdvInsDLon) – tak leciał Sojuz 25.11.
         /// </summary>
+        double rdvInsPeKm = 193, rdvInsApKm = 253;   // orbita wstawienia do modelu okna (Sojuz: 193 × 253 km; „autoOrbit = target” – z celu)
+
+        /// <summary>Orbita wstawienia pod cel dla dowolnej rakiety: nisko (nad atmosferą) i poniżej celu – faza się dogania,
+        /// potem orbita fazująca i Hohmann pod cel (jak Sojuz 7K-T: 193 × 253 km pod cel 251 × 263 km).</summary>
+        public static void TargetInsertion(Vessel tgt, CelestialBody b, out double peKm, out double apKm)
+        {
+            double atm = b.atmosphere ? b.atmosphereDepth / 1000 : 0, tPe = tgt.orbit.PeA / 1000;
+            peKm = Math.Round(Math.Max(atm + 45, Math.Min(193, tPe - 60)));
+            apKm = Math.Round(Math.Max(peKm + 10, Math.Min(tPe - 5, peKm + 60)));
+        }
+
+        /// <summary>Orbita wstawienia z kroku autoOrbit programu (pole z zakładki ma pierwszeństwo).</summary>
+        void RdvInsertionFor(Vessel tgt)
+        {
+            string v = !string.IsNullOrEmpty(FlightPrograms.AutoOrbitOverride) ? FlightPrograms.AutoOrbitOverride : FlightPrograms.AutoOrbitFromFile(Running);
+            double pe, ap, inc;
+            if ((v ?? "").Trim().ToLowerInvariant().StartsWith("target")) TargetInsertion(tgt, vessel.mainBody, out pe, out ap);
+            else { FlightPrograms.ParseAutoOrbit(v, vessel.mainBody, out pe, out ap, out inc); if (string.IsNullOrEmpty(v) || pe <= 0) { pe = 193; ap = 253; } }
+            rdvInsPeKm = pe; rdvInsApKm = ap;
+        }
+
         bool FindRendezvousWindow(Vessel tgt, int maxDays, out double L, out int b3, out double theta, out double dv, out double tDock)
         {
             L = theta = dv = tDock = double.NaN; b3 = 0;
@@ -190,7 +211,7 @@ namespace RSSBalancer
             Func<double, double, double, Vector3d> inert = (lat, lon, ut) =>
                 (b.GetWorldSurfacePosition(lat, lon + (ut - now) * 360.0 / rotP, 0) - b.position).normalized;
             Func<double, double> f = Lt => Vector3d.Dot(inert(insLat, insLon, Lt + RdvAscT), n);
-            double rT = to.semiMajorAxis, rp = R + 193000, ra = R + 253000, TI = RdvPlanner.Per(mu, 0.5 * (rp + ra)), nT = 2 * Math.PI / RdvPlanner.Per(mu, rT);
+            double rT = to.semiMajorAxis, rp = R + rdvInsPeKm * 1000, ra = R + rdvInsApKm * 1000, TI = RdvPlanner.Per(mu, 0.5 * (rp + ra)), nT = 2 * Math.PI / RdvPlanner.Per(mu, rT);
             var cands = new List<double>();
             double step = 60, prev = f(now + 600);
             for (double t = now + 600 + step; t < now + maxDays * 86400.0; t += step)
@@ -290,6 +311,7 @@ namespace RSSBalancer
 
         void RendezvousWindowFor(Vessel tgt)
         {
+            RdvInsertionFor(tgt);
             FlightLogger.Event("Spotkanie: wybrany cel „" + tgt.vesselName + "” " + (tgt.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (tgt.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + tgt.orbit.inclination.ToString("F2", Inv) + "°");
             FlightGlobals.fetch.SetVesselTarget(tgt, true);
             rdvTarget = tgt;
@@ -305,24 +327,59 @@ namespace RSSBalancer
             rdvB3Orbit = b3;
             double now = Planetarium.GetUniversalTime();
             CelestialBody b = vessel.mainBody;
+            string budget = ""; int verdict = 0;
+            if (Tun.D("rdv.check") > 0) verdict = RdvBudget(tgt, dv, out budget);
             string msg = "Cel: „" + tgt.vesselName + "” " + (tgt.orbit.PeA / 1000).ToString("F0", Inv) + " × " + (tgt.orbit.ApA / 1000).ToString("F0", Inv) + " km, " + tgt.orbit.inclination.ToString("F1", Inv) + "°.\n\n" +
                          "Najbliższe okno: start za " + KSPUtil.PrintTimeCompact(L - now, false) + " (ok. " + HourText(SolarTimeAt(b, vessel.latitude, vessel.longitude, L)) + " czasu słonecznego Bajkonuru).\n" +
                          "Profil " + (b3 == RdvB3Orbit1 ? "jednodobowy (jak 7K-T): manewry na 4. i 5. okrążeniu, zbliżenie na 17." : "dwudobowy: manewry na 4. i 5. okrążeniu, zbliżenie na 33.") + "\n" +
                          "Cel w chwili wstawienia " + (th * 180 / Math.PI).ToString("F0", Inv) + "° przed nami, manewry ok. " + dv.ToString("F0", Inv) + " m/s, dokowanie ok. " + (td / 3600).ToString("F1", Inv) + " h po starcie.\n\n" +
-                         "Przyspieszyć czas do okna startowego?";
+                         "Orbita wstawienia " + rdvInsPeKm.ToString("F0", Inv) + " × " + rdvInsApKm.ToString("F0", Inv) + " km.\n" + budget +
+                         (verdict == 2 ? "\n\nDOLOT NIEMOŻLIWY – rakieta jest za słaba na ten cel." : verdict == 1 ? "\n\nUWAGA: statkowi zabraknie paliwa na powrót. Lecieć mimo to?" : "\n\nPrzyspieszyć czas do okna startowego?");
             FlightLogger.Event("Spotkanie: okno za " + KSPUtil.PrintTimeCompact(L - now, false) + ", profil B3 na " + b3 + ". okr., faza " + (th * 180 / Math.PI).ToString("F1", Inv) + "°, Δv ≈ " + dv.ToString("F0", Inv) + " m/s");
             launchHoldUT = double.PositiveInfinity;
             double Lc = L;
+            Callback go = () =>
+            {
+                launchHoldUT = Lc;
+                FlightLogger.Event("Spotkanie: okno wybrane – czekam do startu" + (verdict == 1 ? " (ostrzeżenie o braku paliwa na powrót pominięte)" : ""));
+                if (Lc - Planetarium.GetUniversalTime() > 60) ProgWarpTo(Lc - 15);
+            };
+            Callback cancel = () => { launchHoldUT = double.NaN; Stop(); };
+            DialogGUIBase[] btns = verdict == 2 ? new DialogGUIBase[] { new DialogGUIButton("OK – nie lecimy", cancel) }
+                : verdict == 1 ? new DialogGUIBase[] { new DialogGUIButton("Leć mimo to (bez paliwa na powrót)", go), new DialogGUIButton("Anuluj", cancel) }
+                : new DialogGUIBase[] { new DialogGUIButton("Tak – przyspiesz do okna", go), new DialogGUIButton("Anuluj", cancel) };
+            if (verdict == 2) FlightLogger.Event("Spotkanie: dolot niemożliwy – start odwołany");
             PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new MultiOptionDialog("RSSBalancerRdvWindow", msg, "Spotkanie na orbicie", HighLogic.UISkin,
-                    new DialogGUIButton("Tak – przyspiesz do okna", () =>
-                    {
-                        launchHoldUT = Lc;
-                        FlightLogger.Event("Spotkanie: okno wybrane – czekam do startu");
-                        if (Lc - Planetarium.GetUniversalTime() > 60) ProgWarpTo(Lc - 15);
-                    }),
-                    new DialogGUIButton("Anuluj", () => { launchHoldUT = double.NaN; Stop(); })),
-                false, HighLogic.UISkin);
+                new MultiOptionDialog("RSSBalancerRdvWindow", msg, "Spotkanie na orbicie", HighLogic.UISkin, btns), false, HighLogic.UISkin);
+        }
+
+        /// <summary>
+        /// Bilans Δv przed startem: 0 = starczy na dolot i powrót, 1 = dolot tak, powrót nie, 2 = dolot niemożliwy.
+        /// Rakieta = stage'e ≥ lastStage (z zakładki / zapisane dla rakiety / z pliku), statek = reszta. Gdy lastStage = 0 –
+        /// cała rakieta jest jednym statkiem. Wynoszenie: szacunek DeltaVPlanner × rdv.ascentNeedK; brak rakiety pokrywa statek.
+        /// </summary>
+        int RdvBudget(Vessel tgt, double manDv, out string text)
+        {
+            CelestialBody b = vessel.mainBody; double mu = b.gravParameter, R = b.Radius;
+            int ls = FlightPrograms.LastStageOverride >= 0 ? FlightPrograms.LastStageOverride : FlightPrograms.SavedLastStage(vessel.vesselName);
+            if (ls < 0) ls = Math.Max(0, FlightPrograms.LastStageFromFile(Running));
+            double inc = Math.Max(Math.Abs(vessel.latitude), tgt.orbit.inclination > 90 ? 180 - tgt.orbit.inclination : tgt.orbit.inclination);
+            double asc = DeltaVPlanner.ToOrbit(b, rdvInsPeKm * 1000, rdvInsApKm * 1000, inc) * Tun.D("rdv.ascentNeedK");
+            double rdvNeed = manDv + Tun.D("rdv.dvMargin");
+            double rT = tgt.orbit.semiMajorAxis, rP = R + Tun.D("rdv.returnPeKm") * 1000;
+            double ret = Tun.D("rdv.returnDv") > 0 ? Tun.D("rdv.returnDv") : Math.Sqrt(mu / rT) - Math.Sqrt(mu * 2 * rP / (rT * (rT + rP)));
+            double total; StockDeltaV.TotalVac(out total);
+            double rocket = total, ship;
+            if (ls > 0) { StockDeltaV.TotalVacFrom(ls, out rocket); ship = Math.Max(0, total - rocket); }
+            else ship = 0;
+            double shipAvail = ls > 0 ? ship - Math.Max(0, asc - rocket) : total - asc;
+            text = "Bilans Δv (próżnia, szacunek): rakieta " + (ls > 0 ? rocket.ToString("F0", Inv) + " m/s (stage'e ≥ " + ls + "), statek " + ship.ToString("F0", Inv) + " m/s" : total.ToString("F0", Inv) + " m/s (bez podziału na rakietę i statek – ustaw „ostatni stage rakiety” w zakładce Program)") +
+                   ".\nPotrzeba: wynoszenie ≈" + asc.ToString("F0", Inv) + ", spotkanie ≈" + rdvNeed.ToString("F0", Inv) + " (manewry " + manDv.ToString("F0", Inv) + " + zapas " + Tun.D("rdv.dvMargin").ToString("F0", Inv) +
+                   "), powrót ≈" + ret.ToString("F0", Inv) + " m/s. " + (ls > 0 && rocket < asc ? "Rakieta nie wejdzie sama na orbitę – brakujące ≈" + (asc - rocket).ToString("F0", Inv) + " m/s doda statek. " : "") +
+                   "Statkowi zostaje na spotkanie i powrót ≈" + shipAvail.ToString("F0", Inv) + " m/s.";
+            int v = shipAvail < rdvNeed ? 2 : shipAvail < rdvNeed + ret ? 1 : 0;
+            FlightLogger.Event("Spotkanie: " + text.Replace("\n", " ") + (v == 2 ? " → DOLOT NIEMOŻLIWY" : v == 1 ? " → brak paliwa na powrót" : " → starczy"));
+            return v;
         }
 
         // ------------------------------------------------------------------ lot
