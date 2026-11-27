@@ -54,6 +54,9 @@ namespace RSSBalancer
             public int count = 1, engines = 1, parts = 1;
             public double prop, dry, isp, thrust, time;
             public bool optional;
+            public double hot;                 // gorące rozdzielenie: zapłon TEGO stopnia, gdy poprzedniemu zostało ≤ hot s (0 = nie)
+            public string jettisonAt = "";     // odrzut tego stopnia o czasie / wysokości („135” s, „a60” km) – np. BECO Atlasa
+            public bool ascent = true;         // false = stopień nie bierze udziału w starcie na orbitę (Blok L, Blok G/D) – dla programu to ładunek
             public bool IsBooster { get { return role == "booster"; } }
             public bool IsCore { get { return role == "core"; } }
         }
@@ -62,6 +65,10 @@ namespace RSSBalancer
         {
             public string name = "", aliases = "", info = "", profile = "", source = "", payload = "", file = "", exclude = "";
             public Regex excludeRx;
+            public int builtin = -1;            // wzorzec wbudowany (0 Sojuz, 1 Energia, 2 Proton): tylko rozpoznanie i staging, panel jak dotąd
+            public string les = "", fairing = "", stagingNote = "";
+            public Regex lesRx = new Regex(@"(^|[._])les([._]|$)|escape|tower|\bsas\b", RegexOptions.IgnoreCase);
+            public Regex fairingRx = new Regex(@"fairing|faring|shroud", RegexOptions.IgnoreCase);
             public double liftoffMass, liftoffTwr;
             public readonly List<StageDef> stages = new List<StageDef>();
         }
@@ -143,6 +150,18 @@ namespace RSSBalancer
             };
             if (d.name.Length == 0) { err = "ROCKET bez nazwy"; return null; }
             d.exclude = S(n, "exclude");
+            d.builtin = (int)D(n, "builtin", -1);
+            ConfigNode sg = n.GetNode("STAGING");
+            if (sg != null)
+            {
+                d.les = S(sg, "les"); d.fairing = S(sg, "fairing"); d.stagingNote = S(sg, "note");
+                try
+                {
+                    if (S(sg, "lesPart").Length > 0) d.lesRx = new Regex(S(sg, "lesPart"), RegexOptions.IgnoreCase);
+                    if (S(sg, "fairingPart").Length > 0) d.fairingRx = new Regex(S(sg, "fairingPart"), RegexOptions.IgnoreCase);
+                }
+                catch (Exception ex) { err = d.name + ": zły regex w STAGING (" + ex.Message + ")"; return null; }
+            }
             try { d.excludeRx = d.exclude.Length > 0 ? new Regex(d.exclude, RegexOptions.IgnoreCase) : null; }
             catch (Exception ex) { err = d.name + ": zły regex exclude (" + ex.Message + ")"; return null; }
             foreach (ConfigNode s in n.GetNodes("STAGE"))
@@ -152,10 +171,11 @@ namespace RSSBalancer
                     name = S(s, "name"), role = S(s, "role").ToLowerInvariant(), engine = S(s, "engine"),
                     count = Math.Max(1, (int)D(s, "count", 1)), engines = Math.Max(1, (int)D(s, "engines", 1)), parts = Math.Max(1, (int)D(s, "parts", 1)),
                     prop = D(s, "prop"), dry = D(s, "dry"), isp = D(s, "isp"), thrust = D(s, "thrust"), time = D(s, "time"),
-                    optional = S(s, "optional").ToLowerInvariant() == "true"
+                    optional = S(s, "optional").ToLowerInvariant() == "true",
+                    hot = D(s, "hotStaging"), jettisonAt = S(s, "jettisonAt"), ascent = S(s, "ascent").ToLowerInvariant() != "false"
                 };
                 if (st.role != "booster" && st.role != "core") st.role = "serial";
-                if (st.isp <= 0 || st.thrust <= 0) { err = d.name + " / " + st.name + ": brak isp albo thrust"; return null; }
+                if (d.builtin < 0 && (st.isp <= 0 || st.thrust <= 0)) { err = d.name + " / " + st.name + ": brak isp albo thrust"; return null; }
                 try { st.rx = st.engine.Length > 0 ? new Regex(st.engine, RegexOptions.IgnoreCase) : null; }
                 catch (Exception ex) { err = d.name + " / " + st.name + ": zły regex silnika (" + ex.Message + ")"; return null; }
                 d.stages.Add(st);
@@ -257,6 +277,115 @@ namespace RSSBalancer
                 if (d.stages[i].IsBooster && st[i].n == d.stages[i].count) sc += 3;
             }
             return sc;
+        }
+
+        // ------------------------------------------------------------------ staging z wzorca
+
+        public class Plan
+        {
+            public bool ok;
+            public string error = "";
+            public int lastStage;
+            public string events = "";
+            public readonly List<string> lines = new List<string>();
+        }
+
+        private static string Ev(string spec, int stage, out string what)
+        {
+            spec = (spec ?? "").Trim().ToLowerInvariant();
+            what = "";
+            if (spec.Length == 0 || stage < 0) return null;
+            char k = 't';
+            if (char.IsLetter(spec[0])) { k = spec[0]; spec = spec.Substring(1); }
+            double v;
+            if (!double.TryParse(spec.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out v) || v <= 0) return null;
+            what = k == 'a' ? "na " + v.ToString("0.#", CultureInfo.InvariantCulture) + " km" : "T+" + v.ToString("0.#", CultureInfo.InvariantCulture) + " s";
+            return (k == 'a' ? "a" : "") + v.ToString("0.###", CultureInfo.InvariantCulture) + ":" + stage;
+        }
+
+        /// <summary>
+        /// Staging jak w prawdziwej rakiecie, wyliczony z OBECNEJ konstrukcji: stopnie wzorca → grupy silników (ich stage'e zapłonu
+        /// i odrzutu), wieża SAS i owiewka → części w rakiecie. Wynik: ostatni stage rakiety (wszystko niżej to statek) i lista
+        /// zdarzeń w zapisie „Stage o czasie” (np. „114:8 157:6 h1.5:7”).
+        /// </summary>
+        public static Plan StagingPlan(RocketDef d, List<EngineGroup> groups, List<Part> parts)
+        {
+            Plan pl = new Plan();
+            Found[] st = new Found[d.stages.Count];
+            string err = Identify(d, groups, st);
+            if (err != null) { pl.error = err; return pl; }
+            CultureInfo c = CultureInfo.InvariantCulture;
+            List<string> ev = new List<string>();
+            int last = -1, prevFound = -1;
+            for (int i = 0; i < st.Length; i++)
+            {
+                if (st[i] == null) continue;
+                StageDef s = d.stages[i];
+                EngineGroup g = st[i].g;
+                // ostatni stage rakiety = stage tuż nad oddzieleniem statku od ostatniego stopnia startu (owiewka i wieża
+                // mogą odpadać już w trakcie jego pracy – CZ-2F: II stopień stage 10, owiewka 9, oddzielenie Shenzhou 7)
+                if (s.ascent) last = g.jettison >= 0 && g.jettison < g.ignition ? g.jettison + 1 : g.ignition;
+                pl.lines.Add(s.name + ": zapłon w stage'u " + g.ignition + (g.jettison >= 0 ? ", odrzut w stage'u " + g.jettison : ", bez odrzutu") + (s.ascent ? "" : " – poza startem na orbitę (traktowany jak ładunek)"));
+                if (s.hot > 0 && prevFound >= 0 && s.ascent)
+                {
+                    ev.Add("h" + s.hot.ToString("0.#", c) + ":" + g.ignition);
+                    pl.lines.Add("   gorące rozdzielenie: zapłon „" + s.name + "” (stage " + g.ignition + "), gdy poprzedniemu stopniowi zostanie " + s.hot.ToString("0.#", c) + " s pracy");
+                }
+                if (s.jettisonAt.Length > 0)
+                {
+                    string w; string e = Ev(s.jettisonAt, g.jettison, out w);
+                    if (e != null) { ev.Add(e); pl.lines.Add("   odrzut „" + s.name + "” (stage " + g.jettison + ") " + w); }
+                }
+                prevFound = i;
+            }
+            if (last < 0) { pl.error = "Żaden stopień wzorca nie bierze udziału w starcie."; return pl; }
+            pl.lastStage = last;
+
+            // wieża SAS: silnik na paliwo stałe o nazwie pasującej do lesRx; owiewka: ModuleProceduralFairing albo część „fairing”
+            int les = -1, fair = -1;
+            if (parts != null)
+                foreach (Part p in parts)
+                {
+                    if (p == null || p.partInfo == null) continue;
+                    string nm = p.partInfo.name + " " + p.partInfo.title;
+                    if (p.inverseStage < last) continue;
+                    bool engine = p.FindModuleImplementing<ModuleEngines>() != null;   // silnik wieży (paliwo stałe, PBAN…)
+                    if (engine && d.lesRx.IsMatch(nm)) les = Math.Max(les, p.inverseStage);
+                    bool fairMod = p.FindModuleImplementing<ModuleProceduralFairing>() != null;
+                    bool sep = p.FindModuleImplementing<ModuleDecouple>() != null || p.FindModuleImplementing<ModuleAnchoredDecoupler>() != null || p.FindModuleImplementing<ModuleJettison>() != null;
+                    if (fairMod || (sep && d.fairingRx.IsMatch(nm))) fair = Math.Max(fair, p.inverseStage);
+                }
+            if (d.les.Length > 0)
+            {
+                if (les >= 0) { string w; string e = Ev(d.les, les, out w); if (e != null) { ev.Add(e); pl.lines.Add("wieża SAS (stage " + les + ") " + w); } }
+                else pl.lines.Add("wieża SAS: nie ma jej w rakiecie – pominięta");
+            }
+            if (d.fairing.Length > 0)
+            {
+                if (fair >= 0) { string w; string e = Ev(d.fairing, fair, out w); if (e != null) { ev.Add(e); pl.lines.Add("owiewka (stage " + fair + ") " + w); } }
+                else pl.lines.Add("owiewka: nie znaleziono części owiewki nad stage'em " + last + " – pominięta");
+            }
+            pl.lines.Add("ostatni stage rakiety: " + last + " – stage " + (last - 1) + " i niższe to statek (oddzielenie po wejściu na orbitę)");
+            if (d.stagingNote.Length > 0) pl.lines.Add(d.stagingNote);
+            List<string> uniq = new List<string>();
+            foreach (string e in ev) if (!uniq.Contains(e)) uniq.Add(e);   // wieża i owiewka w tym samym stage'u – raz
+            pl.events = string.Join(" ", uniq.ToArray());
+            pl.ok = true;
+            return pl;
+        }
+
+        /// <summary>Najlepiej pasujący wzorzec (także wbudowane – Sojuz, Proton) albo null.</summary>
+        public static RocketDef Best(List<EngineGroup> groups)
+        {
+            EnsureLoaded();
+            RocketDef best = null; int bs = 0;
+            foreach (RocketDef d in Defs)
+            {
+                int sc = Score(d, groups);
+                if (d.builtin >= 0 && sc > 0) sc = Math.Max(1, sc - 1);   // przy remisie wygrywa dokładniejszy wzorzec z plików
+                if (sc > bs) { bs = sc; best = d; }
+            }
+            return best;
         }
 
         // ------------------------------------------------------------------ dopasowanie

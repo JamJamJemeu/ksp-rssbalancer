@@ -58,6 +58,11 @@ namespace RSSBalancer
         private int progSel;
         private int aoFor = -1;
         private string aoPe = "", aoAp = "", aoInc = "", aoCheck = "", aoLast = "", aoStageAtTxt = "";
+        // rakieta programu startu: wzorzec (nazwa z PluginData/Rakiety), „-” = świadomie bez wzorca, "" = nie wybrano
+        private string aoTpl = "", aoTplHow = "", aoTplSearch = "";
+        private bool aoTplOpen, aoPlanShow;
+        private readonly List<string> aoPlanLines = new List<string>();
+        private Vector2 aoTplScroll;
 
         private int AoLastStage(FlightPrograms.Program p)
         {
@@ -756,6 +761,7 @@ namespace RSSBalancer
             }
             foreach (RocketTemplates.RocketDef d in RocketTemplates.Defs)
             {
+                if (d.builtin >= 0) continue;
                 int sc = RocketTemplates.Score(d, groups);
                 if (sc <= 0) continue;
                 rocketFits.Add(d.name);
@@ -787,7 +793,7 @@ namespace RSSBalancer
                 for (int b = 0; b < BuiltinNames.Length; b++)
                     if (RocketEntry(BuiltinNames[b], BuiltinAliases[b], q, "wbudowany")) shown++;
                 foreach (RocketTemplates.RocketDef d in RocketTemplates.Defs)
-                    if (RocketEntry(d.name, d.aliases + " " + d.file, q, d.stages.Count + " st.")) shown++;
+                    if (d.builtin < 0 && RocketEntry(d.name, d.aliases + " " + d.file, q, d.stages.Count + " st.")) shown++;
                 if (shown == 0) GUILayout.Label("Nic nie pasuje do „" + rocketSearch + "”.");
                 GUILayout.EndScrollView();
                 GUILayout.Label("✓ = pasuje do rakiety w VAB. Wzorce z plików: PluginData\\Rakiety\\*.cfg");
@@ -809,7 +815,7 @@ namespace RSSBalancer
             else if (rocketSelName == BuiltinNames[2]) DrawProtonTab();
             else
             {
-                RocketTemplates.RocketDef d = RocketTemplates.Defs.Find(x => x.name == rocketSelName);
+                RocketTemplates.RocketDef d = RocketTemplates.Defs.Find(x => x.name == rocketSelName && x.builtin < 0);
                 if (d == null) { GUILayout.Label("Brak wzorca „" + rocketSelName + "” – plik usunięty? Wybierz rakietę z listy."); return; }
                 DrawGenericRocket(d);
             }
@@ -1220,6 +1226,18 @@ namespace RSSBalancer
                 aoLast = (saved >= 0 ? saved : file).ToString();
                 string sat = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null ? FlightPrograms.SavedStageAt(FlightGlobals.ActiveVessel.vesselName) : null;
                 aoStageAtTxt = sat ?? "";
+                // rakieta: zapamiętana dla statku, inaczej rozpoznana; gdy dla statku nic nie zapamiętano – staging z wzorca od razu
+                aoTpl = ""; aoTplHow = ""; aoPlanLines.Clear();
+                string ship = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null ? FlightGlobals.ActiveVessel.vesselName : null;
+                string st = ship != null ? FlightPrograms.SavedTemplate(ship) : null;
+                if (!string.IsNullOrEmpty(st)) { aoTpl = st; aoTplHow = "zapamiętana dla statku"; }
+                else
+                {
+                    Refresh();
+                    RocketTemplates.RocketDef best = RocketTemplates.Best(groups);
+                    if (best != null) { aoTpl = best.name; aoTplHow = "rozpoznana"; }
+                }
+                if (saved < 0 && sat == null && aoTpl.Length > 0 && aoTpl != "-") ApplyTplPlan(false);
             }
             GUILayout.Space(4f);
             GUILayout.Label("Orbita docelowa (puste = auto: niska orbita nad atmosferą, nachylenie = szerokość startu; apogeum puste = orbita kołowa):");
@@ -1234,11 +1252,12 @@ namespace RSSBalancer
             GUILayout.Label(AoLastStage(p) > 0 ? "  stage'e < " + AoLastStage(p) + " to statek – MechJeb ich nie odpali" : "  0 = MechJeb stage'uje do końca (np. Blok L + satelita)");
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            GUILayout.Label(new GUIContent("Stage o czasie", "Pary czas lotu [s]:numer stage'a, np. „114:8 157:6” – wieża SAS i owiewka Sojuza. Program odpala dany stage o czasie, tylko jeśli jest następny w kolejce. Zapamiętuje się dla tego statku."), GUILayout.Width(150f));
+            GUILayout.Label(new GUIContent("Stage o czasie", "Zdarzenia czas:stage, np. „114:8 157:6” – wieża SAS i owiewka Sojuza; „a110:6” – na wysokości 110 km; „h1.5:7” – gorące rozdzielenie (stage 7, gdy pracującemu stopniowi zostanie 1,5 s). Program odpala stage, tylko jeśli jest następny w kolejce. Zapamiętuje się dla tego statku; „Staging z wzorca” wylicza to z konstrukcji."), GUILayout.Width(150f));
             aoStageAtTxt = GUILayout.TextField(aoStageAtTxt, GUILayout.Width(160f));
             int nEv = FlightPrograms.ParseStageAt(aoStageAtTxt).Count;
             GUILayout.Label(nEv > 0 ? "  " + nEv + " zdarzeń" : "  puste = brak");
             GUILayout.EndHorizontal();
+            DrawAoRocket();
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Sprawdź", GUILayout.Width(90f)))
                 aoCheck = HighLogic.LoadedSceneIsFlight ? FlightProgramRunner.CheckAutoOrbit(AutoOrbitText() == "" ? FlightPrograms.AutoOrbitFromFile(p) : AutoOrbitText(), Math.Max(0, AoLastStage(p))) : "Sprawdzenie działa w locie (rakieta na wyrzutni).";
@@ -1246,6 +1265,116 @@ namespace RSSBalancer
             if (GUILayout.Button("Auto", GUILayout.Width(60f))) { aoPe = aoAp = aoInc = ""; aoCheck = ""; }
             GUILayout.EndHorizontal();
             if (aoCheck != "") GUILayout.Label(aoCheck);
+        }
+
+        private RocketTemplates.RocketDef AoTplDef()
+        {
+            RocketTemplates.EnsureLoaded();
+            return aoTpl.Length > 0 && aoTpl != "-" ? RocketTemplates.Defs.Find(x => x.name == aoTpl) : null;
+        }
+
+        /// <summary>Staging z wzorca wybranej rakiety → pola „Ostatni stage rakiety” i „Stage o czasie”.</summary>
+        private bool ApplyTplPlan(bool report)
+        {
+            aoPlanLines.Clear();
+            RocketTemplates.RocketDef d = AoTplDef();
+            if (d == null) { if (report) status = "Wybierz rakietę z listy."; return false; }
+            Refresh();
+            List<Part> parts = HighLogic.LoadedSceneIsFlight && FlightGlobals.ActiveVessel != null ? FlightGlobals.ActiveVessel.parts : null;
+            RocketTemplates.Plan pl = RocketTemplates.StagingPlan(d, groups, parts);
+            if (!pl.ok) { aoPlanLines.Add("Wzorzec „" + d.name + "” nie pasuje do tej rakiety: " + pl.error); if (report) status = aoPlanLines[0]; return false; }
+            aoLast = pl.lastStage.ToString(CultureInfo.InvariantCulture);
+            aoStageAtTxt = pl.events;
+            aoPlanLines.AddRange(pl.lines);
+            if (report) status = "Staging z wzorca „" + d.name + "”: ostatni stage rakiety " + pl.lastStage + (pl.events.Length > 0 ? ", zdarzenia " + pl.events : ", bez zdarzeń (resztę stage'uje MechJeb po wypaleniu)");
+            return true;
+        }
+
+        private void DrawAoRocket()
+        {
+            RocketTemplates.EnsureLoaded();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(new GUIContent("Rakieta", "Wzorzec z PluginData/Rakiety: z niego program wylicza staging z obecnej konstrukcji (gorące rozdzielenie, wieża SAS, owiewka, odrzut boosterów, oddzielenie statku)."), GUILayout.Width(150f));
+            string lbl = aoTpl == "-" ? "bez wzorca (tylko MechJeb)" : aoTpl.Length == 0 ? "nie rozpoznano – wybierz" : aoTpl;
+            if (GUILayout.Button(lbl + (aoTplOpen ? "   ▲" : "   ▼"), GUILayout.Width(250f))) aoTplOpen = !aoTplOpen;
+            if (aoTplHow.Length > 0) GUILayout.Label("  " + aoTplHow);
+            GUILayout.EndHorizontal();
+            if (aoTplOpen)
+            {
+                GUILayout.BeginVertical("box");
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Szukaj:", GUILayout.Width(52f));
+                aoTplSearch = GUILayout.TextField(aoTplSearch ?? "", 40);
+                GUILayout.EndHorizontal();
+                string q = (aoTplSearch ?? "").Trim().ToLowerInvariant();
+                aoTplScroll = GUILayout.BeginScrollView(aoTplScroll, GUILayout.Height(170f));
+                if (GUILayout.Button((aoTpl == "-" ? "● " : "   ") + "Bez wzorca – staging tylko przez MechJeba", GUI.skin.label)) { aoTpl = "-"; aoTplHow = "wybrana"; aoTplOpen = false; aoPlanLines.Clear(); }
+                foreach (RocketTemplates.RocketDef d in RocketTemplates.Defs)
+                {
+                    if (q.Length > 0 && d.name.ToLowerInvariant().IndexOf(q, StringComparison.Ordinal) < 0 && d.aliases.ToLowerInvariant().IndexOf(q, StringComparison.Ordinal) < 0) continue;
+                    bool fits = RocketTemplates.Score(d, groups) > 0;
+                    if (GUILayout.Button((d.name == aoTpl ? "● " : "   ") + d.name + (fits ? "   ✓ pasuje" : ""), GUI.skin.label))
+                    { aoTpl = d.name; aoTplHow = "wybrana"; aoTplOpen = false; ApplyTplPlan(true); }
+                }
+                GUILayout.EndScrollView();
+                GUILayout.EndVertical();
+            }
+            GUILayout.BeginHorizontal();
+            GUI.enabled = AoTplDef() != null;
+            if (GUILayout.Button(new GUIContent("Staging z wzorca", "Wylicza z obecnej konstrukcji ostatni stage rakiety i zdarzenia stagingu jak w prawdziwej rakiecie i wpisuje je w pola powyżej."), GUILayout.Width(140f))) { ApplyTplPlan(true); aoPlanShow = true; }
+            GUI.enabled = true;
+            if (aoPlanLines.Count > 0 && GUILayout.Button(aoPlanShow ? "Ukryj plan" : "Pokaż plan", GUILayout.Width(100f))) aoPlanShow = !aoPlanShow;
+            GUILayout.EndHorizontal();
+            if (aoPlanShow && aoPlanLines.Count > 0)
+            {
+                GUILayout.BeginVertical("box");
+                foreach (string l in aoPlanLines) GUILayout.Label(l);
+                GUILayout.EndVertical();
+            }
+        }
+
+        /// <summary>Start programu z zakładki (pliki czytane od nowa – zmiany w .cfg działają bez restartu KSP).</summary>
+        private void StartSelectedProgram()
+        {
+            FlightProgramRunner run = FlightProgramRunner.Instance;
+            if (run == null || run.Active) return;
+            string selName = FlightPrograms.Programs[progSel].name;
+            FlightPrograms.Reload();
+            int ix = FlightPrograms.Programs.FindIndex(x => x.name == selName);
+            if (ix >= 0) progSel = ix; else progSel = Math.Min(progSel, FlightPrograms.Programs.Count - 1);
+            bool hasAo = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]);
+            FlightPrograms.AutoOrbitOverride = hasAo ? AutoOrbitText() : "";
+            FlightPrograms.LastStageOverride = hasAo ? AoLastStage(FlightPrograms.Programs[progSel]) : -1;
+            FlightPrograms.StageAtOverride = hasAo ? aoStageAtTxt : null;
+            if (hasAo && FlightGlobals.ActiveVessel != null && aoTpl.Length > 0) FlightPrograms.SaveTemplate(FlightGlobals.ActiveVessel.vesselName, aoTpl);
+            run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage;
+        }
+
+        /// <summary>Rakieta nierozpoznana – okno z listą wzorców (wybór wylicza staging i startuje program).</summary>
+        private void AskRocketThenStart()
+        {
+            var opts = new List<DialogGUIBase>();
+            opts.Add(new DialogGUIContentSizer(UnityEngine.UI.ContentSizeFitter.FitMode.Unconstrained, UnityEngine.UI.ContentSizeFitter.FitMode.PreferredSize, true));
+            Refresh();
+            foreach (RocketTemplates.RocketDef d in RocketTemplates.Defs)
+            {
+                RocketTemplates.RocketDef dd = d;
+                bool fits = RocketTemplates.Score(d, groups) > 0;
+                opts.Add(new DialogGUIButton(d.name + (fits ? "   ✓ pasuje" : ""), () =>
+                {
+                    aoTpl = dd.name; aoTplHow = "wybrana";
+                    if (!ApplyTplPlan(true)) { ScreenMessages.PostScreenMessage("„" + dd.name + "” nie pasuje do tej rakiety – staging bez zmian", 6f, ScreenMessageStyle.UPPER_CENTER); }
+                    StartSelectedProgram();
+                }, 520f, 24f, true));
+            }
+            opts.Add(new DialogGUIButton("Bez wzorca – staging tylko przez MechJeba", () => { aoTpl = "-"; aoTplHow = "wybrana"; StartSelectedProgram(); }, 520f, 24f, true));
+            opts.Add(new DialogGUIButton("Anuluj", () => { }, 520f, 24f, true));
+            PopupDialog.SpawnPopupDialog(new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog("RSSBalancerAskRocket", "Nie rozpoznano rakiety. Wybierz wzorzec – program wyliczy z konstrukcji staging jak w prawdziwej rakiecie (gorące rozdzielenie, wieża SAS, owiewka, oddzielenie statku).",
+                    "Start na orbitę – jaka to rakieta?", HighLogic.UISkin, 560f,
+                    new DialogGUIScrollList(new Vector2(540f, 360f), false, true,
+                        new DialogGUIVerticalLayout(10, 100, 4, new RectOffset(6, 24, 6, 6), TextAnchor.UpperLeft, opts.ToArray()))),
+                false, HighLogic.UISkin);
         }
 
         private void DrawProgramTab()
@@ -1290,16 +1419,9 @@ namespace RSSBalancer
             {
                 if (GUILayout.Button("Start programu"))
                 {
-                    // plik programu czytany od nowa – zmiany w .cfg działają bez restartu KSP
-                    string selName = FlightPrograms.Programs[progSel].name;
-                    FlightPrograms.Reload();
-                    int ix = FlightPrograms.Programs.FindIndex(x => x.name == selName);
-                    if (ix >= 0) progSel = ix; else progSel = Math.Min(progSel, FlightPrograms.Programs.Count - 1);
-                    bool hasAo = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]);
-                    FlightPrograms.AutoOrbitOverride = hasAo ? AutoOrbitText() : "";
-                    FlightPrograms.LastStageOverride = hasAo ? AoLastStage(FlightPrograms.Programs[progSel]) : -1;
-                    FlightPrograms.StageAtOverride = hasAo ? aoStageAtTxt : null;
-                    run.Begin(FlightPrograms.Programs[progSel]); status = run.LastMessage;
+                    bool hasAo0 = FlightPrograms.HasAutoOrbit(FlightPrograms.Programs[progSel]);
+                    if (hasAo0 && aoTpl.Length == 0 && FlightGlobals.ActiveVessel != null && FlightGlobals.ActiveVessel.situation == Vessel.Situations.PRELAUNCH) AskRocketThenStart();
+                    else StartSelectedProgram();
                 }
             }
             else

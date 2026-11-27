@@ -98,20 +98,57 @@ namespace RSSBalancer
             catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
         }
 
-        /// <summary>„114:8 157:6” → pary (czas lotu [s], numer stage'a). Błędne pozycje pomija.</summary>
-        public static List<KeyValuePair<double, int>> ParseStageAt(string txt)
+        /// <summary>Zdarzenie stagingu: kind 't' = czas lotu [s], 'a' = wysokość [km], 'h' = gorące rozdzielenie (zostało ≤ v s pracy stopnia).</summary>
+        public class StageEv { public char kind; public double v; public int stage; public bool done; }
+
+        /// <summary>„114:8 a110:6 h1.5:7” → zdarzenia (bez litery = czas lotu). Błędne pozycje pomija.</summary>
+        public static List<StageEv> ParseStageAt(string txt)
         {
-            var list = new List<KeyValuePair<double, int>>();
+            var list = new List<StageEv>();
             if (string.IsNullOrEmpty(txt)) return list;
-            foreach (string w in txt.Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (string w0 in txt.Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
+                string w = w0.Trim();
+                char k = 't';
+                if (w.Length > 0 && char.IsLetter(w[0])) { k = char.ToLowerInvariant(w[0]); w = w.Substring(1); }
+                if (k != 't' && k != 'a' && k != 'h') continue;
                 string[] a = w.Split(':');
                 double t; int st;
                 if (a.Length == 2 && double.TryParse(a[0], NumberStyles.Float, CultureInfo.InvariantCulture, out t) && int.TryParse(a[1], out st) && t > 0 && st >= 0)
-                    list.Add(new KeyValuePair<double, int>(t, st));
+                    list.Add(new StageEv { kind = k, v = t, stage = st });
             }
-            list.Sort((x, y) => x.Key.CompareTo(y.Key));
+            // kolejność: od najwyższego stage'a (najwcześniejszego)
+            list.Sort((x, y) => y.stage != x.stage ? y.stage.CompareTo(x.stage) : x.v.CompareTo(y.v));
             return list;
+        }
+
+        public static string SavedTemplate(string ship)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(ship) || !File.Exists(ShipsFile)) return null;
+                ConfigNode root = ConfigNode.Load(ShipsFile);
+                if (root == null) return null;
+                foreach (ConfigNode n in root.GetNodes("RAKIETA"))
+                    if (n.GetValue("ship") == ship) return n.GetValue("template");
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
+            return null;
+        }
+
+        public static void SaveTemplate(string ship, string template)
+        {
+            if (string.IsNullOrEmpty(ship) || template == null) return;
+            try
+            {
+                ConfigNode root = File.Exists(ShipsFile) ? (ConfigNode.Load(ShipsFile) ?? new ConfigNode()) : new ConfigNode();
+                ConfigNode hit = null;
+                foreach (ConfigNode n in root.GetNodes("RAKIETA")) if (n.GetValue("ship") == ship) hit = n;
+                if (hit == null) { hit = root.AddNode("RAKIETA"); hit.AddValue("ship", ship); }
+                hit.SetValue("template", template.Trim(), true);
+                root.Save(ShipsFile);
+            }
+            catch (Exception e) { Debug.LogWarning("[RSSBalancer] rakiety.cfg: " + e.Message); }
         }
 
         // Ostatni stage rakiety zapamiętany dla każdego statku (nazwa) – PluginData/rakiety.cfg, zapisywany sam przy starcie.
@@ -2266,7 +2303,7 @@ namespace RSSBalancer
         private AO aoPhase = AO.None;
         private double aoAlt, aoAp, aoInc, aoStartUT, nextAoLog;
         private int aoLastStage;
-        private List<KeyValuePair<double, int>> aoStageAt = new List<KeyValuePair<double, int>>();
+        private List<FlightPrograms.StageEv> aoStageAt = new List<FlightPrograms.StageEv>();
         private int aoStageAtIdx;
         public string AutoOrbitInfo = "";
 
@@ -2415,6 +2452,70 @@ namespace RSSBalancer
             return ef != null && (bool)ef.GetValue(a);
         }
 
+        // Zdarzenia stagingu podczas wznoszenia („Stage o czasie”, z wzorca rakiety albo wpisane ręcznie):
+        //   t – czas lotu (wieża SAS T+114 s, owiewka T+157 s, BECO Atlasa), a – wysokość [km], h – gorące rozdzielenie
+        //   (zapłon następnego stopnia, gdy pracującemu zostało ≤ v s – Proton, Titan II, N1, CZ-2/3).
+        // Odpala zdarzenie tylko, gdy jego stage jest NASTĘPNY w kolejce; gdy już poszedł (MechJeb, ręcznie) – pomija.
+        private void StageEventsTick()
+        {
+            foreach (FlightPrograms.StageEv ev in aoStageAt)
+            {
+                if (ev.done) continue;
+                int next = vessel.currentStage - 1;
+                if (next < ev.stage)
+                {
+                    ev.done = true;
+                    FlightLogger.Event("Start na orbitę: zdarzenie " + ev.kind + ev.v.ToString("0.#", Inv) + ":" + ev.stage + " pominięte – stage " + ev.stage + " już odpalony");
+                    continue;
+                }
+                if (next != ev.stage || ev.stage < aoLastStage) continue;
+                bool fire = false; string why = "";
+                if (ev.kind == 't') { fire = vessel.missionTime >= ev.v; why = "T+" + vessel.missionTime.ToString("F0", Inv) + " s"; }
+                else if (ev.kind == 'a') { fire = vessel.altitude >= ev.v * 1000; why = "wysokość " + (vessel.altitude / 1000).ToString("F1", Inv) + " km"; }
+                else if (ev.kind == 'h')
+                {
+                    double rem = BurnRemaining();
+                    fire = rem >= 0 && rem <= ev.v; why = "gorące rozdzielenie, pracującemu stopniowi zostało " + rem.ToString("F1", Inv) + " s";
+                }
+                if (!fire) continue;
+                ev.done = true;
+                StageManager.ActivateNextStage();
+                FlightLogger.Event("Start na orbitę: stage " + ev.stage + " – " + why);
+                return;   // jeden stage na klatkę
+            }
+        }
+
+        /// <summary>Najkrótszy pozostały czas pracy pracujących silników, które zostaną odrzucone: paliwo za ich odłączaczem ÷ obecny przepływ.
+        /// −1 = nic nie pracuje.</summary>
+        private double BurnRemaining()
+        {
+            float thr = vessel.ctrlState != null ? vessel.ctrlState.mainThrottle : 1f;
+            if (thr <= 0.01f) return -1;
+            var byDec = new Dictionary<Part, List<Part>>();
+            foreach (Part p in vessel.parts)
+            {
+                bool on = false;
+                foreach (ModuleEngines e in p.FindModulesImplementing<ModuleEngines>())
+                    if (e.EngineIgnited && !e.flameout && e.propellants != null && !e.propellants.Exists(pr => pr.name == "SolidFuel")) on = true;
+                if (!on) continue;
+                Part d = EngineGroups.JettisonDecoupler(p);
+                if (d == null) continue;
+                List<Part> l; if (!byDec.TryGetValue(d, out l)) byDec[d] = l = new List<Part>();
+                l.Add(p);
+            }
+            double best = -1;
+            foreach (var kv in byDec)
+            {
+                double flow = 0;
+                foreach (Part p in kv.Value) flow += EngineGroups.MassFlow(p);
+                flow *= thr;
+                if (flow <= 0) continue;
+                double rem = EngineGroups.FuelMass(vessel.parts, kv.Key, EngineGroups.PropellantNames(kv.Value)) / flow;
+                if (best < 0 || rem < best) best = rem;
+            }
+            return best;
+        }
+
         private void AutoOrbitTick()
         {
             CelestialBody b = vessel.mainBody; Orbit o = vessel.orbit;
@@ -2426,16 +2527,7 @@ namespace RSSBalancer
                 if (now > nextAoLog) { nextAoLog = now + 20; FlightLogger.Event("Start na orbitę: " + AutoOrbitInfo); }
                 // Stage o czasie (np. wieża SAS T+114 s, owiewka T+157 s – MechJeb ich nie odpali, bo nic się wtedy nie wypala).
                 // Odpala tylko, gdy NASTĘPNY stage to dokładnie ten z listy – jeśli już poszedł (MechJeb, ręcznie), pomija.
-                if (aoStageAtIdx < aoStageAt.Count && vessel.missionTime >= aoStageAt[aoStageAtIdx].Key)
-                {
-                    var ev = aoStageAt[aoStageAtIdx++];
-                    if (vessel.currentStage - 1 == ev.Value && ev.Value >= aoLastStage)
-                    {
-                        StageManager.ActivateNextStage();
-                        FlightLogger.Event("Start na orbitę: stage " + ev.Value + " o czasie T+" + ev.Key.ToString("F0", Inv) + " s");
-                    }
-                    else FlightLogger.Event("Start na orbitę: stage " + ev.Value + " (T+" + ev.Key.ToString("F0", Inv) + " s) pominięty – następny stage to " + (vessel.currentStage - 1));
-                }
+                StageEventsTick();
                 bool mjOff = now - aoStartUT > 10 && !AscentEnabled();
                 bool fuelOut = now - aoStartUT > 30 && EngineThrustKN() < 0.01 && vessel.currentStage <= aoLastStage && vessel.altitude > atmTop;
                 bool inOrbit = o.PeA > atmTop + 5000 && EngineThrustKN() < 0.01 && now - aoStartUT > 30;
