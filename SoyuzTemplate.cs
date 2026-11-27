@@ -22,6 +22,8 @@ namespace RSSBalancer
         public const double CoreTime = 286.0;
         public const double UpperTime = 270.0;
         public const double LiftoffTwr = 1.35;
+        public const double RealIspVac = 320.0;      // RD-107A / RD-108A w próżni
+        public const double IspTolerance = 0.05;     // ±5 % – poza tym pierwszeństwo ma ISP, nie TWR
 
         public class Result
         {
@@ -98,6 +100,25 @@ namespace RSSBalancer
             double k = (twr * (FB + FC) / twr0) /
                        (FB * tb0 / (B.appliedIsp * tBooster) + FC * tc0 / (C.appliedIsp * tCore));
 
+            // 1.52.1: czasy + TWR wyznaczają ISP. Gdy krzywa ISP silników w paczce części jest inna niż w RD-107A/108A
+            // (np. rn.r7: 315/305 s zamiast 320/263 s – ciąg przy ziemi prawie jak w próżni), TWR 1,35 wymuszało
+            // ISP ×0,80 = 252 s, brak ~1000 m/s Δv i płaski tor (lot 2026-11-27 21:30). Wtedy pierwszeństwo ma
+            // prawdziwe ISP 320 s w próżni, a TWR wychodzi z ciągu potrzebnego do zadanych czasów pracy.
+            string twrNote = "";
+            double baseVacB = B.ispVac > 0 ? B.ispVac / B.appliedIsp : 0;   // ISP próżnia przy mnożniku 1
+            if (baseVacB > 0)
+            {
+                double ispRes = k * baseVacB;
+                if (ispRes < RealIspVac * (1 - IspTolerance) || ispRes > RealIspVac * (1 + IspTolerance))
+                {
+                    double kTwr = k;
+                    k = RealIspVac / baseVacB;
+                    double twrRes = twr * k / kTwr;   // TWR liniowe względem k przy stałych czasach
+                    twrNote = "\nTWR " + twr.ToString("F2") + " dałoby ISP " + ispRes.ToString("F0") + " s (prawdziwe ≈" + RealIspVac.ToString("F0") +
+                              " s) – silniki w tej paczce mają inną krzywą ISP niż RD-107A. Zostawiam prawdziwe ISP, TWR na starcie wyjdzie ≈" + twrRes.ToString("F2") + ".";
+                }
+            }
+
             double thrB = B.appliedThrust * (k / B.appliedIsp) * tb0 / tBooster;
             double thrC = C.appliedThrust * (k / C.appliedIsp) * tc0 / tCore;
 
@@ -107,7 +128,7 @@ namespace RSSBalancer
             C.thrust = Clamp((float)thrC, ModuleEngineBalancer.MinThrustMult, ModuleEngineBalancer.MaxThrustMult, ref clamped);
 
             string msg = "Boczne bloki: ISP ×" + B.isp.ToString("F2") + ", Ciąg ×" + B.thrust.ToString("F2") +
-                         "   Rdzeń: ISP ×" + C.isp.ToString("F2") + ", Ciąg ×" + C.thrust.ToString("F2");
+                         "   Rdzeń: ISP ×" + C.isp.ToString("F2") + ", Ciąg ×" + C.thrust.ToString("F2") + twrNote;
 
             if (doUpper && r.upper != null)
             {
